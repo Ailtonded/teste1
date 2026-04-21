@@ -1,6 +1,6 @@
 """
 Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus
-Versão: 3.1.0 - Corrigido mapeamento de campos para o Protheus
+Versão: 3.3.0 - Layout COMPLETO do Protheus (79 colunas)
 """
 
 import streamlit as st
@@ -21,23 +21,48 @@ st.set_page_config(
 # Constantes
 COLUNAS_OBRIGATORIAS = ['CT1_CONTA', 'CT1_DESC01']
 
-# Layout final do Protheus (ordem correta das colunas)
-LAYOUT_FINAL = [
-    'CT1_FILIAL', 'CT1_CONTA', 'CT1_DESC01', 'CT1_DESC02', 
-    'CT1_DESC03', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_CTASUP', 'CT1_BLOQ'
+# LAYOUT COMPLETO DO PROTHEUS (TODAS AS 79 COLUNAS)
+LAYOUT_FINAL_COMPLETO = [
+    'CT1_FILIAL', 'CT1_CONTA', 'CT1_DESC01', 'CT1_DESC02', 'CT1_DESC03',
+    'CT1_DESC04', 'CT1_DESC05', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_RES',
+    'CT1_BLOQ', 'CT1_DTBLIN', 'CT1_DTBLFI', 'CT1_DC', 'CT1_NCUSTO',
+    'CT1_CC', 'CT1_CVD01', 'CT1_CVD02', 'CT1_CVD03', 'CT1_CVD04',
+    'CT1_CVD05', 'CT1_CVC01', 'CT1_CVC02', 'CT1_CVC03', 'CT1_CVC04',
+    'CT1_CVC05', 'CT1_CTASUP', 'CT1_HP', 'CT1_ACITEM', 'CT1_ACCUST',
+    'CT1_ACCLVL', 'CT1_DTEXIS', 'CT1_CTAVM', 'CT1_CTARED', 'CT1_DTEXSF',
+    'CT1_MOEDVM', 'CT1_CTALP', 'CT1_CTAPON', 'CT1_BOOK', 'CT1_GRUPO',
+    'CT1_AGLSLD', 'CT1_RGNV1', 'CT1_RGNV2', 'CT1_RGNV3', 'CT1_CCOBRG',
+    'CT1_ITOBRG', 'CT1_CLOBRG', 'CT1_CTLALU', 'CT1_TRNSEF', 'CT1_TPLALU',
+    'CT1_AGLUT', 'CT1_LALHIR', 'CT1_LALUR', 'CT1_RATEIO', 'CT1_ESTOUR',
+    'CT1_CODIMP', 'CT1_AJ_INF', 'CT1_DIOPS', 'CT1_NATCTA', 'CT1_ACATIV',
+    'CT1_ATOBRG', 'CT1_ACET05', 'CT1_05OBRG', 'CT1_INDNAT', 'CT1_SPEDST',
+    'CT1_NTSPED', 'CT1_ACAT01', 'CT1_AT01OB', 'CT1_ACAT02', 'CT1_AT02OB',
+    'CT1_ACAT03', 'CT1_AT03OB', 'CT1_ACAT04', 'CT1_AT04OB', 'CT1_TPO01',
+    'CT1_TPO02', 'CT1_TPO03', 'CT1_TPO04', 'CT1_INTP', 'CT1_PVARC', 'CT1_CTAORC'
 ]
 
-# Larguras máximas de cada campo (conforme padrão Protheus)
+# Larguras de cada campo (baseado no layout do Protheus)
 LARGURAS_CAMPOS = {
-    'CT1_FILIAL': 2,
-    'CT1_CONTA': 20,      # Código da conta - deve ser número!
-    'CT1_DESC01': 40,     # Descrição principal
-    'CT1_DESC02': 40,     # Descrição moeda 1
-    'CT1_DESC03': 40,     # Descrição moeda 2
-    'CT1_CLASSE': 1,
-    'CT1_NORMAL': 1,
-    'CT1_CTASUP': 20,
-    'CT1_BLOQ': 1
+    'CT1_FILIAL': 2, 'CT1_CONTA': 20, 'CT1_DESC01': 40, 'CT1_DESC02': 40,
+    'CT1_DESC03': 40, 'CT1_DESC04': 40, 'CT1_DESC05': 40, 'CT1_CLASSE': 1,
+    'CT1_NORMAL': 1, 'CT1_RES': 10, 'CT1_BLOQ': 1, 'CT1_DTBLIN': 8,
+    'CT1_DTBLFI': 8, 'CT1_DC': 1, 'CT1_NCUSTO': 14, 'CT1_CC': 9,
+    'CT1_CVD01': 1, 'CT1_CVD02': 1, 'CT1_CVD03': 1, 'CT1_CVD04': 1,
+    'CT1_CVD05': 1, 'CT1_CVC01': 1, 'CT1_CVC02': 1, 'CT1_CVC03': 1,
+    'CT1_CVC04': 1, 'CT1_CVC05': 1, 'CT1_CTASUP': 20, 'CT1_HP': 3,
+    'CT1_ACITEM': 1, 'CT1_ACCUST': 1, 'CT1_ACCLVL': 1, 'CT1_DTEXIS': 8,
+    'CT1_CTAVM': 20, 'CT1_CTARED': 20, 'CT1_DTEXSF': 8, 'CT1_MOEDVM': 2,
+    'CT1_CTALP': 20, 'CT1_CTAPON': 20, 'CT1_BOOK': 20, 'CT1_GRUPO': 20,
+    'CT1_AGLSLD': 2, 'CT1_RGNV1': 20, 'CT1_RGNV2': 20, 'CT1_RGNV3': 20,
+    'CT1_CCOBRG': 1, 'CT1_ITOBRG': 1, 'CT1_CLOBRG': 1, 'CT1_CTLALU': 20,
+    'CT1_TRNSEF': 1, 'CT1_TPLALU': 1, 'CT1_AGLUT': 2, 'CT1_LALHIR': 1,
+    'CT1_LALUR': 1, 'CT1_RATEIO': 1, 'CT1_ESTOUR': 1, 'CT1_CODIMP': 20,
+    'CT1_AJ_INF': 1, 'CT1_DIOPS': 1, 'CT1_NATCTA': 2, 'CT1_ACATIV': 1,
+    'CT1_ATOBRG': 1, 'CT1_ACET05': 1, 'CT1_05OBRG': 1, 'CT1_INDNAT': 1,
+    'CT1_SPEDST': 2, 'CT1_NTSPED': 1, 'CT1_ACAT01': 1, 'CT1_AT01OB': 1,
+    'CT1_ACAT02': 1, 'CT1_AT02OB': 1, 'CT1_ACAT03': 1, 'CT1_AT03OB': 1,
+    'CT1_ACAT04': 1, 'CT1_AT04OB': 1, 'CT1_TPO01': 2, 'CT1_TPO02': 2,
+    'CT1_TPO03': 2, 'CT1_TPO04': 2, 'CT1_INTP': 1, 'CT1_PVARC': 2, 'CT1_CTAORC': 1
 }
 
 # Opções de validação
@@ -69,15 +94,12 @@ def carregar_configuracoes() -> Dict[str, Any]:
     return st.session_state.configuracoes
 
 def salvar_configuracoes(config: Dict[str, Any]):
-    """Salva configurações no session_state"""
     st.session_state.configuracoes = config
 
 def exportar_configuracoes() -> str:
-    """Exporta configurações para JSON"""
     return json.dumps(st.session_state.configuracoes, indent=2, ensure_ascii=False)
 
 def importar_configuracoes(json_str: str):
-    """Importa configurações de JSON"""
     try:
         config = json.loads(json_str)
         st.session_state.configuracoes = config
@@ -86,53 +108,44 @@ def importar_configuracoes(json_str: str):
         return False, f"Erro ao importar: {str(e)}"
 
 def validar_conta(conta: str) -> Tuple[bool, str]:
-    """
-    Valida o código da conta contábil
-    O código deve ser numérico ou com pontos (ex: 1.01.001)
-    """
+    """Valida o código da conta contábil"""
     if pd.isna(conta) or not str(conta).strip():
-        return False, "Código da conta vazio ou inválido"
+        return False, "Código da conta vazio"
     
     conta_limpa = str(conta).strip()
     
-    # Verificar se é um código válido (números e pontos apenas)
-    if not all(c.isdigit() or c == '.' for c in conta_limpa):
-        return False, f"Código da conta '{conta_limpa}' contém caracteres inválidos. Use apenas números e pontos"
+    # Aceita números, pontos e vírgulas (vírgula pode ser separador decimal)
+    if not all(c.isdigit() or c in ['.', ','] for c in conta_limpa):
+        return False, f"Código '{conta_limpa}' contém caracteres inválidos"
+    
+    # Converter vírgula para ponto se necessário
+    conta_limpa = conta_limpa.replace(',', '.')
     
     return True, conta_limpa
 
 def validar_descricao(descricao: str) -> Tuple[bool, str]:
     """Valida a descrição da conta"""
     if pd.isna(descricao) or not str(descricao).strip():
-        return False, "Descrição da conta vazia ou inválida"
-    
-    descricao_limpa = str(descricao).strip()
-    return True, descricao_limpa
+        return False, "Descrição da conta vazia"
+    return True, str(descricao).strip()
 
 def validar_classe(classe: str) -> Tuple[bool, str]:
-    """Valida se a classe está nas opções permitidas"""
     if pd.isna(classe) or str(classe).strip() == '':
         return True, ''
-    
     classe_str = str(classe).strip()
     if classe_str not in OPCOES_CLASSE:
         return False, f"Classe '{classe}' inválida. Use: 1=Sintética ou 2=Analítica"
-    
     return True, classe_str
 
 def validar_normal(normal: str) -> Tuple[bool, str]:
-    """Valida se a condição normal está nas opções permitidas"""
     if pd.isna(normal) or str(normal).strip() == '':
         return False, "CT1_NORMAL é obrigatório"
-    
     normal_str = str(normal).strip()
     if normal_str not in OPCOES_NORMAL:
         return False, f"CT1_NORMAL '{normal}' inválido. Use: 1=Devedora ou 2=Credora"
-    
     return True, normal_str
 
 def carregar_arquivo(uploaded_file) -> Optional[pd.DataFrame]:
-    """Carrega arquivo Excel e realiza tratamento inicial"""
     try:
         df = pd.read_excel(uploaded_file, dtype=str)
         df.columns = df.columns.str.strip()
@@ -143,7 +156,6 @@ def carregar_arquivo(uploaded_file) -> Optional[pd.DataFrame]:
         return None
 
 def validar_colunas(df: pd.DataFrame) -> Tuple[bool, str]:
-    """Valida se as colunas obrigatórias estão presentes"""
     colunas_df = set(df.columns)
     colunas_necessarias = set(COLUNAS_OBRIGATORIAS)
     colunas_faltando = colunas_necessarias - colunas_df
@@ -154,109 +166,105 @@ def validar_colunas(df: pd.DataFrame) -> Tuple[bool, str]:
     return True, "✅ Colunas validadas com sucesso!"
 
 def determinar_classe_automatica(conta: str) -> str:
-    """
-    Determina a classe baseado no nível hierárquico da conta
-    Retorna '1' para Sintética, '2' para Analítica
-    """
+    """Determina classe baseado no nível hierárquico"""
     if pd.isna(conta) or not str(conta).strip():
         return '2'
-    
     conta_str = str(conta).strip()
-    # Contas com mais de 2 níveis são analíticas
     niveis = conta_str.count('.')
-    
-    # Contas com 0 ou 1 ponto são sintéticas (ex: 1, 1.01)
-    # Contas com 2 ou mais pontos são analíticas (ex: 1.01.001)
     if niveis <= 1:
         return '1'  # Sintética
     else:
         return '2'  # Analítica
 
 def transformar_para_protheus(df: pd.DataFrame, config: Dict[str, Any]) -> Tuple[pd.DataFrame, list]:
-    """Transforma DataFrame para o layout do Protheus"""
-    df_protheus = df.copy()
+    """Transforma DataFrame para o layout COMPLETO do Protheus"""
+    # Criar DataFrame com TODAS as colunas do layout
+    df_protheus = pd.DataFrame(columns=LAYOUT_FINAL_COMPLETO)
+    
     erros = []
     
-    # Garantir que todas as colunas do layout existam (preencher com vazio)
-    for coluna in LAYOUT_FINAL:
-        if coluna not in df_protheus.columns:
-            df_protheus[coluna] = ''
-    
-    # Validar e aplicar regras de negócio
-    for idx in df_protheus.index:
+    # Para cada linha do arquivo original
+    for idx, row in df.iterrows():
         linha_num = idx + 2
+        nova_linha = {}
         
-        # ========== CT1_CONTA - CÓDIGO DA CONTA (OBRIGATÓRIO) ==========
-        conta = df_protheus.at[idx, 'CT1_CONTA']
-        valido, resultado = validar_conta(conta)
-        if not valido:
-            erros.append(f"Linha {linha_num} - CT1_CONTA: {resultado}")
-            df_protheus.at[idx, 'CT1_CONTA'] = ''
-        else:
-            df_protheus.at[idx, 'CT1_CONTA'] = resultado
+        # Inicializar todos os campos como vazio
+        for col in LAYOUT_FINAL_COMPLETO:
+            nova_linha[col] = ''
         
-        # ========== CT1_DESC01 - DESCRIÇÃO DA CONTA (OBRIGATÓRIO) ==========
-        descricao = df_protheus.at[idx, 'CT1_DESC01']
-        valido, resultado = validar_descricao(descricao)
-        if not valido:
-            erros.append(f"Linha {linha_num} - CT1_DESC01: {resultado}")
-            df_protheus.at[idx, 'CT1_DESC01'] = ''
-        else:
-            df_protheus.at[idx, 'CT1_DESC01'] = resultado
+        # ========== MAPEAR CAMPOS DO EXCEL PARA O PROTHEUS ==========
+        # CT1_CONTA (código da conta)
+        if 'CT1_CONTA' in row:
+            conta = row['CT1_CONTA']
+            valido, resultado = validar_conta(conta)
+            if not valido:
+                erros.append(f"Linha {linha_num}: {resultado}")
+                nova_linha['CT1_CONTA'] = ''
+            else:
+                nova_linha['CT1_CONTA'] = resultado
         
-        # ========== CT1_FILIAL ==========
-        filial = df_protheus.at[idx, 'CT1_FILIAL']
-        if pd.isna(filial) or str(filial).strip() == '':
-            df_protheus.at[idx, 'CT1_FILIAL'] = config.get('filial_padrao', '')
+        # CT1_DESC01 (descrição)
+        if 'CT1_DESC01' in row:
+            descricao = row['CT1_DESC01']
+            valido, resultado = validar_descricao(descricao)
+            if not valido:
+                erros.append(f"Linha {linha_num}: {resultado}")
+                nova_linha['CT1_DESC01'] = ''
+            else:
+                nova_linha['CT1_DESC01'] = resultado
         
-        # ========== CT1_CLASSE ==========
-        classe = df_protheus.at[idx, 'CT1_CLASSE']
-        if pd.isna(classe) or str(classe).strip() == '':
-            if config.get('aplicar_regras_auto', True):
-                classe_auto = determinar_classe_automatica(df_protheus.at[idx, 'CT1_CONTA'])
-                df_protheus.at[idx, 'CT1_CLASSE'] = classe_auto
-            elif config.get('classe_padrao', ''):
-                df_protheus.at[idx, 'CT1_CLASSE'] = config.get('classe_padrao')
-        else:
+        # CT1_FILIAL
+        if 'CT1_FILIAL' in row and row['CT1_FILIAL']:
+            nova_linha['CT1_FILIAL'] = str(row['CT1_FILIAL']).strip()[:2]
+        elif config.get('filial_padrao'):
+            nova_linha['CT1_FILIAL'] = config['filial_padrao']
+        
+        # CT1_CLASSE
+        if 'CT1_CLASSE' in row and row['CT1_CLASSE']:
+            classe = row['CT1_CLASSE']
             valido, resultado = validar_classe(classe)
-            if not valido:
-                erros.append(f"Linha {linha_num} - CT1_CLASSE: {resultado}")
-            else:
-                df_protheus.at[idx, 'CT1_CLASSE'] = resultado
+            if valido and resultado:
+                nova_linha['CT1_CLASSE'] = resultado
+        if not nova_linha['CT1_CLASSE'] and config.get('aplicar_regras_auto', True):
+            nova_linha['CT1_CLASSE'] = determinar_classe_automatica(nova_linha['CT1_CONTA'])
+        elif not nova_linha['CT1_CLASSE'] and config.get('classe_padrao'):
+            nova_linha['CT1_CLASSE'] = config['classe_padrao']
         
-        # ========== CT1_NORMAL ==========
-        normal = df_protheus.at[idx, 'CT1_NORMAL']
-        if pd.isna(normal) or str(normal).strip() == '':
-            df_protheus.at[idx, 'CT1_NORMAL'] = config.get('normal_padrao', '1')
-        else:
+        # CT1_NORMAL
+        if 'CT1_NORMAL' in row and row['CT1_NORMAL']:
+            normal = row['CT1_NORMAL']
             valido, resultado = validar_normal(normal)
-            if not valido:
-                erros.append(f"Linha {linha_num} - CT1_NORMAL: {resultado}")
-            else:
-                df_protheus.at[idx, 'CT1_NORMAL'] = resultado
+            if valido:
+                nova_linha['CT1_NORMAL'] = resultado
+        if not nova_linha['CT1_NORMAL']:
+            nova_linha['CT1_NORMAL'] = config.get('normal_padrao', '1')
         
-        # ========== CT1_BLOQ ==========
-        bloq = df_protheus.at[idx, 'CT1_BLOQ']
-        if pd.isna(bloq) or str(bloq).strip() == '':
-            df_protheus.at[idx, 'CT1_BLOQ'] = config.get('bloq_padrao', '2')
+        # CT1_BLOQ
+        if 'CT1_BLOQ' in row and row['CT1_BLOQ']:
+            nova_linha['CT1_BLOQ'] = str(row['CT1_BLOQ']).strip()
+        if not nova_linha['CT1_BLOQ']:
+            nova_linha['CT1_BLOQ'] = config.get('bloq_padrao', '2')
         
-        # ========== Limpar campos vazios ==========
-        for col in ['CT1_DESC02', 'CT1_DESC03', 'CT1_CTASUP']:
-            if pd.isna(df_protheus.at[idx, col]):
-                df_protheus.at[idx, col] = ''
-    
-    # Garantir ordem das colunas
-    df_protheus = df_protheus[LAYOUT_FINAL]
-    df_protheus = df_protheus.reset_index(drop=True)
+        # CT1_CTASUP (conta superior)
+        if 'CT1_CTASUP' in row and row['CT1_CTASUP']:
+            nova_linha['CT1_CTASUP'] = str(row['CT1_CTASUP']).strip()
+        
+        # Valores padrão para campos obrigatórios do Protheus
+        nova_linha['CT1_RES'] = ''  # Reservado
+        nova_linha['CT1_DC'] = '7'  # Débito/Crédito padrão
+        nova_linha['CT1_HP'] = ''   # Histórico padrão
+        nova_linha['CT1_DTEXIS'] = '19800101'  # Data de existência padrão
+        nova_linha['CT1_ACITEM'] = '1'
+        nova_linha['CT1_ACCUST'] = '1'
+        nova_linha['CT1_ACCLVL'] = '1'
+        
+        # Adicionar linha ao DataFrame
+        df_protheus.loc[len(df_protheus)] = nova_linha
     
     return df_protheus, erros
 
 def formatar_valor_protheus(valor: str, largura: int) -> str:
-    """
-    Formata um valor para o padrão Protheus:
-    - String com largura fixa (espaços à direita)
-    - Valores vazios viram espaços
-    """
+    """Formata valor com largura fixa (espaços à direita)"""
     if pd.isna(valor) or valor is None:
         return ' ' * largura
     
@@ -264,31 +272,23 @@ def formatar_valor_protheus(valor: str, largura: int) -> str:
     if valor_str == '':
         return ' ' * largura
     
-    # Se for maior que a largura, trunca
     if len(valor_str) > largura:
         valor_str = valor_str[:largura]
     
-    # Preenche com espaços à direita
     return valor_str.ljust(largura)
 
 def gerar_csv_protheus(df: pd.DataFrame) -> str:
     """
-    Gera arquivo CSV no formato EXATO que o Protheus espera
-    
-    Formato:
-    Linha 0: 0;CT1;CVD
-    Linha 1: 1;CAMPO1;LARGURA1;CAMPO2;LARGURA2;...
-    Linhas dados: 1;VALOR1_FORMATADO;VALOR2_FORMATADO;...
-    Linha fim: 2;CVD_FILIAL;CVD_CONTA;...
+    Gera CSV no formato EXATO do Protheus com TODAS as 79 colunas
     """
     output_lines = []
     
-    # Linha 0 - Cabeçalho do tipo de arquivo
+    # Linha 0 - Cabeçalho
     output_lines.append("0;CT1;CVD")
     
-    # Linha 1 - Definição dos campos e suas larguras
+    # Linha 1 - Definição dos campos (todos os 79 campos)
     cabecalho_campos = ["1"]
-    for col in LAYOUT_FINAL:
+    for col in LAYOUT_FINAL_COMPLETO:
         largura = LARGURAS_CAMPOS.get(col, 20)
         cabecalho_campos.append(f"{col};{largura}")
     output_lines.append(";".join(cabecalho_campos))
@@ -296,7 +296,7 @@ def gerar_csv_protheus(df: pd.DataFrame) -> str:
     # Linhas de dados
     for idx, row in df.iterrows():
         linha_dados = ["1"]
-        for col in LAYOUT_FINAL:
+        for col in LAYOUT_FINAL_COMPLETO:
             valor = row[col] if col in row else ''
             valor_formatado = formatar_valor_protheus(valor, LARGURAS_CAMPOS.get(col, 20))
             linha_dados.append(valor_formatado)
@@ -308,32 +308,27 @@ def gerar_csv_protheus(df: pd.DataFrame) -> str:
     return "\n".join(output_lines)
 
 def aplicar_filtro(df: pd.DataFrame, termo_busca: str) -> pd.DataFrame:
-    """Aplica filtro de busca em todas as colunas"""
     if not termo_busca:
         return df
-    
     mask = df.astype(str).apply(
         lambda x: x.str.contains(termo_busca, case=False, na=False)
     ).any(axis=1)
-    
     return df[mask]
 
 def main():
-    """Função principal do aplicativo"""
     config = carregar_configuracoes()
     
     st.title("📊 Sistema de Plano de Contas - TOTVS Protheus")
     st.markdown("---")
     
-    # Sidebar - Configurações
+    # Sidebar
     with st.sidebar:
-        st.header("⚙️ Configurações Personalizadas")
+        st.header("⚙️ Configurações")
         
         st.subheader("🏢 Filial")
         filial_input = st.text_input(
             "Filial Padrão",
             value=config.get('filial_padrao', ''),
-            help="Deixe em branco se não quiser preencher automaticamente",
             max_chars=2,
             placeholder="Ex: 01"
         )
@@ -343,46 +338,39 @@ def main():
         
         st.subheader("📋 Classe da Conta")
         aplicar_auto = st.checkbox(
-            "Determinar classe automaticamente (Sintética/Analítica)",
-            value=config.get('aplicar_regras_auto', True),
-            help="Baseado no nível hierárquico da conta: níveis 0-1 = Sintética, níveis 2+ = Analítica"
+            "Determinar classe automaticamente",
+            value=config.get('aplicar_regras_auto', True)
         )
         config['aplicar_regras_auto'] = aplicar_auto
         
         if not aplicar_auto:
             classe_padrao_select = st.selectbox(
-                "Classe Padrão (se vazio no Excel)",
+                "Classe Padrão",
                 options=['', '1', '2'],
                 format_func=lambda x: 'Não preencher' if x == '' else f"{x} - {OPCOES_CLASSE[x]}",
                 index=0
             )
             config['classe_padrao'] = classe_padrao_select
         
-        st.info("**Regra automática:**\n- Contas com 0 ou 1 ponto (ex: 1, 1.01) = Sintética (1)\n- Contas com 2+ pontos (ex: 1.01.001) = Analítica (2)")
-        
         st.markdown("---")
         
-        st.subheader("⚖️ Condição Normal (Natureza)")
+        st.subheader("⚖️ Natureza da Conta")
         normal_padrao = st.selectbox(
             "CT1_NORMAL Padrão",
             options=['1', '2'],
             format_func=lambda x: f"{x} - {OPCOES_NORMAL[x]}",
-            index=0 if config.get('normal_padrao', '1') == '1' else 1,
-            help="Valor usado quando CT1_NORMAL estiver vazio"
+            index=0 if config.get('normal_padrao', '1') == '1' else 1
         )
         config['normal_padrao'] = normal_padrao
         
-        st.info("**Opções válidas:**\n- 1 = Devedora (Ativo/Despesa)\n- 2 = Credora (Passivo/Receita)")
-        
         st.markdown("---")
         
-        st.subheader("🔒 Bloqueio de Conta")
+        st.subheader("🔒 Bloqueio")
         bloq_padrao = st.selectbox(
             "CT1_BLOQ Padrão",
             options=['1', '2'],
             format_func=lambda x: f"{x} - {OPCOES_BLOQ[x]}",
-            index=1 if config.get('bloq_padrao', '2') == '2' else 0,
-            help="Valor usado quando CT1_BLOQ estiver vazio"
+            index=1 if config.get('bloq_padrao', '2') == '2' else 0
         )
         config['bloq_padrao'] = bloq_padrao
         
@@ -390,62 +378,26 @@ def main():
         
         st.markdown("---")
         
-        st.subheader("💾 Salvar/Carregar Configurações")
-        
-        if st.button("📥 Exportar Configurações", use_container_width=True):
-            config_json = exportar_configuracoes()
-            st.download_button(
-                label="💾 Baixar arquivo de configuração",
-                data=config_json,
-                file_name=f"config_protheus_{datetime.now().strftime('%Y%m%d')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
-        
-        uploaded_config = st.file_uploader(
-            "📤 Importar Configurações",
-            type=['json'],
-            help="Carregar arquivo de configuração previamente salvo"
-        )
-        
-        if uploaded_config:
-            config_str = uploaded_config.read().decode('utf-8')
-            sucesso, msg = importar_configuracoes(config_str)
-            if sucesso:
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
-        
-        st.markdown("---")
-        
-        with st.expander("📊 Resumo das Configurações Ativas"):
+        with st.expander("📊 Resumo"):
             st.markdown(f"""
-            **Filial Padrão:** `{config['filial_padrao'] if config['filial_padrao'] else 'Vazio'}`
-            
-            **Classe:**
-            - Automático: `{'Sim' if config['aplicar_regras_auto'] else 'Não'}`
-            - Padrão: `{config.get('classe_padrao', 'N/A')}`
-            
-            **CT1_NORMAL:** `{config['normal_padrao']} - {OPCOES_NORMAL[config['normal_padrao']]}`
-            
-            **CT1_BLOQ:** `{config['bloq_padrao']} - {OPCOES_BLOQ[config['bloq_padrao']]}`
+            **Filial:** `{config['filial_padrao'] or 'Vazio'}`
+            **Classe:** `{'Automática' if config['aplicar_regras_auto'] else config.get('classe_padrao', 'N/A')}`
+            **Natureza:** `{config['normal_padrao']}`
+            **Bloqueio:** `{config['bloq_padrao']}`
             """)
     
-    # Área principal
+    # Upload
     uploaded_file = st.file_uploader(
         "📂 Selecione o arquivo Excel (.xlsx)",
         type=['xlsx'],
-        help="Arquivo deve conter pelo menos as colunas: CT1_CONTA (código) e CT1_DESC01 (descrição)"
+        help="Colunas: CT1_CONTA (código) e CT1_DESC01 (descrição)"
     )
     
-    # Inicializar estados da sessão
     if 'dados_transformados' not in st.session_state:
         st.session_state.dados_transformados = None
     if 'erros_validacao' not in st.session_state:
         st.session_state.erros_validacao = []
     
-    # Processar arquivo
     if uploaded_file is not None:
         with st.spinner("Carregando arquivo..."):
             df_original = carregar_arquivo(uploaded_file)
@@ -456,240 +408,86 @@ def main():
             if valido:
                 st.success(mensagem)
                 
-                with st.spinner("Transformando dados para layout Protheus..."):
+                with st.spinner("Transformando dados..."):
                     df_transformado, erros = transformar_para_protheus(df_original, config)
                     st.session_state.dados_transformados = df_transformado
                     st.session_state.erros_validacao = erros
                 
                 if erros:
-                    st.error(f"⚠️ {len(erros)} erro(s) de validação encontrado(s):")
-                    with st.expander("Ver erros detalhados"):
+                    st.error(f"⚠️ {len(erros)} erro(s) encontrado(s):")
+                    with st.expander("Ver erros"):
                         for erro in erros:
                             st.warning(erro)
                 else:
-                    st.success("✅ Todos os dados validados com sucesso!")
+                    st.success("✅ Dados validados com sucesso!")
             else:
                 st.error(mensagem)
                 st.stop()
-        else:
-            st.error("❌ Não foi possível carregar o arquivo.")
-            st.stop()
     
-    # Exibir dados se existirem
     if st.session_state.dados_transformados is not None:
         df_transformado = st.session_state.dados_transformados
         
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "✏️ Edição de Dados", 
-            "👁️ Preview do Layout Final", 
-            "📊 Estatísticas",
-            "📋 Validações"
-        ])
+        # Mostrar apenas as colunas principais para preview
+        colunas_preview = ['CT1_CONTA', 'CT1_DESC01', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_BLOQ', 'CT1_CTASUP']
+        df_preview = df_transformado[colunas_preview]
         
-        with tab1:
-            st.subheader("Dados Editáveis")
-            st.caption(f"Total de registros: {len(df_transformado)}")
-            
-            busca = st.text_input("🔍 Buscar registros", placeholder="Digite para filtrar...")
-            df_filtrado = aplicar_filtro(df_transformado, busca)
-            
-            if len(df_filtrado) < len(df_transformado):
-                st.info(f"Mostrando {len(df_filtrado)} de {len(df_transformado)} registros")
-            
-            edited_df = st.data_editor(
-                df_filtrado,
-                use_container_width=True,
-                height=400,
-                num_rows="dynamic",
-                column_config={
-                    "CT1_FILIAL": st.column_config.TextColumn("Filial", max_chars=2),
-                    "CT1_CONTA": st.column_config.TextColumn("Código da Conta", required=True, max_chars=20, help="Ex: 1.01.001 ou 111111"),
-                    "CT1_DESC01": st.column_config.TextColumn("Descrição", required=True, max_chars=40),
-                    "CT1_DESC02": st.column_config.TextColumn("Descrição Moeda 1", max_chars=40),
-                    "CT1_DESC03": st.column_config.TextColumn("Descrição Moeda 2", max_chars=40),
-                    "CT1_CLASSE": st.column_config.TextColumn("Classe", help="1=Sintética, 2=Analítica", max_chars=1),
-                    "CT1_NORMAL": st.column_config.TextColumn("Natureza", help="1=Devedora, 2=Credora", max_chars=1),
-                    "CT1_CTASUP": st.column_config.TextColumn("Conta Superior", max_chars=20),
-                    "CT1_BLOQ": st.column_config.TextColumn("Bloqueada", help="1=Sim, 2=Não", max_chars=1),
-                },
-                key="data_editor"
-            )
-            
-            if not edited_df.equals(df_filtrado):
-                for idx_original in range(min(len(df_transformado), len(edited_df))):
-                    if idx_original < len(df_transformado):
-                        st.session_state.dados_transformados.iloc[idx_original] = edited_df.iloc[idx_original]
-                st.rerun()
-            
-            if st.button("🔄 Reaplicar Regras e Validações", use_container_width=True):
-                with st.spinner("Reaplicando regras..."):
-                    df_revalidado, erros = transformar_para_protheus(
-                        st.session_state.dados_transformados,
-                        config
-                    )
-                    st.session_state.dados_transformados = df_revalidado
-                    st.session_state.erros_validacao = erros
-                    
-                    if erros:
-                        st.warning(f"⚠️ {len(erros)} erro(s) encontrado(s)")
-                    else:
-                        st.success("✅ Regras reaplicadas com sucesso!")
-                    st.rerun()
+        st.subheader("📋 Preview dos Dados")
+        st.dataframe(df_preview, use_container_width=True)
         
-        with tab2:
-            st.subheader("Preview do Layout Final")
-            st.caption("Layout que será exportado para o Protheus")
-            st.dataframe(st.session_state.dados_transformados, use_container_width=True, height=400)
-            
-            st.markdown("**Formato do CSV para Protheus:**")
-            st.code("""
-Linha 0: 0;CT1;CVD
-Linha 1: 1;CT1_FILIAL;2;CT1_CONTA;20;CT1_DESC01;40;...
-Linhas dados: 1;VALOR;VALOR;...
-Linha fim: 2;CVD_FILIAL;CVD_CONTA;...
-            """, language="text")
-        
-        with tab3:
-            st.subheader("Estatísticas dos Dados")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total de Registros", len(st.session_state.dados_transformados))
-            
-            with col2:
-                df_temp = st.session_state.dados_transformados.copy()
-                df_temp['CT1_CLASSE'] = df_temp['CT1_CLASSE'].replace('', pd.NA)
-                classes = df_temp['CT1_CLASSE'].value_counts(dropna=True)
-                st.metric("Classes Distintas", len(classes))
-            
-            with col3:
-                normais = st.session_state.dados_transformados['CT1_NORMAL'].value_counts()
-                st.metric("Naturezas Distintas", len(normais))
-            
-            with col4:
-                vazios = (st.session_state.dados_transformados['CT1_CLASSE'] == '').sum()
-                st.metric("Contas sem Classe", vazios)
-            
-            # Distribuição
-            if len(classes) > 0:
-                st.subheader("Distribuição por Classe")
-                for k, v in classes.items():
-                    st.metric(f"Classe {k} - {OPCOES_CLASSE.get(k, 'Desconhecida')}", v)
-            
-            # Amostra
-            st.subheader("Amostra de Dados (10 primeiros registros)")
-            st.dataframe(st.session_state.dados_transformados.head(10), use_container_width=True)
-        
-        with tab4:
-            st.subheader("Validações e Erros")
-            
-            if st.session_state.erros_validacao:
-                st.error(f"❌ {len(st.session_state.erros_validacao)} erro(s) encontrado(s)")
-                df_erros = pd.DataFrame({'Erro': st.session_state.erros_validacao})
-                st.dataframe(df_erros, use_container_width=True)
-                st.warning("⚠️ Corrija os erros antes de exportar o CSV")
-            else:
-                st.success("✅ Nenhum erro de validação encontrado!")
-            
-            st.subheader("Verificações Adicionais")
-            
-            contas_dup = st.session_state.dados_transformados['CT1_CONTA'].duplicated().sum()
-            if contas_dup > 0:
-                st.warning(f"⚠️ {contas_dup} conta(s) duplicada(s) encontrada(s)")
-                df_dup = st.session_state.dados_transformados[
-                    st.session_state.dados_transformados['CT1_CONTA'].duplicated(keep=False)
-                ].sort_values('CT1_CONTA')
-                st.dataframe(df_dup[['CT1_CONTA', 'CT1_DESC01']], use_container_width=True)
-            else:
-                st.success("✅ Nenhuma conta duplicada")
-            
-            campos_vazios = []
-            if (st.session_state.dados_transformados['CT1_CONTA'] == '').any():
-                campos_vazios.append("CT1_CONTA (Código)")
-            if (st.session_state.dados_transformados['CT1_DESC01'] == '').any():
-                campos_vazios.append("CT1_DESC01 (Descrição)")
-            
-            if campos_vazios:
-                st.error(f"❌ Campos obrigatórios vazios: {', '.join(campos_vazios)}")
-            else:
-                st.success("✅ Todos os campos obrigatórios preenchidos")
+        st.info(f"Total de registros: {len(df_transformado)} | Total de colunas no CSV: {len(LAYOUT_FINAL_COMPLETO)}")
         
         # Botão de exportação
-        st.markdown("---")
-        pode_exportar = len(st.session_state.erros_validacao) == 0
-        
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("📥 Gerar CSV para Protheus", type="primary", use_container_width=True, disabled=not pode_exportar):
-                if not pode_exportar:
-                    st.error("❌ Corrija os erros de validação antes de exportar")
-                else:
-                    try:
-                        csv_data = gerar_csv_protheus(st.session_state.dados_transformados)
-                        
-                        b = BytesIO()
-                        b.write(csv_data.encode('latin1'))
-                        b.seek(0)
-                        
-                        st.download_button(
-                            label="✅ Baixar arquivo CSV",
-                            data=b,
-                            file_name=f"plano_contas_protheus_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv",
-                            use_container_width=True,
-                            key="download_csv"
-                        )
-                        
-                        st.success("✅ CSV gerado com sucesso! Pronto para importação no Protheus.")
-                        
-                        # Mostrar preview do formato gerado
-                        with st.expander("🔍 Ver preview do CSV gerado"):
-                            st.code(csv_data[:2000] + ("..." if len(csv_data) > 2000 else ""), language="text")
-                    except Exception as e:
-                        st.error(f"❌ Erro ao gerar CSV: {str(e)}")
-            
-            if not pode_exportar:
-                st.warning("⚠️ Corrija os erros na aba 'Validações' para habilitar a exportação")
+            if st.button("📥 Gerar CSV para Protheus", type="primary", use_container_width=True):
+                try:
+                    csv_data = gerar_csv_protheus(st.session_state.dados_transformados)
+                    
+                    b = BytesIO()
+                    b.write(csv_data.encode('latin1'))
+                    b.seek(0)
+                    
+                    st.download_button(
+                        label="✅ Baixar CSV",
+                        data=b,
+                        file_name=f"plano_contas_protheus_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="download_csv"
+                    )
+                    
+                    st.success("✅ CSV gerado com sucesso!")
+                    
+                    with st.expander("🔍 Preview do CSV gerado (primeiras linhas)"):
+                        linhas = csv_data.split('\n')[:5]
+                        st.code('\n'.join(linhas), language="text")
+                except Exception as e:
+                    st.error(f"❌ Erro: {str(e)}")
     
     else:
-        st.info("👈 Configure o sistema na barra lateral e faça upload de um arquivo Excel para começar")
+        st.info("👈 Configure e faça upload de um arquivo Excel para começar")
         
-        with st.expander("📋 Ver exemplo de layout esperado"):
+        with st.expander("📋 Exemplo de arquivo válido"):
             st.markdown("""
-            ### Colunas obrigatórias no Excel:
+            **Colunas necessárias no Excel:**
+            - `CT1_CONTA` - Código da conta (ex: 1, 1.01, 1.01.001, 111111)
+            - `CT1_DESC01` - Descrição da conta (ex: Ativo, Caixa, Bancos)
             
-            | Coluna | O que deve conter | Exemplo |
-            |--------|------------------|---------|
-            | **CT1_CONTA** | Código numérico da conta | `1.01.001` ou `111111` |
-            | **CT1_DESC01** | Descrição da conta | `Caixa Geral` |
-            
-            ### Colunas opcionais:
-            - **CT1_FILIAL**: Filial (ex: `01`)
-            - **CT1_CLASSE**: `1`=Sintética, `2`=Analítica
-            - **CT1_NORMAL**: `1`=Devedora, `2`=Credora
-            - **CT1_BLOQ**: `1`=Bloqueada, `2`=Ativa
-            - **CT1_CTASUP**: Conta superior (para hierarquia)
-            
-            ### Exemplo de arquivo válido:
+            **Colunas opcionais:**
+            - `CT1_CLASSE` - 1=Sintética, 2=Analítica
+            - `CT1_NORMAL` - 1=Devedora, 2=Credora
+            - `CT1_CTASUP` - Conta superior
+            - `CT1_BLOQ` - 1=Bloqueada, 2=Ativa
+            - `CT1_FILIAL` - Código da filial
             """)
             
             df_exemplo = pd.DataFrame({
-                'CT1_CONTA': ['1', '1.01', '1.01.001', '1.01.002', '2.01.001'],
-                'CT1_DESC01': ['Ativo', 'Ativo Circulante', 'Caixa', 'Bancos', 'Fornecedores'],
-                'CT1_CLASSE': ['1', '1', '2', '2', '2'],
-                'CT1_NORMAL': ['1', '1', '1', '1', '2'],
-                'CT1_CTASUP': ['', '1', '1.01', '1.01', '2.01']
+                'CT1_CONTA': ['1', '1.01', '1.01.001', '1.01.002'],
+                'CT1_DESC01': ['Ativo', 'Ativo Circulante', 'Caixa', 'Bancos'],
+                'CT1_CLASSE': ['1', '1', '2', '2'],
+                'CT1_NORMAL': ['1', '1', '1', '1']
             })
-            
             st.dataframe(df_exemplo, use_container_width=True)
-            
-            st.success("""
-            💡 **Dica importante:** 
-            - **CT1_CONTA** deve conter apenas NÚMEROS e PONTOS (ex: 1.01.001)
-            - **NUNCA** coloque a descrição no campo CT1_CONTA
-            - A descrição vai em **CT1_DESC01**
-            """)
 
 if __name__ == "__main__":
     main()
