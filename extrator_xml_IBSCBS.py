@@ -5,7 +5,7 @@ import pandas as pd
 # 🔹 Layout tela cheia
 st.set_page_config(layout="wide")
 
-# 🔹 CSS para quebrar texto dentro da tabela
+# 🔹 CSS para quebra de texto nas células
 st.markdown("""
 <style>
 [data-testid="stDataFrame"] div {
@@ -14,6 +14,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# 🔹 Funções
 def extrair_tag(texto, tag):
     padrao = fr"<{tag}>(.*?)</{tag}>"
     resultado = re.search(padrao, texto, re.DOTALL)
@@ -24,6 +25,12 @@ def extrair_bloco(texto, tag):
     resultado = re.search(padrao, texto, re.DOTALL)
     return resultado.group(1) if resultado else ""
 
+def tratar_data(valor):
+    if valor and "T" in valor:
+        return valor.split("T")[0]  # só data
+    return valor
+
+# 🔹 Interface
 st.title("📄 Leitor de XML (Tabela Única)")
 
 arquivo = st.file_uploader("Selecione o XML", type=["xml"])
@@ -53,7 +60,16 @@ if arquivo:
         "serie", "natOp"
     ]
 
-    dados_ide = {tag: extrair_tag(xml, tag) for tag in campos_ide}
+    dados_ide = {}
+
+    for tag in campos_ide:
+        valor = extrair_tag(xml, tag)
+
+        # 🔹 tratar datas
+        if tag in ["dhEmi", "dhSaiEnt"]:
+            valor = tratar_data(valor)
+
+        dados_ide[tag] = valor
 
     # =========================
     # 🔹 JUNTA TUDO
