@@ -1,5 +1,5 @@
 """
-Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus
+Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus11
 Autor: Senior Python Developer
 Versão: 1.1.0 (Corrigida)
 """
@@ -269,43 +269,37 @@ def main():
     # Inicializar estados da sessão
     if 'dados_transformados' not in st.session_state:
         st.session_state.dados_transformados = None
-    if 'arquivo_carregado' not in st.session_state:
-        st.session_state.arquivo_carregado = None
     
-    # Processar arquivo - CORRIGIDO: melhor controle de estado
-    if uploaded_file:
-        # Verificar se é um novo arquivo
-        if st.session_state.arquivo_carregado != uploaded_file.name:
-            st.session_state.arquivo_carregado = uploaded_file.name
-            
-            # Carregar arquivo
-            with st.spinner("Carregando arquivo..."):
-                df_original = carregar_arquivo(uploaded_file)
-            
-            if df_original is not None:
-                # Validar colunas
-                valido, mensagem = validar_colunas(df_original)
-                
-                if valido:
-                    st.success(mensagem)
-                    
-                    # Transformar dados
-                    with st.spinner("Transformando dados para layout Protheus..."):
-                        df_transformado = transformar_para_protheus(
-                            df_original, 
-                            aplicar_regras_auto=aplicar_regras
-                        )
-                        st.session_state.dados_transformados = df_transformado
-                else:
-                    st.error(mensagem)
-                    st.info("Por favor, verifique se o arquivo contém as colunas necessárias.")
-                    st.session_state.dados_transformados = None
-            else:
-                st.error("❌ Não foi possível carregar o arquivo. Verifique o formato e tente novamente.")
-                st.session_state.dados_transformados = None
+    # Processar arquivo
+    if uploaded_file is not None:
+        # Carregar arquivo
+        with st.spinner("Carregando arquivo..."):
+            df_original = carregar_arquivo(uploaded_file)
         
-        # Exibir dados se já foram carregados
-        if st.session_state.dados_transformados is not None:
+        if df_original is not None:
+            # Validar colunas
+            valido, mensagem = validar_colunas(df_original)
+            
+            if valido:
+                st.success(mensagem)
+                
+                # Transformar dados
+                with st.spinner("Transformando dados para layout Protheus..."):
+                    df_transformado = transformar_para_protheus(
+                        df_original, 
+                        aplicar_regras_auto=aplicar_regras
+                    )
+                    st.session_state.dados_transformados = df_transformado
+            else:
+                st.error(mensagem)
+                st.info("Por favor, verifique se o arquivo contém as colunas necessárias.")
+                st.stop()
+        else:
+            st.error("❌ Não foi possível carregar o arquivo. Verifique o formato e tente novamente.")
+            st.stop()
+    
+    # Exibir dados se existirem
+    if st.session_state.dados_transformados is not None:
             df_transformado = st.session_state.dados_transformados
             
             # Tabs para visualização
@@ -337,22 +331,10 @@ def main():
                     column_config={
                         "CT1_CONTA": st.column_config.TextColumn("Conta", required=True),
                         "CT1_DESC01": st.column_config.TextColumn("Descrição", required=True),
-                        "CT1_CLASSE": st.column_config.SelectColumn(
-                            "Classe",
-                            options=['1', '2', '3', '4', '5', '6', '7', '8', '9'],
-                            help="Classe da conta"
-                        ),
+                        "CT1_CLASSE": st.column_config.TextColumn("Classe", help="1-9: Classe da conta"),
                         "CT1_FILIAL": st.column_config.TextColumn("Filial"),
-                        "CT1_NORMAL": st.column_config.SelectColumn(
-                            "Normal",
-                            options=['1', '2'],
-                            help="1=Débito, 2=Crédito"
-                        ),
-                        "CT1_BLOQ": st.column_config.SelectColumn(
-                            "Bloqueada",
-                            options=['1', '2'],
-                            help="1=Sim, 2=Não"
-                        ),
+                        "CT1_NORMAL": st.column_config.TextColumn("Normal", help="1=Débito, 2=Crédito"),
+                        "CT1_BLOQ": st.column_config.TextColumn("Bloqueada", help="1=Sim, 2=Não"),
                     },
                     key="data_editor"
                 )
@@ -369,24 +351,14 @@ def main():
                         # Sem filtro: substituir todos os dados
                         st.session_state.dados_transformados = edited_df.copy()
                 
-                # Botões de ação
-                col_btn1, col_btn2 = st.columns(2)
-                
-                with col_btn1:
-                    if st.button("🔄 Reaplicar Regras de Classe"):
-                        with st.spinner("Reaplicando regras..."):
-                            st.session_state.dados_transformados = transformar_para_protheus(
-                                st.session_state.dados_transformados,
-                                aplicar_regras_auto=True
-                            )
-                            st.success("✅ Regras reaplicadas com sucesso!")
-                            st.rerun()
-                
-                with col_btn2:
-                    if st.button("🗑️ Resetar Dados"):
-                        st.session_state.arquivo_carregado = None
-                        st.session_state.dados_transformados = None
-                        st.success("✅ Dados resetados!")
+                # Botão de ação
+                if st.button("🔄 Reaplicar Regras de Classe", use_container_width=True):
+                    with st.spinner("Reaplicando regras..."):
+                        st.session_state.dados_transformados = transformar_para_protheus(
+                            st.session_state.dados_transformados,
+                            aplicar_regras_auto=True
+                        )
+                        st.success("✅ Regras reaplicadas com sucesso!")
                         st.rerun()
             
             with tab2:
