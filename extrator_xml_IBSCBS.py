@@ -27,7 +27,7 @@ def extrair_bloco(texto, tag):
 
 def tratar_data(valor):
     if valor and "T" in valor:
-        return valor.split("T")[0]  # só data
+        return valor.split("T")[0]
     return valor
 
 # 🔹 Interface
@@ -51,12 +51,12 @@ if arquivo:
     }
 
     # =========================
-    # 🔹 IDE
+    # 🔹 IDE (FILTRADO)
     # =========================
     campos_ide = [
-        "tpNF", "mod", "indPres", "tpImp", "nNF",
-        "cMunFG", "procEmi", "finNFe", "dhEmi",
-        "tpAmb", "indFinal", "dhSaiEnt",
+        "tpNF", "mod", "nNF",
+        "finNFe", "dhEmi",
+        "dhSaiEnt",
         "serie", "natOp"
     ]
 
@@ -65,7 +65,6 @@ if arquivo:
     for tag in campos_ide:
         valor = extrair_tag(xml, tag)
 
-        # 🔹 tratar datas
         if tag in ["dhEmi", "dhSaiEnt"]:
             valor = tratar_data(valor)
 
