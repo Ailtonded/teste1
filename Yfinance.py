@@ -1,479 +1,522 @@
+"""
+Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus
+Autor: Senior Python Developer
+Versão: 1.1.0 (Corrigida)
+"""
+
 import streamlit as st
-import yfinance as yf
-import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-import plotly.graph_objects as go
 import pandas as pd
-from datetime import datetime
+from io import StringIO, BytesIO
+import re
+from typing import Tuple, Optional, Dict, Any
 
-# Page configuration TEste  2
+# Configuração da página
 st.set_page_config(
-    page_title="Market Regime Analysis - ITUB4.SA",
-    page_icon="📈",
-    layout="wide"
+    page_title="Sistema Protheus - Plano de Contas",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Title and description
-st.title("📊 Market Regime Analysis with K-Means Clustering")
-st.markdown("""
-This application analyzes **ITUB4.SA** stock using K-Means clustering on moving average features 
-to identify different market regimes (Bull, Neutral, Bear).
-""")
+# Constantes
+COLUNAS_OBRIGATORIAS = ['CT1_CONTA', 'CT1_DESC01']
+LAYOUT_FINAL = [
+    'CT1_FILIAL', 'CT1_CONTA', 'CT1_DESC01', 'CT1_DESC02', 
+    'CT1_DESC03', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_CTASUP', 'CT1_BLOQ'
+]
 
-# Sidebar for parameters
-st.sidebar.header("⚙️ Parameters")
+VALORES_PADRAO = {
+    'CT1_FILIAL': '01',
+    'CT1_DESC02': '',
+    'CT1_DESC03': '',
+    'CT1_NORMAL': '1',
+    'CT1_BLOQ': '2',
+    'CT1_CTASUP': ''
+}
 
-# Date range selection
-end_date = pd.Timestamp.today().strftime('%Y-%m-%d')
-start_date_train = st.sidebar.date_input(
-    "Training Start Date",
-    value=pd.to_datetime("2015-01-01"),
-    max_value=pd.to_datetime("2022-12-31")
-)
-
-end_date_train = st.sidebar.date_input(
-    "Training End Date",
-    value=pd.to_datetime("2022-12-31"),
-    max_value=pd.to_datetime(end_date)
-)
-
-start_date_test = st.sidebar.date_input(
-    "Test Start Date",
-    value=pd.to_datetime("2023-01-01"),
-    max_value=pd.to_datetime(end_date)
-)
-
-# Number of clusters
-n_clusters = st.sidebar.slider(
-    "Number of Regimes (Clusters)",
-    min_value=2,
-    max_value=5,
-    value=3,
-    help="Number of market regimes to identify"
-)
-
-# Rolling window for smoothing
-smoothing_window = st.sidebar.slider(
-    "Regime Smoothing Window (days)",
-    min_value=1,
-    max_value=21,
-    value=5,
-    help="Moving window to smooth regime changes"
-)
-
-# MA windows range
-ma_min = st.sidebar.slider("Minimum MA Window", min_value=3, max_value=10, value=5)
-ma_max = st.sidebar.slider("Maximum MA Window", min_value=11, max_value=50, value=21)
-
-# Run analysis button
-run_analysis = st.sidebar.button("🚀 Run Analysis", type="primary")
-
-# Cache data loading
-@st.cache_data(ttl=3600)
-def load_data(ticker="ITUB4.SA", start="2015-01-01", end=None):
-    """Load stock data from Yahoo Finance"""
-    if end is None:
-        end = pd.Timestamp.today().strftime('%Y-%m-%d')
+def carregar_arquivo(uploaded_file) -> Optional[pd.DataFrame]:
+    """
+    Carrega arquivo Excel e realiza tratamento inicial dos dados
     
-    df = yf.download(
-        ticker,
-        start=start,
-        end=end,
-        auto_adjust=False,
-        progress=False
+    Args:
+        uploaded_file: Arquivo enviado pelo usuário
+        
+    Returns:
+        DataFrame tratado ou None em caso de erro
+    """
+    try:
+        # Ler arquivo Excel
+        df = pd.read_excel(uploaded_file, dtype=str)
+        
+        # Remover espaços em branco dos nomes das colunas
+        df.columns = df.columns.str.strip()
+        
+        # Remover espaços em branco dos dados (strings) - CORRIGIDO: map ao invés de applymap
+        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+        
+        return df
+    
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar arquivo: {str(e)}")
+        return None
+
+def validar_colunas(df: pd.DataFrame) -> Tuple[bool, str]:
+    """
+    Valida se as colunas obrigatórias estão presentes no DataFrame
+    
+    Args:
+        df: DataFrame a ser validado
+        
+    Returns:
+        Tuple (válido, mensagem)
+    """
+    colunas_df = set(df.columns)
+    colunas_necessarias = set(COLUNAS_OBRIGATORIAS)
+    
+    colunas_faltando = colunas_necessarias - colunas_df
+    
+    if colunas_faltando:
+        return False, f"Colunas obrigatórias faltando: {', '.join(colunas_faltando)}"
+    
+    return True, "✅ Colunas validadas com sucesso!"
+
+def determinar_classe(conta: str) -> str:
+    """
+    Determina a classe da conta baseado no primeiro dígito
+    
+    Args:
+        conta: Número da conta
+        
+    Returns:
+        Classe da conta
+    """
+    if pd.isna(conta) or not str(conta).strip():
+        return ''
+    
+    primeiro_digito = str(conta).strip()[0]
+    
+    # Regras de classe baseadas no primeiro dígito
+    mapeamento_classe = {
+        '1': '1',  # Ativo
+        '2': '2',  # Passivo
+        '3': '3',  # Patrimônio Líquido
+        '4': '4',  # Receita
+        '5': '5',  # Despesa
+        '6': '6',  # Custo
+        '7': '7',  # Resultado
+        '8': '8',  # Compensação
+        '9': '9'   # Contas de Controle
+    }
+    
+    return mapeamento_classe.get(primeiro_digito, '')
+
+def transformar_para_protheus(
+    df: pd.DataFrame, 
+    aplicar_regras_auto: bool = True
+) -> pd.DataFrame:
+    """
+    Transforma DataFrame para o layout do Protheus
+    
+    Args:
+        df: DataFrame original
+        aplicar_regras_auto: Aplicar regras automáticas de classe
+        
+    Returns:
+        DataFrame transformado
+    """
+    # Criar cópia para não modificar original
+    df_protheus = df.copy()
+    
+    # Garantir que todas as colunas do layout existam
+    for coluna in LAYOUT_FINAL:
+        if coluna not in df_protheus.columns:
+            df_protheus[coluna] = VALORES_PADRAO.get(coluna, '')
+    
+    # Aplicar regras de negócio - CORRIGIDO: usando iterrows de forma mais eficiente
+    for idx in df_protheus.index:
+        # CT1_FILIAL (padrão 01 se vazio)
+        if pd.isna(df_protheus.at[idx, 'CT1_FILIAL']) or str(df_protheus.at[idx, 'CT1_FILIAL']).strip() == '':
+            df_protheus.at[idx, 'CT1_FILIAL'] = '01'
+        
+        # CT1_NORMAL (padrão 1 se vazio)
+        if pd.isna(df_protheus.at[idx, 'CT1_NORMAL']) or str(df_protheus.at[idx, 'CT1_NORMAL']).strip() == '':
+            df_protheus.at[idx, 'CT1_NORMAL'] = '1'
+        
+        # CT1_BLOQ (padrão 2 se vazio)
+        if pd.isna(df_protheus.at[idx, 'CT1_BLOQ']) or str(df_protheus.at[idx, 'CT1_BLOQ']).strip() == '':
+            df_protheus.at[idx, 'CT1_BLOQ'] = '2'
+        
+        # Limpar campos vazios
+        for col in ['CT1_DESC02', 'CT1_DESC03', 'CT1_CTASUP']:
+            if pd.isna(df_protheus.at[idx, col]):
+                df_protheus.at[idx, col] = ''
+        
+        # Determinar classe automaticamente se habilitado
+        if aplicar_regras_auto:
+            if pd.isna(df_protheus.at[idx, 'CT1_CLASSE']) or str(df_protheus.at[idx, 'CT1_CLASSE']).strip() == '':
+                classe = determinar_classe(df_protheus.at[idx, 'CT1_CONTA'])
+                df_protheus.at[idx, 'CT1_CLASSE'] = classe
+    
+    # Garantir ordem das colunas
+    df_protheus = df_protheus[LAYOUT_FINAL]
+    
+    # Resetar índice para evitar problemas com filtros
+    df_protheus = df_protheus.reset_index(drop=True)
+    
+    return df_protheus
+
+def gerar_csv(df: pd.DataFrame) -> str:
+    """
+    Gera CSV no formato exigido pelo Protheus
+    
+    Args:
+        df: DataFrame a ser exportado
+        
+    Returns:
+        String CSV formatada
+    """
+    # Substituir NaN por string vazia
+    df = df.fillna('')
+    
+    # Gerar CSV com separador ; e encoding latin1
+    output = StringIO()
+    df.to_csv(
+        output, 
+        sep=';', 
+        encoding='latin1', 
+        index=False,
+        quoting=1,  # QUOTE_ALL para garantir compatibilidade
+        quotechar='"'
     )
     
-    # Handle multi-level columns
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.droplevel(1)
-    
-    return df
+    return output.getvalue()
 
-@st.cache_data
-def prepare_features(df, ma_min=5, ma_max=21):
-    """Prepare features for clustering"""
-    df['ret_1d'] = df['Close'].pct_change()
+def aplicar_filtro(df: pd.DataFrame, termo_busca: str) -> pd.DataFrame:
+    """
+    Aplica filtro de busca em todas as colunas
     
-    # Create moving averages
-    for window in range(ma_min, ma_max + 1):
-        df[f'ret_ma{window}'] = df['ret_1d'].rolling(window).mean()
+    Args:
+        df: DataFrame original
+        termo_busca: Termo a ser buscado
+        
+    Returns:
+        DataFrame filtrado
+    """
+    if not termo_busca:
+        return df
     
-    df = df.dropna()
-    return df
+    # Criar máscara de busca em todas as colunas
+    mask = df.astype(str).apply(
+        lambda x: x.str.contains(termo_busca, case=False, na=False)
+    ).any(axis=1)
+    
+    return df[mask]
 
-def run_clustering_analysis(df_train, df_test, feature_cols, n_clusters=3, smoothing_window=5):
-    """Run the complete clustering analysis"""
-    
-    # Standardization
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(df_train[feature_cols])
-    X_test_scaled = scaler.transform(df_test[feature_cols])
-    
-    # Train K-Means
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    kmeans.fit(X_train_scaled)
-    
-    # Get centers in original scale
-    centers_original = scaler.inverse_transform(kmeans.cluster_centers_)
-    
-    # Order clusters by momentum
-    cluster_means = centers_original.mean(axis=1)
-    sorted_indices = np.argsort(cluster_means)
-    regime_mapping = {sorted_indices[i]: i for i in range(n_clusters)}
-    
-    # Predict regimes
-    df_test['regime_original'] = kmeans.predict(X_test_scaled)
-    df_test['regime'] = df_test['regime_original'].map(regime_mapping)
-    
-    # Smooth regimes (no look-ahead bias)
-    df_test['regime_suave'] = (
-        df_test['regime']
-        .rolling(smoothing_window, min_periods=1)
-        .apply(lambda x: x.mode()[0] if len(x.mode()) > 0 else x.iloc[-1])
-    )
-    
-    # Run without standardization for comparison
-    kmeans_no_scale = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    kmeans_no_scale.fit(df_train[feature_cols])
-    
-    centers_no_scale = kmeans_no_scale.cluster_centers_
-    means_no_scale = centers_no_scale.mean(axis=1)
-    sorted_no_scale = np.argsort(means_no_scale)
-    mapping_no_scale = {sorted_no_scale[i]: i for i in range(n_clusters)}
-    
-    df_test['regime_sem_pad'] = kmeans_no_scale.predict(df_test[feature_cols])
-    df_test['regime_sem_pad'] = df_test['regime_sem_pad'].map(mapping_no_scale)
-    
-    return df_test, scaler, kmeans, centers_original, regime_mapping
-
-# Main execution
-if run_analysis:
-    with st.spinner("Loading data and running analysis..."):
-        # Load data
-        df_full = load_data(
-            "ITUB4.SA",
-            start=start_date_train.strftime('%Y-%m-%d'),
-            end=end_date
-        )
-        
-        # Prepare features
-        df_full = prepare_features(df_full, ma_min, ma_max)
-        
-        # Split data
-        df_train = df_full[
-            (df_full.index >= pd.Timestamp(start_date_train)) & 
-            (df_full.index <= pd.Timestamp(end_date_train))
-        ].copy()
-        
-        df_test = df_full[
-            (df_full.index >= pd.Timestamp(start_date_test)) & 
-            (df_full.index <= pd.Timestamp(end_date))
-        ].copy()
-        
-        # Feature columns
-        feature_cols = [f'ret_ma{window}' for window in range(ma_min, ma_max + 1)]
-        
-        # Run clustering
-        df_test, scaler, kmeans, centers_original, regime_mapping = run_clustering_analysis(
-            df_train, df_test, feature_cols, n_clusters, smoothing_window
-        )
-        
-        # Display results
-        st.success("✅ Analysis completed successfully!")
-        
-        # Create tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📈 Price Chart", 
-            "📊 Regime Analysis", 
-            "🔬 Technical Details",
-            "⚠️ Scale Sensitivity"
-        ])
-        
-        with tab1:
-            st.subheader("ITUB4.SA Price with Market Regimes")
-            
-            # Color mapping
-            colors = {0: 'red', 1: 'yellow', 2: 'green'}
-            if n_clusters > 3:
-                # Add more colors if needed
-                extra_colors = ['orange', 'purple', 'cyan', 'magenta']
-                for i in range(3, n_clusters):
-                    colors[i] = extra_colors[i-3]
-            
-            regime_names = {
-                0: 'Low Momentum (Bear)',
-                1: 'Medium Momentum (Neutral)',
-                2: 'High Momentum (Bull)'
-            }
-            
-            # Create plot
-            fig = go.Figure()
-            
-            # Colored line segments
-            for i in range(len(df_test) - 1):
-                regime_atual = int(df_test['regime_suave'].iloc[i])
-                cor = colors.get(regime_atual, 'gray')
-                
-                fig.add_trace(go.Scatter(
-                    x=[df_test.index[i], df_test.index[i+1]],
-                    y=[df_test['Close'].iloc[i], df_test['Close'].iloc[i+1]],
-                    mode='lines',
-                    line=dict(color=cor, width=2),
-                    showlegend=False,
-                    hoverinfo='none'
-                ))
-            
-            # Markers
-            fig.add_trace(go.Scatter(
-                x=df_test.index,
-                y=df_test['Close'],
-                mode='markers',
-                marker=dict(
-                    size=3,
-                    color=[colors.get(int(r), 'gray') for r in df_test['regime_suave']],
-                    showscale=False
-                ),
-                text=[f"Date: {d.strftime('%Y-%m-%d')}<br>Price: R${p:.2f}<br>"
-                      f"Regime: {regime_names.get(int(r), 'Unknown')}<br>"
-                      f"MA5: {ma5:.4%}<br>MA10: {ma10:.4%}<br>MA21: {ma21:.4%}" 
-                      for d, p, r, ma5, ma10, ma21 in zip(
-                          df_test.index, df_test['Close'], df_test['regime_suave'],
-                          df_test['ret_ma5'], df_test['ret_ma10'], df_test['ret_ma21']
-                      )],
-                hoverinfo='text',
-                showlegend=False
-            ))
-            
-            # Legend
-            for regime in range(n_clusters):
-                regime_name = f"Regime {regime}"
-                if regime in regime_names:
-                    regime_name = regime_names[regime]
-                fig.add_trace(go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode='lines',
-                    line=dict(color=colors.get(regime, 'gray'), width=3),
-                    name=regime_name,
-                    showlegend=True
-                ))
-            
-            fig.update_layout(
-                title=f"ITUB4.SA - Market Regimes (K-Means with {n_clusters} clusters)",
-                xaxis_title="Date",
-                yaxis_title="Price (R$)",
-                template="plotly_dark",
-                hovermode='x unified',
-                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                height=600
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Regime distribution pie chart
-            st.subheader("Regime Distribution")
-            regime_counts = df_test['regime_suave'].value_counts().sort_index()
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                fig_pie = go.Figure(data=[go.Pie(
-                    labels=[f"Regime {i}" for i in regime_counts.index],
-                    values=regime_counts.values,
-                    marker_colors=[colors.get(i, 'gray') for i in regime_counts.index],
-                    hole=.3
-                )])
-                fig_pie.update_layout(title="Regime Distribution in Test Period")
-                st.plotly_chart(fig_pie, use_container_width=True)
-            
-            with col2:
-                st.dataframe(
-                    pd.DataFrame({
-                        'Regime': regime_counts.index,
-                        'Days': regime_counts.values,
-                        'Percentage': f"{regime_counts.values/len(df_test)*100:.1f}%"
-                    }),
-                    use_container_width=True
-                )
-        
-        with tab2:
-            st.subheader("Regime Performance Analysis")
-            
-            # Performance metrics by regime
-            regime_metrics = []
-            for regime in range(n_clusters):
-                df_reg = df_test[df_test['regime_suave'] == regime]
-                if len(df_reg) > 0:
-                    regime_metrics.append({
-                        'Regime': regime,
-                        'Days': len(df_reg),
-                        'Percentage': f"{len(df_reg)/len(df_test)*100:.1f}%",
-                        'Avg Price': f"R${df_reg['Close'].mean():.2f}",
-                        'Avg Daily Return': f"{df_reg['ret_1d'].mean()*100:.4f}%",
-                        'Volatility': f"{df_reg['ret_1d'].std()*100:.4f}%",
-                        'Sharpe (approx)': f"{df_reg['ret_1d'].mean()/df_reg['ret_1d'].std()*np.sqrt(252):.2f}"
-                    })
-            
-            if regime_metrics:
-                st.dataframe(pd.DataFrame(regime_metrics), use_container_width=True)
-            
-            # Moving average profiles
-            st.subheader("Moving Average Profiles by Regime")
-            
-            ma_profile_data = []
-            for regime in range(n_clusters):
-                df_reg = df_test[df_test['regime_suave'] == regime]
-                if len(df_reg) > 0:
-                    row = {'Regime': regime}
-                    for window in [5, 10, 15, 21] + [ma_max] if ma_max not in [5,10,15,21] else []:
-                        if window <= ma_max:
-                            row[f'MA{window}'] = f"{df_reg[f'ret_ma{window}'].mean()*100:.4f}%"
-                    ma_profile_data.append(row)
-            
-            if ma_profile_data:
-                st.dataframe(pd.DataFrame(ma_profile_data), use_container_width=True)
-            
-            # Transition matrix
-            st.subheader("Regime Transition Matrix")
-            transitions = pd.crosstab(
-                df_test['regime_suave'].shift(),
-                df_test['regime_suave'],
-                normalize='index'
-            ) * 100
-            
-            st.dataframe(transitions.round(2), use_container_width=True)
-            st.caption("Shows probability (%) of transitioning from one regime to another")
-        
-        with tab3:
-            st.subheader("Technical Details")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### Model Configuration")
-                st.markdown(f"""
-                - **Ticker:** ITUB4.SA
-                - **Training Period:** {start_date_train} to {end_date_train}
-                - **Test Period:** {start_date_test} to {end_date}
-                - **Number of Clusters:** {n_clusters}
-                - **Smoothing Window:** {smoothing_window} days
-                - **MA Features:** {ma_min} to {ma_max} days ({len(feature_cols)} features)
-                - **Random Seed:** 42
-                """)
-            
-            with col2:
-                st.markdown("### Cluster Centers (Original Scale)")
-                centers_df = pd.DataFrame(
-                    centers_original,
-                    columns=[f'MA{w}' for w in range(ma_min, ma_max + 1)],
-                    index=[f'Cluster {i}' for i in range(n_clusters)]
-                )
-                st.dataframe(centers_df.style.format("{:.6f}"))
-            
-            st.markdown("### Feature Importance")
-            st.markdown("The model uses moving averages of daily returns as features:")
-            
-            # Show feature correlations
-            correlations = df_train[feature_cols].corr().iloc[0, :].sort_values(ascending=False)
-            st.bar_chart(correlations)
-            
-            st.info(f"""
-            **Interpretation:**
-            - Lower cluster numbers = Lower momentum (Bearish regime)
-            - Higher cluster numbers = Higher momentum (Bullish regime)
-            - The model identifies {n_clusters} distinct market states based on return patterns
-            - Smoothing reduces noise but maintains regime characteristics
-            """)
-        
-        with tab4:
-            st.subheader("Scale Sensitivity Analysis")
-            
-            # Calculate concordance
-            concordance = (df_test['regime'] == df_test['regime_sem_pad']).mean() * 100
-            
-            st.metric(
-                "Concordance between Standardized and Non-standardized",
-                f"{concordance:.1f}%",
-                delta="High is good" if concordance > 70 else "Low indicates scale sensitivity"
-            )
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### With Standardization")
-                st.dataframe(
-                    df_test['regime'].value_counts().sort_index().to_frame(),
-                    use_container_width=True
-                )
-            
-            with col2:
-                st.markdown("### Without Standardization")
-                st.dataframe(
-                    df_test['regime_sem_pad'].value_counts().sort_index().to_frame(),
-                    use_container_width=True
-                )
-            
-            if concordance < 70:
-                st.warning("⚠️ **Low Concordance Detected!**")
-                st.markdown("""
-                The low agreement between standardized and non-standardized methods indicates:
-                - **High sensitivity to feature scaling**
-                - **Standardization is essential** for this dataset
-                - Without standardization, features with larger scales dominate the clustering
-                
-                **Recommendation:** Always use standardization for this type of analysis.
-                """)
-                
-                # Show days with disagreement
-                disagreement = df_test[df_test['regime'] != df_test['regime_sem_pad']]
-                st.markdown(f"**Days with disagreement:** {len(disagreement)} ({len(disagreement)/len(df_test)*100:.1f}%)")
-                st.markdown(f"**Average return on disagreement days:** {disagreement['ret_1d'].mean()*100:.4f}%")
-            else:
-                st.success("✅ **Good Concordance!**")
-                st.markdown("""
-                The high agreement between methods suggests:
-                - **Robust feature relationships**
-                - **Scale effects are minimal**
-                - **Model is stable and reliable**
-                """)
-        
-        # Download button for results
-        st.sidebar.markdown("---")
-        csv = df_test[['Close', 'regime', 'regime_suave', 'ret_1d'] + feature_cols].round(6).to_csv()
-        st.sidebar.download_button(
-            label="📥 Download Results (CSV)",
-            data=csv,
-            file_name=f"market_regimes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-
-else:
-    # Show welcome message and instructions
-    st.info("👈 **Configure parameters in the sidebar and click 'Run Analysis' to start**")
-    
-    st.markdown("""
-    ### How it works:
-    
-    1. **Data Loading**: Downloads ITUB4.SA stock data from Yahoo Finance
-    2. **Feature Engineering**: Creates moving averages of daily returns
-    3. **Clustering**: Uses K-Means to identify market regimes
-    4. **Analysis**: Visualizes regimes and calculates performance metrics
-    
-    ### Key Features:
-    - **No look-ahead bias**: Rolling windows use only past data
-    - **Scale sensitivity analysis**: Compares standardized vs non-standardized results
-    - **Interactive visualizations**: Hover to see detailed information
-    - **Configurable parameters**: Adjust all analysis settings
-    
-    ### Market Regimes:
-    - **Low Momentum (Bear)**: Negative or low positive returns
-    - **Medium Momentum (Neutral)**: Moderate positive returns
-    - **High Momentum (Bull)**: Strong positive returns
-    
-    Adjust the parameters in the sidebar to customize the analysis!
-    """)
-    
-    # Example preview
+def main():
+    """
+    Função principal do aplicativo
+    """
+    # Título e descrição
+    st.title("📊 Sistema de Plano de Contas - TOTVS Protheus")
     st.markdown("---")
-    st.markdown("### Sample Output Preview")
-    st.image("https://via.placeholder.com/800x400?text=Interactive+Price+Chart+with+Regime+Colors", use_container_width=True)
+    
+    # Sidebar - Configurações
+    with st.sidebar:
+        st.header("⚙️ Configurações")
+        aplicar_regras = st.checkbox(
+            "Aplicar regras automáticas",
+            value=True,
+            help="Determinar automaticamente a classe da conta baseado no primeiro dígito"
+        )
+        
+        st.markdown("---")
+        st.header("📋 Regras de Negócio")
+        st.markdown("""
+        - **CT1_FILIAL**: Padrão '01'
+        - **CT1_NORMAL**: Padrão '1'
+        - **CT1_BLOQ**: Padrão '2'
+        - **CT1_CLASSE**: Determinado pelo 1º dígito da conta
+            - 1 → Ativo
+            - 2 → Passivo
+            - 3 → PL
+            - 4 → Receita
+            - 5 → Despesa
+            - 6 → Custo
+            - 7 → Resultado
+            - 8 → Compensação
+            - 9 → Contas de Controle
+        """)
+        
+        st.markdown("---")
+        st.header("📤 Exportação")
+        st.markdown("""
+        Formato do CSV:
+        - Separador: `;`
+        - Encoding: `latin1`
+        - Colunas fixas ordenadas
+        """)
+    
+    # Área principal - Upload
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        uploaded_file = st.file_uploader(
+            "📂 Selecione o arquivo Excel (.xlsx)",
+            type=['xlsx'],
+            help="Arquivo deve conter pelo menos as colunas: CT1_CONTA e CT1_DESC01"
+        )
+    
+    # Inicializar estados da sessão
+    if 'dados_transformados' not in st.session_state:
+        st.session_state.dados_transformados = None
+    if 'arquivo_carregado' not in st.session_state:
+        st.session_state.arquivo_carregado = None
+    
+    # Processar arquivo - CORRIGIDO: melhor controle de estado
+    if uploaded_file:
+        # Verificar se é um novo arquivo
+        if st.session_state.arquivo_carregado != uploaded_file.name:
+            st.session_state.arquivo_carregado = uploaded_file.name
+            
+            # Carregar arquivo
+            with st.spinner("Carregando arquivo..."):
+                df_original = carregar_arquivo(uploaded_file)
+            
+            if df_original is not None:
+                # Validar colunas
+                valido, mensagem = validar_colunas(df_original)
+                
+                if valido:
+                    st.success(mensagem)
+                    
+                    # Transformar dados
+                    with st.spinner("Transformando dados para layout Protheus..."):
+                        df_transformado = transformar_para_protheus(
+                            df_original, 
+                            aplicar_regras_auto=aplicar_regras
+                        )
+                        st.session_state.dados_transformados = df_transformado
+                else:
+                    st.error(mensagem)
+                    st.info("Por favor, verifique se o arquivo contém as colunas necessárias.")
+                    st.session_state.dados_transformados = None
+            else:
+                st.error("❌ Não foi possível carregar o arquivo. Verifique o formato e tente novamente.")
+                st.session_state.dados_transformados = None
+        
+        # Exibir dados se já foram carregados
+        if st.session_state.dados_transformados is not None:
+            df_transformado = st.session_state.dados_transformados
+            
+            # Tabs para visualização
+            tab1, tab2, tab3 = st.tabs([
+                "✏️ Edição de Dados", 
+                "👁️ Preview do Layout Final", 
+                "📊 Estatísticas"
+            ])
+            
+            with tab1:
+                st.subheader("Dados Editáveis")
+                st.caption(f"Total de registros: {len(df_transformado)}")
+                
+                # Campo de busca
+                busca = st.text_input("🔍 Buscar registros", placeholder="Digite para filtrar...")
+                
+                # Aplicar filtro
+                df_filtrado = aplicar_filtro(df_transformado, busca)
+                
+                if len(df_filtrado) < len(df_transformado):
+                    st.info(f"Mostrando {len(df_filtrado)} de {len(df_transformado)} registros")
+                
+                # Editor de dados - CORRIGIDO: melhor gestão de edições
+                edited_df = st.data_editor(
+                    df_filtrado,
+                    use_container_width=True,
+                    height=400,
+                    num_rows="dynamic",
+                    column_config={
+                        "CT1_CONTA": st.column_config.TextColumn("Conta", required=True),
+                        "CT1_DESC01": st.column_config.TextColumn("Descrição", required=True),
+                        "CT1_CLASSE": st.column_config.SelectColumn(
+                            "Classe",
+                            options=['1', '2', '3', '4', '5', '6', '7', '8', '9'],
+                            help="Classe da conta"
+                        ),
+                        "CT1_FILIAL": st.column_config.TextColumn("Filial"),
+                        "CT1_NORMAL": st.column_config.SelectColumn(
+                            "Normal",
+                            options=['1', '2'],
+                            help="1=Débito, 2=Crédito"
+                        ),
+                        "CT1_BLOQ": st.column_config.SelectColumn(
+                            "Bloqueada",
+                            options=['1', '2'],
+                            help="1=Sim, 2=Não"
+                        ),
+                    },
+                    key="data_editor"
+                )
+                
+                # Atualizar dados transformados - CORRIGIDO: lógica simplificada
+                if not edited_df.equals(df_filtrado):
+                    if busca:
+                        # Com filtro: atualizar apenas os registros visíveis
+                        st.session_state.dados_transformados = df_transformado.copy()
+                        for idx in edited_df.index:
+                            if idx < len(st.session_state.dados_transformados):
+                                st.session_state.dados_transformados.iloc[idx] = edited_df.iloc[idx]
+                    else:
+                        # Sem filtro: substituir todos os dados
+                        st.session_state.dados_transformados = edited_df.copy()
+                
+                # Botões de ação
+                col_btn1, col_btn2 = st.columns(2)
+                
+                with col_btn1:
+                    if st.button("🔄 Reaplicar Regras de Classe"):
+                        with st.spinner("Reaplicando regras..."):
+                            st.session_state.dados_transformados = transformar_para_protheus(
+                                st.session_state.dados_transformados,
+                                aplicar_regras_auto=True
+                            )
+                            st.success("✅ Regras reaplicadas com sucesso!")
+                            st.rerun()
+                
+                with col_btn2:
+                    if st.button("🗑️ Resetar Dados"):
+                        st.session_state.arquivo_carregado = None
+                        st.session_state.dados_transformados = None
+                        st.success("✅ Dados resetados!")
+                        st.rerun()
+            
+            with tab2:
+                st.subheader("Preview do Layout Final")
+                st.caption("Layout exato que será exportado para o Protheus")
+                
+                # Mostrar preview
+                st.dataframe(
+                    st.session_state.dados_transformados,
+                    use_container_width=True,
+                    height=400
+                )
+                
+                # Informações do layout
+                st.markdown("**Ordem das colunas no CSV final:**")
+                colunas_info = ", ".join(LAYOUT_FINAL)
+                st.code(colunas_info, language="text")
+            
+            with tab3:
+                st.subheader("Estatísticas dos Dados")
+                
+                col1_stat, col2_stat, col3_stat = st.columns(3)
+                
+                with col1_stat:
+                    st.metric("Total de Registros", len(st.session_state.dados_transformados))
+                
+                with col2_stat:
+                    # Contar contas por classe - CORRIGIDO: tratamento de valores vazios
+                    df_temp = st.session_state.dados_transformados.copy()
+                    df_temp['CT1_CLASSE'] = df_temp['CT1_CLASSE'].replace('', pd.NA)
+                    classes = df_temp['CT1_CLASSE'].value_counts(dropna=True)
+                    st.metric("Classes Distintas", len(classes))
+                
+                with col3_stat:
+                    # Verificar registros com classe vazia - CORRIGIDO
+                    vazios = (st.session_state.dados_transformados['CT1_CLASSE'] == '').sum()
+                    st.metric("Contas sem Classe", vazios)
+                
+                # Distribuição de classes
+                if len(classes) > 0:
+                    st.subheader("Distribuição por Classe")
+                    # Criar DataFrame com nomes das classes
+                    nomes_classes = {
+                        '1': 'Ativo',
+                        '2': 'Passivo',
+                        '3': 'PL',
+                        '4': 'Receita',
+                        '5': 'Despesa',
+                        '6': 'Custo',
+                        '7': 'Resultado',
+                        '8': 'Compensação',
+                        '9': 'Contas de Controle'
+                    }
+                    df_classes = pd.DataFrame({
+                        'Classe': [f"{k} - {nomes_classes.get(k, 'Outros')}" for k in classes.index],
+                        'Quantidade': classes.values
+                    })
+                    st.bar_chart(df_classes.set_index('Classe'))
+                
+                # Amostra de dados
+                st.subheader("Amostra de Dados (10 primeiros registros)")
+                st.dataframe(
+                    st.session_state.dados_transformados.head(10),
+                    use_container_width=True
+                )
+            
+            # Botão de exportação
+            st.markdown("---")
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+            
+            with col_btn2:
+                if st.button("📥 Gerar CSV para Protheus", type="primary", use_container_width=True):
+                    try:
+                        # Gerar CSV
+                        csv_data = gerar_csv(st.session_state.dados_transformados)
+                        
+                        # Criar arquivo para download
+                        b = BytesIO()
+                        b.write(csv_data.encode('latin1'))
+                        b.seek(0)
+                        
+                        # Botão de download
+                        st.download_button(
+                            label="✅ Clique aqui para baixar o arquivo",
+                            data=b,
+                            file_name="plano_contas_protheus.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key="download_csv"
+                        )
+                        
+                        st.success("✅ CSV gerado com sucesso! Pronto para importação no Protheus.")
+                    except Exception as e:
+                        st.error(f"❌ Erro ao gerar CSV: {str(e)}")
+    
+    else:
+        # Exibir instruções quando nenhum arquivo foi carregado
+        st.info("👈 Faça upload de um arquivo Excel para começar")
+        
+        # Exemplo de layout esperado
+        with st.expander("📋 Ver exemplo de layout esperado"):
+            st.markdown("""
+            ### Colunas obrigatórias:
+            - **CT1_CONTA**: Número da conta contábil
+            - **CT1_DESC01**: Descrição da conta
+            
+            ### Colunas opcionais (com valores padrão):
+            - CT1_FILIAL (padrão: '01')
+            - CT1_DESC02 (padrão: vazio)
+            - CT1_DESC03 (padrão: vazio)
+            - CT1_CLASSE (pode ser automático)
+            - CT1_NORMAL (padrão: '1')
+            - CT1_CTASUP (padrão: vazio)
+            - CT1_BLOQ (padrão: '2')
+            
+            ### Exemplo de arquivo válido:
+            """)
+            
+            # Criar exemplo de DataFrame
+            df_exemplo = pd.DataFrame({
+                'CT1_CONTA': ['1.01.001', '1.01.002', '2.01.001', '4.01.001'],
+                'CT1_DESC01': ['Caixa', 'Bancos', 'Fornecedores', 'Vendas de Produtos'],
+                'CT1_CLASSE': ['1', '1', '2', '4']
+            })
+            
+            st.dataframe(df_exemplo, use_container_width=True)
+            
+            st.markdown("""
+            💡 **Dica**: Você pode criar este arquivo no Excel com as colunas acima e salvá-lo como .xlsx
+            """)
+
+if __name__ == "__main__":
+    main()
