@@ -1,6 +1,5 @@
 import streamlit as st
 import re
-import pandas as pd
 
 def extrair_tag(texto, tag):
     padrao = fr"<{tag}>(.*?)</{tag}>"
@@ -24,18 +23,25 @@ if arquivo:
     # =========================
     emit = extrair_bloco(xml, "emit")
 
-    dados_emit = {
-        "xFant": extrair_tag(emit, "xFant"),
-        "CNPJ": extrair_tag(emit, "CNPJ"),
-        "UF": extrair_tag(emit, "UF"),
-        "IE": extrair_tag(emit, "IE"),
-    }
+    xFant = extrair_tag(emit, "xFant")
+    CNPJ = extrair_tag(emit, "CNPJ")
+    UF = extrair_tag(emit, "UF")
+    IE = extrair_tag(emit, "IE")
 
-    df_emit = pd.DataFrame([dados_emit])  # 👈 uma linha
+    st.subheader("📄 Emitente")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("xFant", xFant)
+    col2.metric("CNPJ", CNPJ)
+    col3.metric("UF", UF)
+    col4.metric("IE", IE)
 
     # =========================
     # 🔹 IDE
     # =========================
+    st.subheader("🧾 Identificação")
+
     campos_ide = [
         "tpNF", "mod", "indPres", "tpImp", "nNF",
         "cMunFG", "procEmi", "finNFe", "dhEmi",
@@ -43,15 +49,11 @@ if arquivo:
         "serie", "natOp"
     ]
 
-    dados_ide = {tag: extrair_tag(xml, tag) for tag in campos_ide}
+    valores = [extrair_tag(xml, tag) for tag in campos_ide]
 
-    df_ide = pd.DataFrame([dados_ide])  # 👈 horizontal
-
-    # =========================
-    # 🔹 EXIBIÇÃO
-    # =========================
-    st.subheader("📄 Emitente")
-    st.dataframe(df_emit, use_container_width=True)
-
-    st.subheader("🧾 Identificação da Nota")
-    st.dataframe(df_ide, use_container_width=True)
+    # quebra em linhas de 4 colunas
+    for i in range(0, len(campos_ide), 4):
+        cols = st.columns(4)
+        for j in range(4):
+            if i + j < len(campos_ide):
+                cols[j].metric(campos_ide[i + j], valores[i + j])
