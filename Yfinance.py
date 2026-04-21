@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
 
-# Page configuration
+# Page configuration TEste  2
 st.set_page_config(
     page_title="Market Regime Analysis - ITUB4.SA",
     page_icon="📈",
