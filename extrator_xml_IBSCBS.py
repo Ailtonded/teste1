@@ -37,10 +37,37 @@ def traduz_indIEDest(valor):
     }
     return mapa.get(valor, valor)
 
+def extrair_icms(imposto):
+    icms = extrair_tag(imposto, "ICMS")
+
+    tipos_icms = [
+        "ICMS00","ICMS10","ICMS20","ICMS30",
+        "ICMS40","ICMS51","ICMS60","ICMS70","ICMS90"
+    ]
+
+    for tipo in tipos_icms:
+        bloco = extrair_tag(icms, tipo)
+        if bloco:
+            dados = {}
+            dados["ICMS_Tipo"] = tipo
+
+            campos = [
+                "orig","CST","pST","pRedBCEfet","vBCEfet",
+                "vBCSTRet","vICMSEfet","vICMSSubstituto",
+                "vICMSSTRet","pICMSEfet","vBC","pICMS","vICMS"
+            ]
+
+            for campo in campos:
+                dados[f"{tipo}_{campo}"] = extrair_tag(bloco, campo)
+
+            return dados
+
+    return {}
+
 # =========================
 # 🔹 INTERFACE
 # =========================
-st.title("📦 Leitor de XML - Itens Completo")
+st.title("📦 Leitor de XML - Completo com ICMS")
 
 arquivo = st.file_uploader("Selecione o XML", type=["xml"])
 
@@ -84,7 +111,7 @@ if arquivo:
     }
 
     # =========================
-    # 🔹 ITENS (DET)
+    # 🔹 ITENS
     # =========================
     dets = extrair_blocos(xml, "det")
 
@@ -105,16 +132,14 @@ if arquivo:
         # 🔹 ITEM
         linha["nItem"] = extrair_tag(det, "nItem")
 
-        # =========================
         # 🔹 PROD
-        # =========================
         linha["cEAN"] = extrair_tag(prod, "cEAN")
         linha["cProd"] = extrair_tag(prod, "cProd")
         linha["xProd"] = extrair_tag(prod, "xProd")
         linha["NCM"] = extrair_tag(prod, "NCM")
         linha["CFOP"] = extrair_tag(prod, "CFOP")
         linha["CEST"] = extrair_tag(prod, "CEST")
-        linha["cBenef"] = extrair_tag(prod, "cBenef")  # 👈 incluído
+        linha["cBenef"] = extrair_tag(prod, "cBenef")
         linha["qCom"] = extrair_tag(prod, "qCom")
         linha["vUnCom"] = extrair_tag(prod, "vUnCom")
         linha["vProd"] = extrair_tag(prod, "vProd")
@@ -123,33 +148,28 @@ if arquivo:
         linha["qTrib"] = extrair_tag(prod, "qTrib")
         linha["vUnTrib"] = extrair_tag(prod, "vUnTrib")
 
-        # =========================
-        # 🔹 IBSCBS COMPLETO
-        # =========================
+        # 🔹 IBSCBS
         linha["IBSCBS_CST"] = extrair_tag(ibscbs, "CST")
         linha["IBSCBS_cClassTrib"] = extrair_tag(ibscbs, "cClassTrib")
-
-        # Base
         linha["IBSCBS_vBC"] = extrair_tag(ibscbs, "vBC")
         linha["IBSCBS_vIBS"] = extrair_tag(ibscbs, "vIBS")
-
-        # CBS
         linha["IBSCBS_pCBS"] = extrair_tag(ibscbs, "pCBS")
         linha["IBSCBS_vCBS"] = extrair_tag(ibscbs, "vCBS")
 
         gCBS = extrair_tag(ibscbs, "gCBS")
         linha["IBSCBS_vDevTrib_CBS"] = extrair_tag(gCBS, "vDevTrib")
 
-        # IBS UF
         linha["IBSCBS_pIBSUF"] = extrair_tag(ibscbs, "pIBSUF")
         linha["IBSCBS_vIBSUF"] = extrair_tag(ibscbs, "vIBSUF")
 
         gIBSUF = extrair_tag(ibscbs, "gIBSUF")
         linha["IBSCBS_vDevTrib_IBSUF"] = extrair_tag(gIBSUF, "vDevTrib")
 
-        # IBS Municipal
         linha["IBSCBS_pIBSMun"] = extrair_tag(ibscbs, "pIBSMun")
         linha["IBSCBS_vIBSMun"] = extrair_tag(ibscbs, "vIBSMun")
+
+        # 🔹 ICMS DINÂMICO
+        linha.update(extrair_icms(imposto))
 
         linhas.append(linha)
 
