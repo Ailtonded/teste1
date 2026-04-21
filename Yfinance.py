@@ -1,6 +1,6 @@
 """
 Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus
-Versão: 5.1 - Ordem exata dos campos CT1
+Versão: 6.1 - Corrigido CT1_NTSPED
 """
 
 import streamlit as st
@@ -11,7 +11,7 @@ from datetime import datetime
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(page_title="Plano de Contas Protheus", page_icon="📊", layout="wide")
 
-# ORDEM EXATA DOS CAMPOS CT1 (conforme exemplo que funciona)
+# ORDEM EXATA DOS CAMPOS CT1
 CAMPOS_CT1 = [
     'CT1_FILIAL', 'CT1_CONTA', 'CT1_DESC01', 'CT1_DESC02', 'CT1_DESC03',
     'CT1_DESC04', 'CT1_DESC05', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_RES',
@@ -49,15 +49,14 @@ TAMANHOS = {
     'CT1_LALUR': 1, 'CT1_RATEIO': 1, 'CT1_ESTOUR': 1, 'CT1_CODIMP': 20,
     'CT1_AJ_INF': 1, 'CT1_DIOPS': 1, 'CT1_NATCTA': 2, 'CT1_ACATIV': 1,
     'CT1_ATOBRG': 1, 'CT1_ACET05': 1, 'CT1_05OBRG': 1, 'CT1_INDNAT': 1,
-    'CT1_SPEDST': 2, 'CT1_NTSPED': 1, 'CT1_ACAT01': 1, 'CT1_AT01OB': 1,
+    'CT1_SPEDST': 2, 'CT1_NTSPED': 2, 'CT1_ACAT01': 1, 'CT1_AT01OB': 1,
     'CT1_ACAT02': 1, 'CT1_AT02OB': 1, 'CT1_ACAT03': 1, 'CT1_AT03OB': 1,
     'CT1_ACAT04': 1, 'CT1_AT04OB': 1, 'CT1_TPO01': 2, 'CT1_TPO02': 2,
     'CT1_TPO03': 2, 'CT1_TPO04': 2, 'CT1_INTP': 1, 'CT1_PVARC': 2, 'CT1_CTAORC': 1
 }
 
-OPCOES_CLASSE = {'1': 'Sintética', '2': 'Analítica'}
-OPCOES_NORMAL = {'1': 'Devedora', '2': 'Credora'}
-OPCOES_BLOQ = {'1': 'Sim', '2': 'Não'}
+# Valores válidos para CT1_NTSPED
+NTSPED_VALIDOS = ['01', '02', '03', '04', '05', '09']
 
 # ==================== FUNÇÕES ====================
 
@@ -88,7 +87,7 @@ def gerar_csv(df):
     """Gera CSV no formato exato do Protheus"""
     linhas = ["0;CT1;CVD"]
     
-    # Linha 1: cabeçalho com todos os campos na ordem correta
+    # Linha 1: cabeçalho com todos os campos
     linhas.append("1;" + ";".join(CAMPOS_CT1))
     
     # Linhas de dados
@@ -104,7 +103,7 @@ def gerar_csv(df):
     
     return "\n".join(linhas)
 
-def transformar(df, config):
+def transformar(df):
     """Transforma dados do Excel para o layout Protheus"""
     df_out = pd.DataFrame(columns=CAMPOS_CT1)
     erros = []
@@ -135,20 +134,19 @@ def transformar(df, config):
         if not linha.get('CT1_DESC01'):
             erros.append(f"Linha {idx+2}: CT1_DESC01 vazio")
         
-        # Classe automática
-        if config.get('aplicar_regras_auto', True) and not linha.get('CT1_CLASSE'):
+        # Valida CT1_NTSPED (se veio da planilha)
+        if linha.get('CT1_NTSPED'):
+            ntsped = linha['CT1_NTSPED']
+            if ntsped not in NTSPED_VALIDOS:
+                erros.append(f"Linha {idx+2}: CT1_NTSPED='{ntsped}' inválido. Use: 01,02,03,04,05,09")
+                linha['CT1_NTSPED'] = ''  # Limpa o valor inválido
+        
+        # Classe automática baseada nos níveis da conta
+        if not linha.get('CT1_CLASSE'):
             niveis = linha.get('CT1_CONTA', '').count('.')
             linha['CT1_CLASSE'] = '1' if niveis <= 1 else '2'
         
-        # Valores padrão da configuração
-        if config.get('filial_padrao') and not linha.get('CT1_FILIAL'):
-            linha['CT1_FILIAL'] = config['filial_padrao']
-        if config.get('normal_padrao') and not linha.get('CT1_NORMAL'):
-            linha['CT1_NORMAL'] = config['normal_padrao']
-        if config.get('bloq_padrao') and not linha.get('CT1_BLOQ'):
-            linha['CT1_BLOQ'] = config['bloq_padrao']
-        
-        # Valores padrão obrigatórios
+        # Valores padrão obrigatórios (apenas para campos que não vieram da planilha)
         if not linha.get('CT1_DC'):
             linha['CT1_DC'] = '7'
         if not linha.get('CT1_DTEXIS'):
@@ -159,6 +157,12 @@ def transformar(df, config):
             linha['CT1_ACCUST'] = '1'
         if not linha.get('CT1_ACCLVL'):
             linha['CT1_ACCLVL'] = '1'
+        if not linha.get('CT1_BLOQ'):
+            linha['CT1_BLOQ'] = '2'
+        if not linha.get('CT1_NORMAL'):
+            linha['CT1_NORMAL'] = '1'
+        
+        # NÃO preenche CT1_NTSPED automaticamente (deixa em branco)
         
         df_out.loc[len(df_out)] = linha
     
@@ -179,58 +183,51 @@ def carregar_arquivo(arquivo):
 
 def main():
     st.title("📊 Plano de Contas - TOTVS Protheus")
-    st.caption(f"Ordem correta dos {len(CAMPOS_CT1)} campos CT1")
+    st.caption(f"Total de campos: {len(CAMPOS_CT1)}")
     
-    with st.sidebar:
-        st.header("⚙️ Configurações")
-        filial = st.text_input("Filial Padrão", max_chars=2, placeholder="Ex: 01")
-        auto_classe = st.checkbox("Determinar classe automaticamente", value=True)
-        normal = st.selectbox("Natureza padrão", ['1', '2'], format_func=lambda x: OPCOES_NORMAL[x])
-        bloq = st.selectbox("Bloqueio padrão", ['2', '1'], format_func=lambda x: OPCOES_BLOQ[x])
-    
-    config = {
-        'filial_padrao': filial,
-        'aplicar_regras_auto': auto_classe,
-        'normal_padrao': normal,
-        'bloq_padrao': bloq
-    }
-    
-    arquivo = st.file_uploader("📂 Arquivo Excel", type=['xlsx'])
+    arquivo = st.file_uploader("📂 Selecione o arquivo Excel", type=['xlsx'])
     
     if arquivo:
         df = carregar_arquivo(arquivo)
         
         if df is not None:
             colunas_ct1 = [col for col in df.columns if col in CAMPOS_CT1]
-            st.info(f"📌 Campos encontrados: {', '.join(colunas_ct1) if colunas_ct1 else 'Nenhum'}")
+            st.info(f"📌 Campos CT1 encontrados: {', '.join(colunas_ct1) if colunas_ct1 else 'Nenhum'}")
             
             if 'CT1_CONTA' not in df.columns or 'CT1_DESC01' not in df.columns:
-                st.error("❌ Faltam colunas obrigatórias: CT1_CONTA e CT1_DESC01")
+                st.error("❌ Colunas obrigatórias faltando: CT1_CONTA e CT1_DESC01")
                 return
             
             with st.spinner("Processando..."):
-                df_protheus, erros = transformar(df, config)
+                df_protheus, erros = transformar(df)
             
             if erros:
-                for erro in erros[:5]:
+                st.warning(f"⚠️ {len(erros)} erro(s) encontrado(s):")
+                for erro in erros[:10]:
                     st.warning(erro)
-            
-            st.success(f"✅ {len(df_protheus)} registros")
+                if len(erros) > 10:
+                    st.warning(f"... e mais {len(erros)-10} erros")
+            else:
+                st.success(f"✅ {len(df_protheus)} registros processados sem erros")
             
             # Preview
-            st.dataframe(df_protheus[['CT1_CONTA', 'CT1_DESC01', 'CT1_CLASSE', 'CT1_NORMAL']].head(10))
+            colunas_preview = ['CT1_CONTA', 'CT1_DESC01', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_NTSPED']
+            colunas_existentes = [c for c in colunas_preview if c in df_protheus.columns]
+            st.dataframe(df_protheus[colunas_existentes].head(10), use_container_width=True)
             
-            if st.button("📥 Gerar CSV", type="primary"):
+            # Exportar
+            if st.button("📥 Gerar CSV para Protheus", type="primary", use_container_width=True):
                 csv_data = gerar_csv(df_protheus)
                 
-                with st.expander("Preview do CSV"):
+                with st.expander("🔍 Preview do CSV gerado"):
                     st.code('\n'.join(csv_data.split('\n')[:4]), language='text')
                 
                 st.download_button(
-                    "✅ Baixar",
+                    "✅ Baixar CSV",
                     data=BytesIO(csv_data.encode('latin1')),
                     file_name=f"plano_contas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    use_container_width=True
                 )
 
 if __name__ == "__main__":
