@@ -114,6 +114,7 @@ if arquivo:
         linha["NCM"] = extrair_tag(prod, "NCM")
         linha["CFOP"] = extrair_tag(prod, "CFOP")
         linha["CEST"] = extrair_tag(prod, "CEST")
+        linha["cBenef"] = extrair_tag(prod, "cBenef")  # 👈 incluído
         linha["qCom"] = extrair_tag(prod, "qCom")
         linha["vUnCom"] = extrair_tag(prod, "vUnCom")
         linha["vProd"] = extrair_tag(prod, "vProd")
