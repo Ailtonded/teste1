@@ -5,7 +5,7 @@ import pandas as pd
 # 🔹 Layout tela cheia
 st.set_page_config(layout="wide")
 
-# 🔹 CSS para quebra de texto nas células
+# 🔹 CSS para quebra de texto
 st.markdown("""
 <style>
 [data-testid="stDataFrame"] div {
@@ -30,6 +30,14 @@ def tratar_data(valor):
         return valor.split("T")[0]
     return valor
 
+def traduz_indIEDest(valor):
+    mapa = {
+        "1": "1 - Contribuinte ICMS",
+        "2": "2 - Isento de IE",
+        "9": "9 - Não Contribuinte"
+    }
+    return mapa.get(valor, valor)
+
 # 🔹 Interface
 st.title("📄 Leitor de XML (Tabela Única)")
 
@@ -44,19 +52,32 @@ if arquivo:
     emit = extrair_bloco(xml, "emit")
 
     dados_emit = {
-        "xFant": extrair_tag(emit, "xFant"),
-        "CNPJ": extrair_tag(emit, "CNPJ"),
-        "UF": extrair_tag(emit, "UF"),
-        "IE": extrair_tag(emit, "IE"),
+        "Emit_xFant": extrair_tag(emit, "xFant"),
+        "Emit_CNPJ": extrair_tag(emit, "CNPJ"),
+        "Emit_UF": extrair_tag(emit, "UF"),
+        "Emit_IE": extrair_tag(emit, "IE"),
+    }
+
+    # =========================
+    # 🔹 DEST
+    # =========================
+    dest = extrair_bloco(xml, "dest")
+
+    ind_ie = extrair_tag(dest, "indIEDest")
+
+    dados_dest = {
+        "Dest_Nome": extrair_tag(dest, "xNome"),
+        "Dest_CNPJ": extrair_tag(dest, "CNPJ"),
+        "Dest_UF": extrair_tag(dest, "UF"),
+        "Dest_IndIEDest": traduz_indIEDest(ind_ie),
     }
 
     # =========================
     # 🔹 IDE (FILTRADO)
     # =========================
     campos_ide = [
-        "tpNF", "mod", "nNF",
-        "finNFe", "dhEmi",
-        "dhSaiEnt",
+        "mod", "nNF",
+        "dhEmi", "dhSaiEnt",
         "serie", "natOp"
     ]
 
@@ -73,7 +94,7 @@ if arquivo:
     # =========================
     # 🔹 JUNTA TUDO
     # =========================
-    dados_final = {**dados_emit, **dados_ide}
+    dados_final = {**dados_emit, **dados_dest, **dados_ide}
 
     df = pd.DataFrame([dados_final])
 
