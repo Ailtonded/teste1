@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+import pandas as pd
 
 def extrair_tag(texto, tag):
     padrao = fr"<{tag}>(.*?)</{tag}>"
@@ -30,6 +31,8 @@ if arquivo:
         "IE": extrair_tag(emit, "IE"),
     }
 
+    df_emit = pd.DataFrame([dados_emit])  # 👈 uma linha
+
     # =========================
     # 🔹 IDE
     # =========================
@@ -42,11 +45,13 @@ if arquivo:
 
     dados_ide = {tag: extrair_tag(xml, tag) for tag in campos_ide}
 
+    df_ide = pd.DataFrame([dados_ide])  # 👈 horizontal
+
     # =========================
     # 🔹 EXIBIÇÃO
     # =========================
-    st.subheader("EMIT")
-    st.json(dados_emit)
+    st.subheader("📄 Emitente")
+    st.dataframe(df_emit, use_container_width=True)
 
-    st.subheader("IDE")
-    st.json(dados_ide)
+    st.subheader("🧾 Identificação da Nota")
+    st.dataframe(df_ide, use_container_width=True)
