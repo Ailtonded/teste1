@@ -47,7 +47,7 @@ if arquivo:
     xml = arquivo.read().decode("utf-8", errors="ignore")
 
     # =========================
-    # 🔹 EMIT
+    # 🔹 EMITENTE
     # =========================
     emit = extrair_bloco(xml, "emit")
 
@@ -59,7 +59,7 @@ if arquivo:
     }
 
     # =========================
-    # 🔹 DEST
+    # 🔹 DESTINATÁRIO
     # =========================
     dest = extrair_bloco(xml, "dest")
 
@@ -73,7 +73,7 @@ if arquivo:
     }
 
     # =========================
-    # 🔹 IDE (FILTRADO)
+    # 🔹 IDE (limpo)
     # =========================
     campos_ide = [
         "mod", "nNF",
