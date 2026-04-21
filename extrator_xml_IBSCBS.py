@@ -2,8 +2,10 @@ import streamlit as st
 import re
 import pandas as pd
 
+# 🔹 Layout tela cheia
 st.set_page_config(layout="wide")
 
+# 🔹 CSS para quebra de texto
 st.markdown("""
 <style>
 [data-testid="stDataFrame"] div {
@@ -38,7 +40,7 @@ def traduz_indIEDest(valor):
 # =========================
 # 🔹 INTERFACE
 # =========================
-st.title("📦 Leitor de XML - Itens")
+st.title("📦 Leitor de XML - Itens Completo")
 
 arquivo = st.file_uploader("Selecione o XML", type=["xml"])
 
@@ -46,7 +48,7 @@ if arquivo:
     xml = arquivo.read().decode("utf-8", errors="ignore")
 
     # =========================
-    # 🔹 EMIT
+    # 🔹 EMITENTE
     # =========================
     emit = extrair_tag(xml, "emit")
 
@@ -58,7 +60,7 @@ if arquivo:
     }
 
     # =========================
-    # 🔹 DEST
+    # 🔹 DESTINATÁRIO
     # =========================
     dest = extrair_tag(xml, "dest")
 
@@ -82,7 +84,7 @@ if arquivo:
     }
 
     # =========================
-    # 🔹 DET (ITENS)
+    # 🔹 ITENS (DET)
     # =========================
     dets = extrair_blocos(xml, "det")
 
@@ -95,30 +97,58 @@ if arquivo:
 
         linha = {}
 
-        # 🔹 Dados fixos
+        # 🔹 FIXOS
         linha.update(dados_emit)
         linha.update(dados_dest)
         linha.update(dados_ide)
 
-        # 🔹 Item
+        # 🔹 ITEM
         linha["nItem"] = extrair_tag(det, "nItem")
 
+        # =========================
         # 🔹 PROD
+        # =========================
+        linha["cEAN"] = extrair_tag(prod, "cEAN")
         linha["cProd"] = extrair_tag(prod, "cProd")
         linha["xProd"] = extrair_tag(prod, "xProd")
         linha["NCM"] = extrair_tag(prod, "NCM")
         linha["CFOP"] = extrair_tag(prod, "CFOP")
+        linha["CEST"] = extrair_tag(prod, "CEST")
         linha["qCom"] = extrair_tag(prod, "qCom")
         linha["vUnCom"] = extrair_tag(prod, "vUnCom")
         linha["vProd"] = extrair_tag(prod, "vProd")
+        linha["uCom"] = extrair_tag(prod, "uCom")
+        linha["uTrib"] = extrair_tag(prod, "uTrib")
+        linha["qTrib"] = extrair_tag(prod, "qTrib")
+        linha["vUnTrib"] = extrair_tag(prod, "vUnTrib")
 
-        # 🔹 IBSCBS
-        linha["CST_IBS"] = extrair_tag(ibscbs, "CST")
-        linha["vBC_IBS"] = extrair_tag(ibscbs, "vBC")
-        linha["pCBS"] = extrair_tag(ibscbs, "pCBS")
-        linha["vCBS"] = extrair_tag(ibscbs, "vCBS")
-        linha["pIBSUF"] = extrair_tag(ibscbs, "pIBSUF")
-        linha["vIBSUF"] = extrair_tag(ibscbs, "vIBSUF")
+        # =========================
+        # 🔹 IBSCBS COMPLETO
+        # =========================
+        linha["IBSCBS_CST"] = extrair_tag(ibscbs, "CST")
+        linha["IBSCBS_cClassTrib"] = extrair_tag(ibscbs, "cClassTrib")
+
+        # Base
+        linha["IBSCBS_vBC"] = extrair_tag(ibscbs, "vBC")
+        linha["IBSCBS_vIBS"] = extrair_tag(ibscbs, "vIBS")
+
+        # CBS
+        linha["IBSCBS_pCBS"] = extrair_tag(ibscbs, "pCBS")
+        linha["IBSCBS_vCBS"] = extrair_tag(ibscbs, "vCBS")
+
+        gCBS = extrair_tag(ibscbs, "gCBS")
+        linha["IBSCBS_vDevTrib_CBS"] = extrair_tag(gCBS, "vDevTrib")
+
+        # IBS UF
+        linha["IBSCBS_pIBSUF"] = extrair_tag(ibscbs, "pIBSUF")
+        linha["IBSCBS_vIBSUF"] = extrair_tag(ibscbs, "vIBSUF")
+
+        gIBSUF = extrair_tag(ibscbs, "gIBSUF")
+        linha["IBSCBS_vDevTrib_IBSUF"] = extrair_tag(gIBSUF, "vDevTrib")
+
+        # IBS Municipal
+        linha["IBSCBS_pIBSMun"] = extrair_tag(ibscbs, "pIBSMun")
+        linha["IBSCBS_vIBSMun"] = extrair_tag(ibscbs, "vIBSMun")
 
         linhas.append(linha)
 
@@ -128,4 +158,4 @@ if arquivo:
     # 🔹 EXIBE
     # =========================
     st.subheader("📊 Itens da Nota")
-    st.dataframe(df, use_container_width=True, height=400)
+    st.dataframe(df, use_container_width=True, height=500)
