@@ -16,15 +16,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔹 FUNÇÕES ROBUSTAS
+# 🔹 FUNÇÕES
 # =========================
+
+def limpar_tags(valor):
+    return re.sub(r"<.*?>", "", valor).strip() if valor else ""
 
 def extrair_tag(texto, tag):
     if not texto:
         return ""
     padrao = fr"<{tag}[^>]*>(.*?)</{tag}>"
     resultado = re.search(padrao, texto, re.DOTALL | re.IGNORECASE)
-    return resultado.group(1).strip() if resultado else ""
+    return limpar_tags(resultado.group(1)) if resultado else ""
 
 def extrair_blocos(texto, tag):
     if not texto:
@@ -43,7 +46,15 @@ def traduz_indIEDest(valor):
     }
     return mapa.get(valor, valor)
 
-# 🔥 ICMS DINÂMICO (qualquer tipo)
+def to_float(valor):
+    try:
+        return float(valor.replace(",", "."))
+    except:
+        return None
+
+# =========================
+# 🔹 ICMS DINÂMICO
+# =========================
 def extrair_icms(imposto):
     icms = extrair_tag(imposto, "ICMS")
 
@@ -70,7 +81,9 @@ def extrair_icms(imposto):
 
     return {}
 
-# 🔥 IBSCBS FLEXÍVEL
+# =========================
+# 🔹 IBSCBS FLEXÍVEL
+# =========================
 def extrair_ibscbs(imposto):
     ibs = extrair_tag(imposto, "IBSCBS")
     g = extrair_tag(ibs, "gIBSCBS")
@@ -103,8 +116,9 @@ def extrair_ibscbs(imposto):
     return dados
 
 # =========================
-# 🔹 INTERFACE
+# 🔹 APP
 # =========================
+
 st.title("📦 Leitor de XML - SUPER ROBUSTO")
 
 arquivo = st.file_uploader("Selecione o XML", type=["xml"])
@@ -112,9 +126,7 @@ arquivo = st.file_uploader("Selecione o XML", type=["xml"])
 if arquivo:
     xml = arquivo.read().decode("utf-8", errors="ignore")
 
-    # =========================
     # 🔹 EMITENTE
-    # =========================
     emit = extrair_tag(xml, "emit")
 
     dados_emit = {
@@ -124,9 +136,7 @@ if arquivo:
         "Emit_IE": extrair_tag(emit, "IE"),
     }
 
-    # =========================
     # 🔹 DESTINATÁRIO
-    # =========================
     dest = extrair_tag(xml, "dest")
 
     dados_dest = {
@@ -136,9 +146,7 @@ if arquivo:
         "Dest_IndIEDest": traduz_indIEDest(extrair_tag(dest, "indIEDest")),
     }
 
-    # =========================
     # 🔹 IDE
-    # =========================
     dados_ide = {
         "mod": extrair_tag(xml, "mod"),
         "nNF": extrair_tag(xml, "nNF"),
@@ -148,9 +156,7 @@ if arquivo:
         "natOp": extrair_tag(xml, "natOp"),
     }
 
-    # =========================
     # 🔹 ITENS
-    # =========================
     dets = extrair_blocos(xml, "det")
 
     linhas = []
@@ -195,8 +201,31 @@ if arquivo:
 
     df = pd.DataFrame(linhas)
 
+    # 🔹 CONVERSÃO NUMÉRICA AUTOMÁTICA
+    for col in df.columns:
+        if any(x in col for x in ["v", "p", "q"]):
+            df[col] = df[col].apply(to_float)
+
     # =========================
     # 🔹 EXIBE
     # =========================
     st.subheader("📊 Itens da Nota")
     st.dataframe(df, use_container_width=True, height=600)
+
+    # =========================
+    # 🔹 EXPORTAR EXCEL
+    # =========================
+    def gerar_excel(df):
+        from io import BytesIO
+        output = BytesIO()
+        df.to_excel(output, index=False)
+        return output.getvalue()
+
+    excel = gerar_excel(df)
+
+    st.download_button(
+        "📥 Baixar Excel",
+        data=excel,
+        file_name="nota_fiscal.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
