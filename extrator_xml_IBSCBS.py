@@ -32,6 +32,153 @@ def remove_namespace(element):
             elem.tag = elem.tag.split("}", 1)[1]
 
 
+def parse_icms(icms_parent):
+    """
+    Parse genérico de ICMS - detecta automaticamente o tipo e extrai campos
+    Retorna dicionário com todos os campos encontrados
+    """
+    icms_data = {}
+    
+    if icms_parent is None:
+        return icms_data
+    
+    # Encontra a tag ICMS
+    icms_tag = icms_parent.find(".//ICMS")
+    if icms_tag is None:
+        return icms_data
+    
+    # Lista de possíveis tipos de ICMS
+    icms_types = ['ICMS00', 'ICMS10', 'ICMS20', 'ICMS30', 'ICMS40', 
+                  'ICMS41', 'ICMS50', 'ICMS51', 'ICMS60', 'ICMS70', 'ICMS90']
+    
+    # Detecta qual tipo está presente
+    icms_type = None
+    icms_element = None
+    
+    for icms_type_name in icms_types:
+        found = icms_tag.find(icms_type_name)
+        if found is not None:
+            icms_type = icms_type_name
+            icms_element = found
+            break
+    
+    if icms_element is None:
+        return icms_data
+    
+    # Registra o tipo encontrado
+    icms_data['ICMS_tipo'] = icms_type
+    
+    # Mapeamento de campos comuns a todos os tipos
+    common_fields = {
+        'orig': 'ICMS_orig',
+        'CST': 'ICMS_CST',
+        'CSOSN': 'ICMS_CSOSN',
+        'modBC': 'ICMS_modBC',
+        'vBC': 'ICMS_vBC',
+        'pICMS': 'ICMS_pICMS',
+        'vICMS': 'ICMS_vICMS',
+        'pRedBC': 'ICMS_pRedBC',
+        'vBCST': 'ICMS_vBCST',
+        'pST': 'ICMS_pST',
+        'vICMSST': 'ICMS_vICMSST',
+        'pFCP': 'ICMS_pFCP',
+        'vFCP': 'ICMS_vFCP',
+        'pFCPST': 'ICMS_pFCPST',
+        'vFCPST': 'ICMS_vFCPST',
+        'vFCPSTRet': 'ICMS_vFCPSTRet',
+        'pST': 'ICMS_pST',
+        'vICMSDeson': 'ICMS_vICMSDeson',
+        'motDesICMS': 'ICMS_motDesICMS',
+        'vICMSOp': 'ICMS_vICMSOp',
+        'pDif': 'ICMS_pDif',
+        'vICMSDif': 'ICMS_vICMSDif',
+        'vBCFCP': 'ICMS_vBCFCP',
+        'vBCST': 'ICMS_vBCST',
+        'vBCSTRet': 'ICMS_vBCSTRet',
+        'vICMSSTRet': 'ICMS_vICMSSTRet',
+        'vICMSSubstituto': 'ICMS_vICMSSubstituto',
+        'vICMSST': 'ICMS_vICMSST',
+        'pCredSN': 'ICMS_pCredSN',
+        'vCredICMSSN': 'ICMS_vCredICMSSN'
+    }
+    
+    # Extrai campos comuns
+    for xml_field, df_field in common_fields.items():
+        value = get_text(icms_element, xml_field)
+        if value:  # Só adiciona se tiver valor
+            icms_data[df_field] = value
+    
+    # Campos específicos para ICMS60 (ST retido)
+    if icms_type == 'ICMS60':
+        st_ret_fields = {
+            'vBCSTRet': 'ICMS_vBCSTRet',
+            'vICMSSTRet': 'ICMS_vICMSSTRet',
+            'vICMSSubstituto': 'ICMS_vICMSSubstituto',
+            'pST': 'ICMS_pST'
+        }
+        for xml_field, df_field in st_ret_fields.items():
+            value = get_text(icms_element, xml_field)
+            if value:
+                icms_data[df_field] = value
+    
+    # Campos específicos para ICMS10, ICMS70, ICMS90 (ST)
+    if icms_type in ['ICMS10', 'ICMS70', 'ICMS90']:
+        st_fields = {
+            'vBCST': 'ICMS_vBCST',
+            'vICMSST': 'ICMS_vICMSST',
+            'pST': 'ICMS_pST',
+            'vBCSTRet': 'ICMS_vBCSTRet',
+            'vICMSSTRet': 'ICMS_vICMSSTRet'
+        }
+        for xml_field, df_field in st_fields.items():
+            value = get_text(icms_element, xml_field)
+            if value:
+                icms_data[df_field] = value
+    
+    # Campos específicos para ICMS51
+    if icms_type == 'ICMS51':
+        specific_fields = {
+            'pRedBC': 'ICMS_pRedBC',
+            'vBC': 'ICMS_vBC',
+            'pICMS': 'ICMS_pICMS',
+            'vICMS': 'ICMS_vICMS',
+            'vBCSTRet': 'ICMS_vBCSTRet',
+            'vICMSSTRet': 'ICMS_vICMSSTRet'
+        }
+        for xml_field, df_field in specific_fields.items():
+            value = get_text(icms_element, xml_field)
+            if value:
+                icms_data[df_field] = value
+    
+    # Campos para ICMS00 (normal)
+    if icms_type == 'ICMS00':
+        normal_fields = {
+            'modBC': 'ICMS_modBC',
+            'vBC': 'ICMS_vBC',
+            'pICMS': 'ICMS_pICMS',
+            'vICMS': 'ICMS_vICMS'
+        }
+        for xml_field, df_field in normal_fields.items():
+            value = get_text(icms_element, xml_field)
+            if value:
+                icms_data[df_field] = value
+    
+    # Campos para ICMS20 (com redução de base)
+    if icms_type == 'ICMS20':
+        reducao_fields = {
+            'pRedBC': 'ICMS_pRedBC',
+            'vBC': 'ICMS_vBC',
+            'pICMS': 'ICMS_pICMS',
+            'vICMS': 'ICMS_vICMS'
+        }
+        for xml_field, df_field in reducao_fields.items():
+            value = get_text(icms_element, xml_field)
+            if value:
+                icms_data[df_field] = value
+    
+    return icms_data
+
+
 def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
     """
     Parse conteúdo XML e extrai dados da NF-e
@@ -70,6 +217,10 @@ def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
         # Busca por tags alternativas se IBSCBS não for encontrado
         if ibscbs is None:
             ibscbs = det.find(".//imposto/IBSCBS")
+        
+        # Parse ICMS
+        imposto = det.find("imposto")
+        icms_data = parse_icms(imposto) if imposto is not None else {}
         
         linha = {
             # Dados do emitente
@@ -127,6 +278,9 @@ def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
             "IBS_Dev_Trib_IBSUF": get_text(ibscbs, "vDevTrib_IBSUF"),
             "IBS_Percentual_IBSMun": get_text(ibscbs, "pIBSMun"),
             "IBS_Valor_IBSMun": get_text(ibscbs, "vIBSMun"),
+            
+            # Dados ICMS (adicionados dinamicamente)
+            **icms_data  # Desempacota todos os campos ICMS extraídos
         }
         
         linhas.append(linha)
@@ -370,6 +524,7 @@ with st.sidebar:
         <p>✅ Suporta múltiplos XMLs<br>
         ✅ Extrai emitente, destinatário e itens<br>
         ✅ Campos de impostos IBS/CBS<br>
+        ✅ <strong>Suporte completo ICMS</strong><br>
         ✅ Robusto contra XMLs incompletos</p>
     </div>
     """, unsafe_allow_html=True)
@@ -390,7 +545,10 @@ if 'dados' in st.session_state and st.session_state['dados']:
     df = pd.DataFrame(st.session_state['dados'])
     
     # Converter colunas numéricas para cálculos
-    for col in ['Item_Quantidade', 'Item_Valor_Total', 'IBS_Valor_IBS', 'IBS_Valor_CBS']:
+    numeric_cols = ['Item_Quantidade', 'Item_Valor_Total', 'IBS_Valor_IBS', 'IBS_Valor_CBS',
+                    'ICMS_vBC', 'ICMS_vICMS', 'ICMS_vBCSTRet', 'ICMS_vICMSSTRet']
+    
+    for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     
@@ -408,8 +566,8 @@ if 'dados' in st.session_state and st.session_state['dados']:
         st.metric("💰 Valor Total", f"R$ {valor_total:,.2f}")
     
     with col4:
-        valor_impostos = df['IBS_Valor_IBS'].fillna(0).sum() + df['IBS_Valor_CBS'].fillna(0).sum()
-        st.metric("💸 Impostos (IBS+CBS)", f"R$ {valor_impostos:,.2f}")
+        valor_icms = df['ICMS_vICMS'].sum() if 'ICMS_vICMS' in df else 0
+        st.metric("💸 ICMS Total", f"R$ {valor_icms:,.2f}")
     
     st.markdown("---")
     
@@ -425,6 +583,8 @@ if 'dados' in st.session_state and st.session_state['dados']:
             "Item_Descricao": st.column_config.TextColumn("Descrição", width="medium"),
             "Item_Valor_Total": st.column_config.NumberColumn("Valor Total", format="R$ %.2f"),
             "Item_Quantidade": st.column_config.NumberColumn("Quantidade", format="%.3f"),
+            "ICMS_vICMS": st.column_config.NumberColumn("ICMS", format="R$ %.2f"),
+            "ICMS_tipo": st.column_config.TextColumn("Tipo ICMS", width="small"),
         }
     )
     
@@ -452,6 +612,7 @@ else:
     - ✅ Nota fiscal (número, série, data, natureza)
     - ✅ Itens (código, descrição, NCM, CFOP, quantidade, valores)
     - ✅ Impostos IBS/CBS (alíquotas, bases, valores)
+    - ✅ **ICMS (todos os tipos: ICMS00, ICMS10, ICMS20, ICMS30, ICMS40, ICMS41, ICMS50, ICMS51, ICMS60, ICMS70, ICMS90)**
     
     **Exportação:** Use o botão "Baixar Excel" no menu lateral.
     """)
