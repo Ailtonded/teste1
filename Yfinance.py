@@ -1,16 +1,23 @@
 """
 Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus
-Versão: 6.1 - Corrigido CT1_NTSPED
+Versão: 6.2 - Interface Modernizada (CORRIGIDA)
 """
 
 import streamlit as st
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
+import logging
 
 # ==================== CONFIGURAÇÃO ====================
-st.set_page_config(page_title="Plano de Contas Protheus", page_icon="📊", layout="wide")
+st.set_page_config(
+    page_title="Plano de Contas Protheus", 
+    page_icon="📊", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# ==================== CONSTANTES (NÃO ALTERAR) ====================
 # ORDEM EXATA DOS CAMPOS CT1
 CAMPOS_CT1 = [
     'CT1_FILIAL', 'CT1_CONTA', 'CT1_DESC01', 'CT1_DESC02', 'CT1_DESC03',
@@ -58,7 +65,7 @@ TAMANHOS = {
 # Valores válidos para CT1_NTSPED
 NTSPED_VALIDOS = ['01', '02', '03', '04', '05', '09']
 
-# ==================== FUNÇÕES ====================
+# ==================== FUNÇÕES (NÃO ALTERAR LÓGICA) ====================
 
 def formatar_valor(valor, campo):
     """Formata valor com padding de espaços à direita"""
@@ -103,6 +110,7 @@ def gerar_csv(df):
     
     return "\n".join(linhas)
 
+@st.cache_data
 def transformar(df):
     """Transforma dados do Excel para o layout Protheus"""
     df_out = pd.DataFrame(columns=CAMPOS_CT1)
@@ -168,6 +176,7 @@ def transformar(df):
     
     return df_out, erros
 
+@st.cache_data
 def carregar_arquivo(arquivo):
     """Carrega arquivo Excel"""
     try:
@@ -179,56 +188,186 @@ def carregar_arquivo(arquivo):
         st.error(f"Erro ao carregar: {e}")
         return None
 
-# ==================== INTERFACE ====================
+# ==================== INTERFACE MODERNIZADA ====================
 
 def main():
-    st.title("📊 Plano de Contas - TOTVS Protheus")
-    st.caption(f"Total de campos: {len(CAMPOS_CT1)}")
+    # HEADER COMPACTO
+    st.markdown("""
+        <style>
+            .main-header {
+                padding: 0rem 0rem 1rem 0rem;
+                border-bottom: 2px solid #f0f2f6;
+                margin-bottom: 1rem;
+            }
+            .metric-card {
+                background-color: #f8f9fa;
+                padding: 0.8rem;
+                border-radius: 0.5rem;
+                text-align: center;
+            }
+            .stButton > button {
+                width: 100%;
+            }
+        </style>
+    """, unsafe_allow_html=True)
     
-    arquivo = st.file_uploader("📂 Selecione o arquivo Excel", type=['xlsx'])
+    col_logo, col_title = st.columns([1, 10])
+    with col_logo:
+        st.markdown("## 📊")
+    with col_title:
+        st.markdown("### Plano de Contas - TOTVS Protheus")
+        st.caption(f"Sistema compatível com {len(CAMPOS_CT1)} campos do layout CT1")
     
+    # SIDEBAR INTELIGENTE
+    with st.sidebar:
+        st.markdown("## 🎛️ Controles")
+        st.markdown("---")
+        
+        # Upload de arquivo
+        arquivo = st.file_uploader("📂 Importar Excel", type=['xlsx'], key="file_uploader")
+        
+        if arquivo and 'df_protheus' in st.session_state:
+            st.markdown("---")
+            st.markdown("### 🎨 Visualização")
+            
+            # Multiselect de colunas
+            todas_colunas = st.session_state.df_protheus.columns.tolist()
+            colunas_padrao = ['CT1_CONTA', 'CT1_DESC01', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_NTSPED']
+            colunas_disponiveis = [c for c in colunas_padrao if c in todas_colunas]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Selecionar tudo", use_container_width=True):
+                    st.session_state.colunas_selecionadas = todas_colunas
+                    st.rerun()
+            with col2:
+                if st.button("❌ Limpar tudo", use_container_width=True):
+                    st.session_state.colunas_selecionadas = []
+                    st.rerun()
+            
+            st.markdown("#### Colunas visíveis")
+            colunas_selecionadas = st.multiselect(
+                "Selecione as colunas para exibir",
+                options=todas_colunas,
+                default=st.session_state.get('colunas_selecionadas', colunas_disponiveis),
+                key="multiselect_colunas"
+            )
+            st.session_state.colunas_selecionadas = colunas_selecionadas
+        
+        st.markdown("---")
+        st.caption("💡 **Dica:** Use o multiselect para focar nas colunas importantes")
+    
+    # ÁREA PRINCIPAL
     if arquivo:
         df = carregar_arquivo(arquivo)
         
         if df is not None:
             colunas_ct1 = [col for col in df.columns if col in CAMPOS_CT1]
-            st.info(f"📌 Campos CT1 encontrados: {', '.join(colunas_ct1) if colunas_ct1 else 'Nenhum'}")
             
-            if 'CT1_CONTA' not in df.columns or 'CT1_DESC01' not in df.columns:
-                st.error("❌ Colunas obrigatórias faltando: CT1_CONTA e CT1_DESC01")
-                return
-            
-            with st.spinner("Processando..."):
+            # Processamento
+            with st.spinner("🔄 Processando plano de contas..."):
                 df_protheus, erros = transformar(df)
+                st.session_state.df_protheus = df_protheus
+                st.session_state.erros = erros
+                st.session_state.total_registros = len(df_protheus)
+                st.session_state.total_colunas_ct1 = len(colunas_ct1)
             
+            # MÉTRICAS EM UMA LINHA
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📄 Total de Registros", st.session_state.total_registros)
+            with col2:
+                st.metric("📦 Colunas CT1", f"{st.session_state.total_colunas_ct1}/{len(CAMPOS_CT1)}")
+            with col3:
+                st.metric("⚠️ Erros Encontrados", len(erros), delta="Revisar" if erros else None)
+            with col4:
+                if 'CT1_NTSPED' in df_protheus.columns:
+                    ntsped_preenchidos = df_protheus['CT1_NTSPED'].ne('').sum()
+                    st.metric("🏷️ CT1_NTSPED", f"{ntsped_preenchidos} preenchidos")
+            
+            # Alerta de erros (resumido)
             if erros:
-                st.warning(f"⚠️ {len(erros)} erro(s) encontrado(s):")
-                for erro in erros[:10]:
-                    st.warning(erro)
-                if len(erros) > 10:
-                    st.warning(f"... e mais {len(erros)-10} erros")
+                with st.expander(f"⚠️ Detalhes dos {len(erros)} erro(s) encontrado(s)"):
+                    for erro in erros[:15]:
+                        st.warning(erro)
+                    if len(erros) > 15:
+                        st.info(f"... e mais {len(erros)-15} erros não exibidos")
             else:
-                st.success(f"✅ {len(df_protheus)} registros processados sem erros")
+                st.success(f"✅ Processamento concluído com sucesso! {st.session_state.total_registros} registros prontos para exportação.")
             
-            # Preview
-            colunas_preview = ['CT1_CONTA', 'CT1_DESC01', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_NTSPED']
-            colunas_existentes = [c for c in colunas_preview if c in df_protheus.columns]
-            st.dataframe(df_protheus[colunas_existentes].head(10), use_container_width=True)
+            # GRID OTIMIZADO
+            st.markdown("---")
+            st.markdown("### 📋 Visualização dos Dados")
             
-            # Exportar
-            if st.button("📥 Gerar CSV para Protheus", type="primary", use_container_width=True):
+            # Aplicar filtro de colunas da sidebar
+            if st.session_state.get('colunas_selecionadas'):
+                df_display = df_protheus[st.session_state.colunas_selecionadas]
+            else:
+                df_display = df_protheus[['CT1_CONTA', 'CT1_DESC01', 'CT1_CLASSE', 'CT1_NORMAL', 'CT1_NTSPED']]
+            
+            # Tabela com altura maior
+            st.dataframe(
+                df_display, 
+                use_container_width=True, 
+                height=500,
+                hide_index=True
+            )
+            
+            # BOTÃO DE EXPORTAÇÃO ALINHADO
+            st.markdown("---")
+            col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
+            
+            with col_btn2:
+                if st.button("📊 Ver CSV Bruto", use_container_width=True):
+                    st.session_state.show_csv = not st.session_state.get('show_csv', False)
+            
+            with col_btn3:
                 csv_data = gerar_csv(df_protheus)
-                
-                with st.expander("🔍 Preview do CSV gerado"):
-                    st.code('\n'.join(csv_data.split('\n')[:4]), language='text')
-                
                 st.download_button(
-                    "✅ Baixar CSV",
+                    "⬇️ Baixar CSV Protheus",
                     data=BytesIO(csv_data.encode('latin1')),
                     file_name=f"plano_contas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    use_container_width=True,
+                    type="primary"
                 )
+            
+            # Preview do CSV quando solicitado
+            if st.session_state.get('show_csv', False):
+                with st.expander("🔍 Preview do CSV Gerado", expanded=True):
+                    csv_data = gerar_csv(df_protheus)
+                    linhas_preview = csv_data.split('\n')[:10]
+                    st.code('\n'.join(linhas_preview), language='text')
+                    st.caption(f"Arquivo completo com {len(df_protheus)} registros + cabeçalhos")
+    
+    else:
+        # Estado inicial sem arquivo
+        st.info("👈 **Comece carregando um arquivo Excel** na barra lateral")
+        
+        # Mostrar exemplo do formato esperado
+        with st.expander("📖 Formato esperado do arquivo Excel"):
+            st.markdown("""
+            **Colunas obrigatórias:**
+            - `CT1_CONTA` - Código da conta contábil (ex: 1.01.001)
+            - `CT1_DESC01` - Descrição da conta
+            
+            **Colunas opcionais mais comuns:**
+            - `CT1_FILIAL` - Filial (padrão: vazio)
+            - `CT1_DESC02` a `CT1_DESC05` - Descrições adicionais
+            - `CT1_NTSPED` - Natureza da conta SPED (01,02,03,04,05,09)
+            - `CT1_CLASSE` - 1=Sintética, 2=Analítica
+            - `CT1_NORMAL` - 1=Devedora, 2=Credora
+            - `CT1_CTASUP` - Conta superior (hierarquia)
+            
+            **Exemplo mínimo:**
+            """)
+            
+            df_exemplo = pd.DataFrame({
+                'CT1_CONTA': ['1.01', '1.01.001', '1.01.002'],
+                'CT1_DESC01': ['Ativo Circulante', 'Caixa', 'Bancos'],
+                'CT1_NTSPED': ['01', '01', '01']
+            })
+            st.dataframe(df_exemplo, use_container_width=True, hide_index=True)
 
 if __name__ == "__main__":
     main()
