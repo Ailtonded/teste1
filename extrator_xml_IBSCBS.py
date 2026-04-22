@@ -16,7 +16,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔹 FUNÇÕES
+# 🔹 FUNÇÕES BASE
 # =========================
 
 def limpar_tags(valor):
@@ -25,15 +25,20 @@ def limpar_tags(valor):
 def extrair_tag(texto, tag):
     if not texto:
         return ""
-    padrao = fr"<{tag}[^>]*>(.*?)</{tag}>"
+    padrao = fr"<(?:\\w+:)?{tag}[^>]*>(.*?)</(?:\\w+:)?{tag}>"
     resultado = re.search(padrao, texto, re.DOTALL | re.IGNORECASE)
     return limpar_tags(resultado.group(1)) if resultado else ""
 
 def extrair_blocos(texto, tag):
     if not texto:
         return []
-    padrao = fr"<{tag}[^>]*>(.*?)</{tag}>"
+    padrao = fr"<(?:\\w+:)?{tag}[^>]*>(.*?)</(?:\\w+:)?{tag}>"
     return re.findall(padrao, texto, re.DOTALL | re.IGNORECASE)
+
+def extrair_atributo(texto, atributo):
+    padrao = fr'{atributo}="(.*?)"'
+    resultado = re.search(padrao, texto)
+    return resultado.group(1) if resultado else ""
 
 def tratar_data(valor):
     return valor.split("T")[0] if valor and "T" in valor else valor
@@ -48,7 +53,7 @@ def traduz_indIEDest(valor):
 
 def to_float(valor):
     try:
-        return float(valor.replace(",", "."))
+        return float(str(valor).replace(",", "."))
     except:
         return None
 
@@ -82,7 +87,7 @@ def extrair_icms(imposto):
     return {}
 
 # =========================
-# 🔹 IBSCBS FLEXÍVEL
+# 🔹 IBSCBS
 # =========================
 def extrair_ibscbs(imposto):
     ibs = extrair_tag(imposto, "IBSCBS")
@@ -96,19 +101,16 @@ def extrair_ibscbs(imposto):
     dados["IBSCBS_vBC"] = extrair_tag(g, "vBC")
     dados["IBSCBS_vIBS"] = extrair_tag(g, "vIBS")
 
-    # CBS
     gCBS = extrair_tag(g, "gCBS")
     dados["IBSCBS_pCBS"] = extrair_tag(gCBS, "pCBS")
     dados["IBSCBS_vCBS"] = extrair_tag(gCBS, "vCBS")
     dados["IBSCBS_vDevTrib_CBS"] = extrair_tag(gCBS, "vDevTrib")
 
-    # IBS UF
     gUF = extrair_tag(g, "gIBSUF")
     dados["IBSCBS_pIBSUF"] = extrair_tag(gUF, "pIBSUF")
     dados["IBSCBS_vIBSUF"] = extrair_tag(gUF, "vIBSUF")
     dados["IBSCBS_vDevTrib_IBSUF"] = extrair_tag(gUF, "vDevTrib")
 
-    # IBS MUN
     gMun = extrair_tag(g, "gIBSMun")
     dados["IBSCBS_pIBSMun"] = extrair_tag(gMun, "pIBSMun")
     dados["IBSCBS_vIBSMun"] = extrair_tag(gMun, "vIBSMun")
@@ -172,8 +174,8 @@ if arquivo:
         linha.update(dados_dest)
         linha.update(dados_ide)
 
-        # 🔹 ITEM
-        linha["nItem"] = extrair_tag(det, "nItem")
+        # 🔹 ITEM (atributo)
+        linha["nItem"] = extrair_atributo(det, "nItem")
 
         # 🔹 PROD
         linha["cEAN"] = extrair_tag(prod, "cEAN")
@@ -191,19 +193,17 @@ if arquivo:
         linha["qTrib"] = extrair_tag(prod, "qTrib")
         linha["vUnTrib"] = extrair_tag(prod, "vUnTrib")
 
-        # 🔹 IBSCBS
+        # 🔹 IMPOSTOS
         linha.update(extrair_ibscbs(imposto))
-
-        # 🔹 ICMS
         linha.update(extrair_icms(imposto))
 
         linhas.append(linha)
 
     df = pd.DataFrame(linhas)
 
-    # 🔹 CONVERSÃO NUMÉRICA AUTOMÁTICA
+    # 🔹 NUMÉRICOS
     for col in df.columns:
-        if any(x in col for x in ["v", "p", "q"]):
+        if any(x in col.lower() for x in ["v", "p", "q"]):
             df[col] = df[col].apply(to_float)
 
     # =========================
@@ -213,7 +213,7 @@ if arquivo:
     st.dataframe(df, use_container_width=True, height=600)
 
     # =========================
-    # 🔹 EXPORTAR EXCEL
+    # 🔹 EXPORTAR XLSX
     # =========================
     def gerar_excel(df):
         from io import BytesIO
@@ -224,7 +224,7 @@ if arquivo:
     excel = gerar_excel(df)
 
     st.download_button(
-        "📥 Baixar Excel",
+        label="📥 Baixar XLSX",
         data=excel,
         file_name="nota_fiscal.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
