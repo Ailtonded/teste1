@@ -4,14 +4,20 @@
 # Framework Web
 streamlit>=1.32.0
 
-# Manipulação de Dados
+# Interface web
+streamlit>=1.30.0
+
+# OCR
+pytesseract>=0.3.10
+
+# Manipulação de imagem
+Pillow>=10.0.0
+opencv-python>=4.8.0
+
+# Manipulação de dados
 pandas>=2.0.0
+numpy>=1.24.0
 
 # Leitura de arquivos Excel
 openpyxl>=3.1.0
-
-# Opcional: para melhor performance com Excel
 xlrd>=2.0.1
-
-# Opcional: para acelerar operações do pandas
-numpy>=1.24.0
