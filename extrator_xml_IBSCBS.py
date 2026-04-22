@@ -7,6 +7,7 @@ import os
 from typing import List, Dict, Any
 import glob
 from datetime import datetime
+import zipfile
 
 st.set_page_config(
     layout="wide",
@@ -344,31 +345,29 @@ def processar_arquivos_xml(arquivos: List) -> List[Dict[str, Any]]:
 
 
 @st.cache_data(ttl=3600)
-def processar_pasta_xml(pasta_path: str) -> List[Dict[str, Any]]:
-    """Processa todos XMLs de uma pasta"""
+def processar_zip_xml(zip_file) -> List[Dict[str, Any]]:
+    """Processa arquivos XML dentro de um ZIP"""
     todos_dados = []
     
-    # Busca todos arquivos .xml na pasta
-    xml_files = glob.glob(os.path.join(pasta_path, "*.xml"))
-    xml_files.extend(glob.glob(os.path.join(pasta_path, "*.XML")))
-    
-    for xml_file in xml_files:
-        try:
-            with open(xml_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            dados = parse_xml_content(content)
-            todos_dados.extend(dados)
-            
-        except UnicodeDecodeError:
-            # Tenta com latin-1
-            with open(xml_file, 'r', encoding='latin-1') as f:
-                content = f.read()
-            dados = parse_xml_content(content)
-            todos_dados.extend(dados)
-        except Exception as e:
-            st.warning(f"Erro no arquivo {os.path.basename(xml_file)}: {e}")
-            continue
+    try:
+        with zipfile.ZipFile(zip_file, 'r') as zf:
+            for file_name in zf.namelist():
+                if file_name.lower().endswith('.xml'):
+                    try:
+                        with zf.open(file_name) as f:
+                            content = f.read()
+                            try:
+                                xml_str = content.decode('utf-8')
+                            except UnicodeDecodeError:
+                                xml_str = content.decode('latin-1')
+                            
+                            dados = parse_xml_content(xml_str)
+                            todos_dados.extend(dados)
+                    except Exception as e:
+                        st.warning(f"Erro no arquivo {file_name}: {e}")
+                        continue
+    except Exception as e:
+        st.error(f"Erro ao processar ZIP: {e}")
     
     return todos_dados
 
@@ -520,22 +519,25 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Opção 3: Selecionar pasta
-    st.markdown("**Pasta Local**")
-    pasta_path = st.text_input(
-        "Caminho da pasta com XMLs",
-        placeholder="C:/caminho/para/pasta",
+    # Opção 3: Upload de pasta ZIPADA (substituindo Pasta Local)
+    st.markdown("**📦 Pasta ZIPada**")
+    st.markdown("*Compacte sua pasta em ZIP e faça upload*")
+    
+    zip_file = st.file_uploader(
+        "Selecione um arquivo ZIP com XMLs",
+        type=["zip"],
+        key="zip_uploader",
         label_visibility="collapsed"
     )
     
-    if st.button("📁 Carregar Pasta", use_container_width=True):
-        if pasta_path and os.path.exists(pasta_path):
-            with st.spinner("Processando XMLs da pasta..."):
-                dados = processar_pasta_xml(pasta_path)
+    if zip_file and st.button("📦 Processar ZIP", use_container_width=True):
+        with st.spinner("Processando arquivos ZIP..."):
+            dados = processar_zip_xml(zip_file)
+            if dados:
                 st.session_state['dados'] = dados
-                st.success(f"✅ {len(dados)} itens processados")
-        else:
-            st.error("Pasta não encontrada")
+                st.success(f"✅ {len(dados)} itens processados de {zip_file.name}")
+            else:
+                st.warning("Nenhum XML válido encontrado no ZIP")
     
     st.markdown("---")
     
@@ -594,6 +596,7 @@ with st.sidebar:
     st.markdown("""
     <div style="font-size:12px; color:#666; text-align:center;">
         <p>✅ Suporta múltiplos XMLs<br>
+        ✅ Suporta arquivos ZIP<br>
         ✅ Extrai emitente, destinatário e itens<br>
         ✅ Campos de impostos IBS/CBS<br>
         ✅ Suporte completo ICMS<br>
@@ -748,7 +751,7 @@ else:
     
     1. **Upload de XMLs** - Selecione um ou mais arquivos no menu lateral direito
     2. **Colar XML** - Cole o conteúdo diretamente na caixa de texto
-    3. **Pasta Local** - Informe o caminho de uma pasta com vários XMLs
+    3. **Pasta ZIPada** - Compacte sua pasta em ZIP e faça upload
     
     Após carregar, os dados aparecerão automaticamente nesta área principal.
     
@@ -758,6 +761,7 @@ else:
     - ✅ Datas formatadas automaticamente
     - ✅ Suporte completo ICMS (todos os tipos)
     - ✅ Exportação Excel personalizada
+    - ✅ Suporte a arquivos ZIP
     
     **Dados extraídos:**
     - ✅ Emitente (nome fantasia, CNPJ, UF, IE)
