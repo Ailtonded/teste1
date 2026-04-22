@@ -1,13 +1,13 @@
 """
 Sistema de Importação e Exportação de Plano de Contas para TOTVS Protheus
-Versão: 6.2 - Interface Modernizada (CORRIGIDA)
+Versão: 6.3 - Limpeza de caracteres e instruções aprimoradas
 """
 
 import streamlit as st
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
-import logging
+import re
 
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(
@@ -67,12 +67,35 @@ NTSPED_VALIDOS = ['01', '02', '03', '04', '05', '09']
 
 # ==================== FUNÇÕES (NÃO ALTERAR LÓGICA) ====================
 
+def limpar_texto(texto):
+    """Remove caracteres ocultos, espaços extras e normaliza texto"""
+    if pd.isna(texto) or texto is None:
+        return ''
+    
+    # Converte para string
+    texto_str = str(texto)
+    
+    # Remove caracteres de controle (ASCII 0-31 exceto espaço e tab)
+    texto_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', texto_str)
+    
+    # Remove espaços no início e fim
+    texto_str = texto_str.strip()
+    
+    # Remove múltiplos espaços internos
+    texto_str = re.sub(r'\s+', ' ', texto_str)
+    
+    return texto_str
+
 def formatar_valor(valor, campo):
     """Formata valor com padding de espaços à direita"""
     if pd.isna(valor) or valor is None or str(valor).strip() == '':
         return ' ' * TAMANHOS.get(campo, 20)
     
     valor_str = str(valor).strip()
+    
+    # Aplica limpeza especial para campos de descrição
+    if campo in ['CT1_DESC01', 'CT1_DESC02', 'CT1_DESC03', 'CT1_DESC04', 'CT1_DESC05']:
+        valor_str = limpar_texto(valor_str)
     
     # Trata datas (DD/MM/YYYY -> YYYYMMDD)
     if 'DT' in campo and '/' in valor_str:
@@ -134,7 +157,13 @@ def transformar(df):
         for campo in campos_validos:
             valor = row.get(campo, '')
             if pd.notna(valor) and str(valor).strip() != '':
-                linha[campo] = str(valor).strip()
+                # Aplica limpeza especial para campos de descrição
+                if campo in ['CT1_DESC01', 'CT1_DESC02', 'CT1_DESC03', 'CT1_DESC04', 'CT1_DESC05']:
+                    valor_limpo = limpar_texto(valor)
+                    if valor_limpo:  # Só atribui se não ficou vazio após limpeza
+                        linha[campo] = valor_limpo
+                else:
+                    linha[campo] = str(valor).strip()
         
         # Validações obrigatórias
         if not linha.get('CT1_CONTA'):
@@ -182,7 +211,8 @@ def carregar_arquivo(arquivo):
     try:
         df = pd.read_excel(arquivo, dtype=str)
         df.columns = df.columns.str.strip()
-        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+        # Aplica limpeza em todas as células string
+        df = df.map(lambda x: limpar_texto(x) if isinstance(x, str) else x)
         return df
     except Exception as e:
         st.error(f"Erro ao carregar: {e}")
@@ -207,6 +237,12 @@ def main():
             }
             .stButton > button {
                 width: 100%;
+            }
+            .info-box {
+                background-color: #e3f2fd;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                margin: 1rem 0;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -341,12 +377,30 @@ def main():
                     st.caption(f"Arquivo completo com {len(df_protheus)} registros + cabeçalhos")
     
     else:
-        # Estado inicial sem arquivo
+        # Estado inicial sem arquivo - INSTRUÇÕES COMPLETAS
+        st.markdown("""
+        <div class="info-box">
+            <h3>🎯 Objetivo do Sistema</h3>
+            <p>Este sistema tem como objetivo <strong>importar planos de contas do Excel e exportar no formato compatível com o ERP TOTVS Protheus</strong> (módulo Financeiro).</p>
+            <p>O sistema gera automaticamente o arquivo CSV no layout exato do Protheus, incluindo todos os 79 campos da tabela CT1, com os devidos paddings e formatações.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         st.info("👈 **Comece carregando um arquivo Excel** na barra lateral")
         
-        # Mostrar exemplo do formato esperado
-        with st.expander("📖 Formato esperado do arquivo Excel"):
+        # Instruções detalhadas
+        with st.expander("📖 Instruções de uso", expanded=True):
             st.markdown("""
+            ### Como usar:
+            
+            1. **Prepare sua planilha Excel** com as colunas no formato CT1_*
+            2. **Carregue o arquivo** usando o botão na barra lateral
+            3. **Revise os dados** na tabela interativa
+            4. **Selecione as colunas** que deseja visualizar (sidebar)
+            5. **Baixe o CSV** no formato Protheus
+            
+            ### Formato esperado do arquivo Excel:
+            
             **Colunas obrigatórias:**
             - `CT1_CONTA` - Código da conta contábil (ex: 1.01.001)
             - `CT1_DESC01` - Descrição da conta
@@ -359,15 +413,49 @@ def main():
             - `CT1_NORMAL` - 1=Devedora, 2=Credora
             - `CT1_CTASUP` - Conta superior (hierarquia)
             
-            **Exemplo mínimo:**
-            """)
+            ### Funcionalidades:
             
+            - ✅ Limpeza automática de caracteres ocultos em descrições
+            - ✅ Validação de campos obrigatórios
+            - ✅ Preenchimento automático de valores padrão
+            - ✅ Geração no formato exato do Protheus
+            - ✅ Preview do CSV antes de baixar
+            - ✅ Seleção dinâmica de colunas para visualização
+            """)
+        
+        with st.expander("📋 Exemplo prático", expanded=False):
+            st.markdown("**Exemplo mínimo de planilha Excel:**")
             df_exemplo = pd.DataFrame({
-                'CT1_CONTA': ['1.01', '1.01.001', '1.01.002'],
-                'CT1_DESC01': ['Ativo Circulante', 'Caixa', 'Bancos'],
-                'CT1_NTSPED': ['01', '01', '01']
+                'CT1_CONTA': ['1', '1.01', '1.01.001', '1.01.002'],
+                'CT1_DESC01': ['ATIVO', 'ATIVO CIRCULANTE', 'CAIXA', 'BANCOS'],
+                'CT1_NTSPED': ['', '', '01', '01']
             })
             st.dataframe(df_exemplo, use_container_width=True, hide_index=True)
+            
+            st.markdown("**Resultado após processamento:**")
+            st.markdown("""
+            - CT1_CLASSE preenchido automaticamente (1 para contas sintéticas, 2 para analíticas)
+            - CT1_DC padrão = '7'
+            - CT1_DTEXIS padrão = '19800101'
+            - Caracteres ocultos removidos das descrições
+            - Espaços no início/fim removidos
+            """)
+        
+        with st.expander("🔧 Recursos técnicos", expanded=False):
+            st.markdown(f"""
+            - **Total de campos suportados:** {len(CAMPOS_CT1)}
+            - **Delimitador:** Ponto e vírgula (;)
+            - **Encoding:** Latin1 (ISO-8859-1)
+            - **Limpeza de texto:** Remove caracteres de controle e normaliza espaços
+            - **Formato de data:** Converte DD/MM/YYYY para YYYYMMDD
+            - **Padding:** Espaços à direita conforme tamanho definido pelo Protheus
+            """)
 
 if __name__ == "__main__":
+    # Inicializar session state
+    if 'colunas_selecionadas' not in st.session_state:
+        st.session_state.colunas_selecionadas = []
+    if 'show_csv' not in st.session_state:
+        st.session_state.show_csv = False
+    
     main()
