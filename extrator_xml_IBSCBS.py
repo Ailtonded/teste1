@@ -2,161 +2,456 @@ import streamlit as st
 import pandas as pd
 import xml.etree.ElementTree as ET
 from io import BytesIO
+from pathlib import Path
+import os
+from typing import List, Dict, Any
+import glob
 
-st.set_page_config(layout="wide")
-
-st.title("📄 Leitor XML NF-e → Excel")
+st.set_page_config(
+    layout="wide",
+    page_title="Leitor XML NF-e",
+    page_icon="📄"
+)
 
 # =========================
-# FUNÇÃO SAFE GET
+# FUNÇÕES AUXILIARES
 # =========================
-def get_text(parent, tag):
+
+def get_text(parent, tag: str) -> str:
+    """Extrai texto de um elemento XML com segurança"""
     if parent is None:
         return ""
     el = parent.find(f".//{tag}")
     return el.text if el is not None else ""
 
 
-# =========================
-# PARSER XML
-# =========================
-def parse_xml(xml_content):
-
-    try:
-        root = ET.fromstring(xml_content)
-    except:
-        return []
-
-    # Remove namespace
-    for elem in root.iter():
+def remove_namespace(element):
+    """Remove namespace de todos os elementos do XML"""
+    for elem in element.iter():
         if "}" in elem.tag:
             elem.tag = elem.tag.split("}", 1)[1]
 
+
+def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
+    """
+    Parse conteúdo XML e extrai dados da NF-e
+    Suporta ambos formatos: com/sem nfeProc
+    """
+    try:
+        root = ET.fromstring(xml_content)
+    except ET.ParseError as e:
+        st.error(f"Erro ao parsear XML: {e}")
+        return []
+
+    # Remove namespace
+    remove_namespace(root)
+
+    # Localiza infNFe (pode estar em diferentes níveis)
     infNFe = root.find(".//infNFe")
     if infNFe is None:
         return []
 
+    # Dados do emitente
     emit = infNFe.find("emit")
     dest = infNFe.find("dest")
-    ide  = infNFe.find("ide")
+    ide = infNFe.find("ide")
 
+    # Lista de itens
     dets = infNFe.findall("det")
 
     linhas = []
 
     for det in dets:
         prod = det.find("prod")
+        
+        # Busca impostos IBSCBS (pode estar em diferentes locais)
         ibscbs = det.find(".//IBSCBS")
-
-        linhas.append({
-            "Emit_xFant": get_text(emit, "xFant"),
-            "Emit_CNPJ": get_text(emit, "CNPJ"),
-            "Emit_UF": get_text(emit, "UF"),
-            "Emit_IE": get_text(emit, "IE"),
-
-            "Dest_Nome": get_text(dest, "xNome"),
-            "Dest_CNPJ": get_text(dest, "CNPJ"),
-            "Dest_UF": get_text(dest, "UF"),
-            "Dest_IndIEDest": get_text(dest, "indIEDest"),
-
-            "mod": get_text(ide, "mod"),
-            "nNF": get_text(ide, "nNF"),
-            "dhEmi": get_text(ide, "dhEmi"),
-            "dhSaiEnt": get_text(ide, "dhSaiEnt"),
-            "serie": get_text(ide, "serie"),
-            "natOp": get_text(ide, "natOp"),
-
-            "nItem": det.attrib.get("nItem", ""),
-
-            "cEAN": get_text(prod, "cEAN"),
-            "cProd": get_text(prod, "cProd"),
-            "xProd": get_text(prod, "xProd"),
-            "NCM": get_text(prod, "NCM"),
-            "CFOP": get_text(prod, "CFOP"),
-            "CEST": get_text(prod, "CEST"),
-            "cBenef": get_text(prod, "cBenef"),
-
-            "qCom": get_text(prod, "qCom"),
-            "vUnCom": get_text(prod, "vUnCom"),
-            "vProd": get_text(prod, "vProd"),
-
-            "uCom": get_text(prod, "uCom"),
-            "uTrib": get_text(prod, "uTrib"),
-            "qTrib": get_text(prod, "qTrib"),
-            "vUnTrib": get_text(prod, "vUnTrib"),
-
-            "IBSCBS_CST": get_text(ibscbs, "CST"),
-            "IBSCBS_cClassTrib": get_text(ibscbs, "cClassTrib"),
-            "IBSCBS_vBC": get_text(ibscbs, "vBC"),
-            "IBSCBS_vIBS": get_text(ibscbs, "vIBS"),
-
-            "IBSCBS_pCBS": get_text(ibscbs, "pCBS"),
-            "IBSCBS_vCBS": get_text(ibscbs, "vCBS"),
-
-            "IBSCBS_vDevTrib_CBS": get_text(ibscbs, "vDevTrib"),
-
-            "IBSCBS_pIBSUF": get_text(ibscbs, "pIBSUF"),
-            "IBSCBS_vIBSUF": get_text(ibscbs, "vIBSUF"),
-
-            "IBSCBS_vDevTrib_IBSUF": get_text(ibscbs, "vDevTrib"),
-
-            "IBSCBS_pIBSMun": get_text(ibscbs, "pIBSMun"),
-            "IBSCBS_vIBSMun": get_text(ibscbs, "vIBSMun"),
-        })
-
+        
+        # Busca por tags alternativas se IBSCBS não for encontrado
+        if ibscbs is None:
+            ibscbs = det.find(".//imposto/IBSCBS")
+        
+        linha = {
+            # Dados do emitente
+            "Emitente_xFant": get_text(emit, "xFant"),
+            "Emitente_CNPJ": get_text(emit, "CNPJ"),
+            "Emitente_UF": get_text(emit, "UF"),
+            "Emitente_IE": get_text(emit, "IE"),
+            
+            # Dados do destinatário
+            "Destinatario_Nome": get_text(dest, "xNome"),
+            "Destinatario_CNPJ": get_text(dest, "CNPJ"),
+            "Destinatario_CPF": get_text(dest, "CPF"),
+            "Destinatario_UF": get_text(dest, "UF"),
+            "Destinatario_indIEDest": get_text(dest, "indIEDest"),
+            
+            # Dados da nota
+            "Modelo": get_text(ide, "mod"),
+            "Numero_NF": get_text(ide, "nNF"),
+            "Serie": get_text(ide, "serie"),
+            "Data_Emissao": get_text(ide, "dhEmi"),
+            "Data_Saida": get_text(ide, "dhSaiEnt"),
+            "Natureza_Operacao": get_text(ide, "natOp"),
+            
+            # Dados do item
+            "Item_Numero": det.attrib.get("nItem", ""),
+            "Item_Codigo_EAN": get_text(prod, "cEAN"),
+            "Item_Codigo": get_text(prod, "cProd"),
+            "Item_Descricao": get_text(prod, "xProd"),
+            "Item_NCM": get_text(prod, "NCM"),
+            "Item_CFOP": get_text(prod, "CFOP"),
+            "Item_CEST": get_text(prod, "CEST"),
+            "Item_Beneficio": get_text(prod, "cBenef"),
+            
+            # Quantidades e valores
+            "Item_Quantidade": get_text(prod, "qCom"),
+            "Item_Valor_Unitario": get_text(prod, "vUnCom"),
+            "Item_Valor_Total": get_text(prod, "vProd"),
+            
+            # Unidades
+            "Item_Unidade_Comercial": get_text(prod, "uCom"),
+            "Item_Unidade_Tributacao": get_text(prod, "uTrib"),
+            "Item_Quantidade_Tributacao": get_text(prod, "qTrib"),
+            "Item_Valor_Unitario_Tributacao": get_text(prod, "vUnTrib"),
+            
+            # Impostos IBS/CBS
+            "IBS_CST": get_text(ibscbs, "CST"),
+            "IBS_Classificacao_Trib": get_text(ibscbs, "cClassTrib"),
+            "IBS_Base_Calculo": get_text(ibscbs, "vBC"),
+            "IBS_Valor_IBS": get_text(ibscbs, "vIBS"),
+            "IBS_Percentual_CBS": get_text(ibscbs, "pCBS"),
+            "IBS_Valor_CBS": get_text(ibscbs, "vCBS"),
+            "IBS_Dev_Trib_CBS": get_text(ibscbs, "vDevTrib"),
+            "IBS_Percentual_IBSUF": get_text(ibscbs, "pIBSUF"),
+            "IBS_Valor_IBSUF": get_text(ibscbs, "vIBSUF"),
+            "IBS_Dev_Trib_IBSUF": get_text(ibscbs, "vDevTrib_IBSUF"),
+            "IBS_Percentual_IBSMun": get_text(ibscbs, "pIBSMun"),
+            "IBS_Valor_IBSMun": get_text(ibscbs, "vIBSMun"),
+        }
+        
+        linhas.append(linha)
+    
     return linhas
 
 
+def processar_arquivos_xml(arquivos: List) -> List[Dict[str, Any]]:
+    """Processa múltiplos arquivos XML"""
+    todos_dados = []
+    
+    for arquivo in arquivos:
+        try:
+            # Se for objeto de upload
+            if hasattr(arquivo, 'read'):
+                content = arquivo.read()
+                # Tenta decode com diferentes encodings
+                try:
+                    xml_str = content.decode('utf-8')
+                except UnicodeDecodeError:
+                    xml_str = content.decode('latin-1')
+                
+                dados = parse_xml_content(xml_str)
+                todos_dados.extend(dados)
+                
+        except Exception as e:
+            st.warning(f"Erro ao processar arquivo {getattr(arquivo, 'name', 'desconhecido')}: {e}")
+            continue
+    
+    return todos_dados
+
+
+def processar_pasta_xml(pasta_path: str) -> List[Dict[str, Any]]:
+    """Processa todos XMLs de uma pasta"""
+    todos_dados = []
+    
+    # Busca todos arquivos .xml na pasta
+    xml_files = glob.glob(os.path.join(pasta_path, "*.xml"))
+    xml_files.extend(glob.glob(os.path.join(pasta_path, "*.XML")))
+    
+    for xml_file in xml_files:
+        try:
+            with open(xml_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            dados = parse_xml_content(content)
+            todos_dados.extend(dados)
+            
+        except UnicodeDecodeError:
+            # Tenta com latin-1
+            with open(xml_file, 'r', encoding='latin-1') as f:
+                content = f.read()
+            dados = parse_xml_content(content)
+            todos_dados.extend(dados)
+        except Exception as e:
+            st.warning(f"Erro no arquivo {os.path.basename(xml_file)}: {e}")
+            continue
+    
+    return todos_dados
+
+
 # =========================
-# UPLOAD DE ARQUIVOS
+# CSS PERSONALIZADO
 # =========================
-st.subheader("📂 Upload de XMLs")
-uploaded_files = st.file_uploader(
-    "Selecione um ou mais XMLs",
-    type=["xml"],
-    accept_multiple_files=True
-)
-
-dados = []
-
-if uploaded_files:
-    for file in uploaded_files:
-        content = file.read().decode("utf-8")
-        dados.extend(parse_xml(content))
-
-    st.success(f"{len(dados)} itens carregados")
+st.markdown("""
+<style>
+    /* Estilo da barra lateral direita */
+    section[data-testid="stSidebar"] {
+        position: fixed;
+        right: 0;
+        left: auto;
+        width: 280px !important;
+        background-color: #f8f9fa;
+        border-left: 1px solid #e0e0e0;
+        padding: 20px 15px;
+        box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+    }
+    
+    /* Ajuste do conteúdo principal */
+    section[data-testid="stSidebar"] + div {
+        margin-right: 280px !important;
+    }
+    
+    /* Cards de métricas */
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 12px;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    /* Tabela com scroll */
+    .stDataFrame {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    
+    /* Título principal */
+    .main-title {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 12px;
+        color: white;
+        margin-bottom: 30px;
+    }
+    
+    /* Botões estilizados */
+    .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        transition: all 0.3s;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+</style>
+""", unsafe_allow_html=True)
 
 
 # =========================
-# COLAR XML
+# INTERFACE PRINCIPAL
 # =========================
-st.subheader("📋 Ou cole o XML")
 
-xml_text = st.text_area("Cole aqui o XML")
-
-if st.button("Ler XML colado"):
-    dados = parse_xml(xml_text)
-    st.success(f"{len(dados)} itens carregados")
+# Título
+st.markdown("""
+<div class="main-title">
+    <h1 style="margin:0; color:white;">📄 Leitor XML NF-e</h1>
+    <p style="margin:5px 0 0 0; opacity:0.9;">Extração inteligente de dados de Notas Fiscais Eletrônicas</p>
+</div>
+""", unsafe_allow_html=True)
 
 
 # =========================
-# MOSTRAR TABELA
+# BARRA LATERAL DIREITA
 # =========================
-if dados:
-    df = pd.DataFrame(dados)
-
-    st.subheader("📊 Preview")
-    st.dataframe(df, use_container_width=True)
-
-    # =========================
-    # DOWNLOAD XLSX
-    # =========================
-    output = BytesIO()
-    df.to_excel(output, index=False, engine="openpyxl")
-
-    st.download_button(
-        label="💾 Baixar Excel",
-        data=output.getvalue(),
-        file_name="nfe.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+with st.sidebar:
+    st.markdown("### 📥 Entrada de Dados")
+    st.markdown("---")
+    
+    # Opção 1: Upload de múltiplos arquivos
+    st.markdown("**Upload de XMLs**")
+    uploaded_files = st.file_uploader(
+        "Selecione um ou mais arquivos XML",
+        type=["xml"],
+        accept_multiple_files=True,
+        key="uploader",
+        label_visibility="collapsed"
     )
+    
+    st.markdown("---")
+    
+    # Opção 2: Colar XML
+    st.markdown("**Colar XML**")
+    xml_text = st.text_area(
+        "Cole o conteúdo do XML aqui",
+        height=150,
+        placeholder="<nfeProc>...</nfeProc>",
+        label_visibility="collapsed"
+    )
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📋 Processar", use_container_width=True):
+            if xml_text:
+                dados = parse_xml_content(xml_text)
+                st.session_state['dados'] = dados
+                st.success(f"✅ {len(dados)} itens processados")
+            else:
+                st.warning("Cole um XML primeiro")
+    
+    with col2:
+        if st.button("🗑️ Limpar", use_container_width=True):
+            if 'dados' in st.session_state:
+                st.session_state['dados'] = []
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Opção 3: Selecionar pasta
+    st.markdown("**Pasta Local**")
+    pasta_path = st.text_input(
+        "Caminho da pasta com XMLs",
+        placeholder="C:/caminho/para/pasta",
+        label_visibility="collapsed"
+    )
+    
+    if st.button("📁 Carregar Pasta", use_container_width=True):
+        if pasta_path and os.path.exists(pasta_path):
+            with st.spinner("Processando XMLs da pasta..."):
+                dados = processar_pasta_xml(pasta_path)
+                st.session_state['dados'] = dados
+                st.success(f"✅ {len(dados)} itens processados")
+        else:
+            st.error("Pasta não encontrada")
+    
+    st.markdown("---")
+    
+    # Botão de exportação
+    st.markdown("### 💾 Exportar")
+    
+    if st.button("📊 Baixar Excel", use_container_width=True, type="primary"):
+        if 'dados' in st.session_state and st.session_state['dados']:
+            df = pd.DataFrame(st.session_state['dados'])
+            output = BytesIO()
+            
+            # Configuração do Excel com formatação
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='NF-e_Itens')
+                
+                # Ajusta largura das colunas
+                worksheet = writer.sheets['NF-e_Itens']
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            st.download_button(
+                label="💾 Fazer Download",
+                data=output.getvalue(),
+                file_name="nfe_exportado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        else:
+            st.warning("Nenhum dado para exportar")
+    
+    # Informações
+    st.markdown("---")
+    st.markdown("""
+    <div style="font-size:12px; color:#666; text-align:center;">
+        <p>✅ Suporta múltiplos XMLs<br>
+        ✅ Extrai emitente, destinatário e itens<br>
+        ✅ Campos de impostos IBS/CBS<br>
+        ✅ Robusto contra XMLs incompletos</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# =========================
+# ÁREA PRINCIPAL
+# =========================
+
+# Processar uploads se houver
+if uploaded_files:
+    with st.spinner("Processando arquivos..."):
+        dados = processar_arquivos_xml(uploaded_files)
+        st.session_state['dados'] = dados
+
+# Exibir dados
+if 'dados' in st.session_state and st.session_state['dados']:
+    df = pd.DataFrame(st.session_state['dados'])
+    
+    # Converter colunas numéricas para cálculos
+    for col in ['Item_Quantidade', 'Item_Valor_Total', 'IBS_Valor_IBS', 'IBS_Valor_CBS']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Métricas
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("📄 Notas Fiscais", df['Numero_NF'].nunique() if 'Numero_NF' in df else 0)
+    
+    with col2:
+        st.metric("📦 Total de Itens", len(df))
+    
+    with col3:
+        valor_total = df['Item_Valor_Total'].sum() if 'Item_Valor_Total' in df else 0
+        st.metric("💰 Valor Total", f"R$ {valor_total:,.2f}")
+    
+    with col4:
+        valor_impostos = df['IBS_Valor_IBS'].fillna(0).sum() + df['IBS_Valor_CBS'].fillna(0).sum()
+        st.metric("💸 Impostos (IBS+CBS)", f"R$ {valor_impostos:,.2f}")
+    
+    st.markdown("---")
+    
+    # Tabela de dados
+    st.subheader("📊 Detalhamento dos Itens")
+    
+    # Configuração da tabela com scroll
+    st.dataframe(
+        df,
+        use_container_width=True,
+        height=500,
+        column_config={
+            "Item_Descricao": st.column_config.TextColumn("Descrição", width="medium"),
+            "Item_Valor_Total": st.column_config.NumberColumn("Valor Total", format="R$ %.2f"),
+            "Item_Quantidade": st.column_config.NumberColumn("Quantidade", format="%.3f"),
+        }
+    )
+    
+    # Botão para limpar dados
+    if st.button("🗑️ Limpar todos os dados", type="secondary"):
+        st.session_state['dados'] = []
+        st.rerun()
+
+else:
+    # Mensagem inicial
+    st.info("""
+    ### 👋 Bem-vindo ao Leitor XML NF-e
+    
+    **Como usar:**
+    
+    1. **Upload de XMLs** - Selecione um ou mais arquivos no menu lateral direito
+    2. **Colar XML** - Cole o conteúdo diretamente na caixa de texto
+    3. **Pasta Local** - Informe o caminho de uma pasta com vários XMLs
+    
+    Após carregar, os dados aparecerão automaticamente nesta área principal.
+    
+    **Dados extraídos:**
+    - ✅ Emitente (nome fantasia, CNPJ, UF, IE)
+    - ✅ Destinatário (nome, CNPJ/CPF, UF)
+    - ✅ Nota fiscal (número, série, data, natureza)
+    - ✅ Itens (código, descrição, NCM, CFOP, quantidade, valores)
+    - ✅ Impostos IBS/CBS (alíquotas, bases, valores)
+    
+    **Exportação:** Use o botão "Baixar Excel" no menu lateral.
+    """)
