@@ -251,8 +251,8 @@ def main():
     with col_logo:
         st.markdown("## 📊")
     with col_title:
-        st.markdown("### Plano de Contas - TOTVS Protheus")
-        st.caption(f"Sistema compatível com {len(CAMPOS_CT1)} campos do layout CT1")
+        st.markdown("### Conversor Plano de Contas (CT1) - TOTVS Protheus")
+        st.caption(f"Compatível com os 81{len(CAMPOS_CT1)}  campos do layout CT1 ")
     
     # SIDEBAR INTELIGENTE
     with st.sidebar:
@@ -381,8 +381,8 @@ def main():
         st.markdown("""
         <div class="info-box">
             <h3>🎯 Objetivo do Sistema</h3>
-            <p>Este sistema tem como objetivo <strong>importar planos de contas do Excel e exportar no formato compatível com o ERP TOTVS Protheus</strong> (módulo Financeiro).</p>
-            <p>O sistema gera automaticamente o arquivo CSV no layout exato do Protheus, incluindo todos os 79 campos da tabela CT1, com os devidos paddings e formatações.</p>
+            <p>Este sistema tem como objetivo importar planilhas Excel com plano de contas e exportar no formato compatível para a rotina de importação do plano de contas do TOTVS Protheus.</p>
+            <p>Após importar seu Excel no modelo compatível, o sistema gera automaticamente o arquivo CSV no layout exato do Protheus, incluindo todos os 81 campos da tabela CT1, com os devidos paddings e formatações exigidas pelo ERP.</p>
         </div>
         """, unsafe_allow_html=True)
         
