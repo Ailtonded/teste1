@@ -6,11 +6,12 @@ from pathlib import Path
 import os
 from typing import List, Dict, Any
 import glob
+from datetime import datetime
 
 st.set_page_config(
     layout="wide",
-    page_title="Leitor XML NF-e",
-    page_icon="📄"
+    page_title="Analisador NF-e",
+    page_icon="📊"
 )
 
 # =========================
@@ -179,6 +180,22 @@ def parse_icms(icms_parent):
     return icms_data
 
 
+def format_date(date_str: str) -> str:
+    """Converte data ISO para formato dd/mm/yyyy"""
+    if not date_str or pd.isna(date_str):
+        return ""
+    try:
+        # Remove timezone e extrai apenas a data
+        if 'T' in date_str:
+            date_str = date_str.split('T')[0]
+        # Tenta converter para datetime
+        dt = pd.to_datetime(date_str)
+        return dt.strftime('%d/%m/%Y')
+    except:
+        return date_str
+
+
+@st.cache_data(ttl=3600)
 def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
     """
     Parse conteúdo XML e extrai dados da NF-e
@@ -203,6 +220,11 @@ def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
     dest = infNFe.find("dest")
     ide = infNFe.find("ide")
 
+    # Chave da NF-e
+    chave_nfe = infNFe.get("Id", "")
+    if chave_nfe and chave_nfe.startswith("NFe"):
+        chave_nfe = chave_nfe[3:]
+
     # Lista de itens
     dets = infNFe.findall("det")
 
@@ -222,7 +244,14 @@ def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
         imposto = det.find("imposto")
         icms_data = parse_icms(imposto) if imposto is not None else {}
         
+        # Processa datas
+        dhEmi = get_text(ide, "dhEmi")
+        dhSaiEnt = get_text(ide, "dhSaiEnt")
+        
         linha = {
+            # Chave da NF-e
+            "Chave_NFe": chave_nfe,
+            
             # Dados do emitente
             "Emitente_xFant": get_text(emit, "xFant"),
             "Emitente_CNPJ": get_text(emit, "CNPJ"),
@@ -240,8 +269,8 @@ def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
             "Modelo": get_text(ide, "mod"),
             "Numero_NF": get_text(ide, "nNF"),
             "Serie": get_text(ide, "serie"),
-            "Data_Emissao": get_text(ide, "dhEmi"),
-            "Data_Saida": get_text(ide, "dhSaiEnt"),
+            "Data_Emissao": format_date(dhEmi),
+            "Data_Saida": format_date(dhSaiEnt),
             "Natureza_Operacao": get_text(ide, "natOp"),
             
             # Dados do item
@@ -288,6 +317,7 @@ def parse_xml_content(xml_content: str) -> List[Dict[str, Any]]:
     return linhas
 
 
+@st.cache_data(ttl=3600)
 def processar_arquivos_xml(arquivos: List) -> List[Dict[str, Any]]:
     """Processa múltiplos arquivos XML"""
     todos_dados = []
@@ -313,6 +343,7 @@ def processar_arquivos_xml(arquivos: List) -> List[Dict[str, Any]]:
     return todos_dados
 
 
+@st.cache_data(ttl=3600)
 def processar_pasta_xml(pasta_path: str) -> List[Dict[str, Any]]:
     """Processa todos XMLs de uma pasta"""
     todos_dados = []
@@ -352,7 +383,7 @@ st.markdown("""
         position: fixed;
         right: 0;
         left: auto;
-        width: 280px !important;
+        width: 320px !important;
         background-color: #f8f9fa;
         border-left: 1px solid #e0e0e0;
         padding: 20px 15px;
@@ -361,7 +392,7 @@ st.markdown("""
     
     /* Ajuste do conteúdo principal */
     section[data-testid="stSidebar"] + div {
-        margin-right: 280px !important;
+        margin-right: 320px !important;
     }
     
     /* Header compacto */
@@ -413,6 +444,14 @@ st.markdown("""
         padding-top: 1rem;
         padding-bottom: 0rem;
     }
+    
+    /* Menu de colunas estilizado */
+    .column-menu {
+        background: white;
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -422,20 +461,18 @@ st.markdown("""
 # =========================
 
 # Header compacto
-col_title, col_spacer = st.columns([3, 1])
-with col_title:
-    st.markdown("""
-    <div class="main-header">
-        <div>
-            <h1>📄 Leitor XML NF-e</h1>
-            <p>Extração inteligente de dados de Notas Fiscais Eletrônicas</p>
-        </div>
+st.markdown("""
+<div class="main-header">
+    <div>
+        <h1>📊 Analisador Profissional NF-e</h1>
+        <p>Extração inteligente de dados fiscais</p>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
 
 # =========================
-# BARRA LATERAL DIREITA (MANTIDA)
+# BARRA LATERAL DIREITA (COM MENU DE COLUNAS)
 # =========================
 with st.sidebar:
     st.markdown("### 📥 Entrada de Dados")
@@ -466,9 +503,10 @@ with st.sidebar:
     with col1:
         if st.button("📋 Processar", use_container_width=True):
             if xml_text:
-                dados = parse_xml_content(xml_text)
-                st.session_state['dados'] = dados
-                st.success(f"✅ {len(dados)} itens processados")
+                with st.spinner("Processando XML..."):
+                    dados = parse_xml_content(xml_text)
+                    st.session_state['dados'] = dados
+                    st.success(f"✅ {len(dados)} itens processados")
             else:
                 st.warning("Cole um XML primeiro")
     
@@ -476,6 +514,8 @@ with st.sidebar:
         if st.button("🗑️ Limpar", use_container_width=True):
             if 'dados' in st.session_state:
                 st.session_state['dados'] = []
+                if 'selected_columns' in st.session_state:
+                    del st.session_state['selected_columns']
             st.rerun()
     
     st.markdown("---")
@@ -498,6 +538,57 @@ with st.sidebar:
             st.error("Pasta não encontrada")
     
     st.markdown("---")
+    
+    # Menu de seleção de colunas (aparece apenas quando há dados)
+    if 'dados' in st.session_state and st.session_state['dados']:
+        st.markdown("### 🎯 Colunas Visíveis")
+        st.markdown("---")
+        
+        # Obter todas as colunas disponíveis
+        df_full = pd.DataFrame(st.session_state['dados'])
+        all_columns = sorted(df_full.columns.tolist())
+        
+        # Colunas padrão selecionadas
+        default_columns = [
+            'Chave_NFe', 'Emitente_CNPJ', 'Emitente_xFant', 
+            'Destinatario_CNPJ', 'Destinatario_Nome',
+            'Numero_NF', 'Serie', 'Data_Emissao',
+            'Item_Numero', 'Item_Codigo', 'Item_Descricao',
+            'Item_Quantidade', 'Item_Valor_Unitario', 'Item_Valor_Total',
+            'Item_CFOP', 'ICMS_CST', 'ICMS_pICMS', 'ICMS_vICMS',
+            'IBS_CST', 'IBS_Classificacao_Trib', 'IBS_Base_Calculo', 
+            'IBS_Valor_CBS', 'IBS_Valor_IBS'
+        ]
+        
+        # Inicializar seleção de colunas no session state
+        if 'selected_columns' not in st.session_state:
+            # Selecionar apenas colunas que existem no DataFrame
+            st.session_state['selected_columns'] = [col for col in default_columns if col in all_columns]
+        
+        # Multiselect de colunas
+        selected_cols = st.multiselect(
+            "Escolha as colunas para exibir:",
+            options=all_columns,
+            default=st.session_state['selected_columns'],
+            key="column_selector"
+        )
+        
+        # Atualizar seleção
+        st.session_state['selected_columns'] = selected_cols
+        
+        # Botões de controle
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("✅ Selecionar Tudo", use_container_width=True):
+                st.session_state['selected_columns'] = all_columns
+                st.rerun()
+        
+        with col_btn2:
+            if st.button("❌ Limpar Seleção", use_container_width=True):
+                st.session_state['selected_columns'] = []
+                st.rerun()
+        
+        st.markdown("---")
     
     # Informações
     st.markdown("""
@@ -523,23 +614,29 @@ if uploaded_files:
 
 # Exibir dados
 if 'dados' in st.session_state and st.session_state['dados']:
-    df = pd.DataFrame(st.session_state['dados'])
+    df_full = pd.DataFrame(st.session_state['dados'])
+    
+    # Aplicar seleção de colunas
+    if 'selected_columns' in st.session_state and st.session_state['selected_columns']:
+        df = df_full[st.session_state['selected_columns']]
+    else:
+        df = df_full
     
     # Converter colunas numéricas para cálculos
     numeric_cols = ['Item_Quantidade', 'Item_Valor_Total', 'IBS_Valor_IBS', 'IBS_Valor_CBS',
                     'ICMS_vBC', 'ICMS_vICMS', 'ICMS_vBCSTRet', 'ICMS_vICMSSTRet']
     
     for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+        if col in df_full.columns:
+            df_full[col] = pd.to_numeric(df_full[col], errors='coerce')
     
     # Calcular métricas IBS/CBS
-    total_itens = len(df)
+    total_itens = len(df_full)
     
     # Critério: item tem IBS/CBS quando CST e cClassTrib não estão vazios
-    tem_ibs_cbs = df[
-        (df['IBS_CST'].notna()) & (df['IBS_CST'] != '') &
-        (df['IBS_Classificacao_Trib'].notna()) & (df['IBS_Classificacao_Trib'] != '')
+    tem_ibs_cbs = df_full[
+        (df_full['IBS_CST'].notna()) & (df_full['IBS_CST'] != '') &
+        (df_full['IBS_Classificacao_Trib'].notna()) & (df_full['IBS_Classificacao_Trib'] != '')
     ]
     
     qtd_com_ibs_cbs = len(tem_ibs_cbs)
@@ -553,17 +650,17 @@ if 'dados' in st.session_state and st.session_state['dados']:
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
-        st.metric("📄 Notas Fiscais", df['Numero_NF'].nunique() if 'Numero_NF' in df else 0)
+        st.metric("📄 Notas Fiscais", df_full['Numero_NF'].nunique() if 'Numero_NF' in df_full else 0)
     
     with col2:
         st.metric("📦 Total de Itens", total_itens)
     
     with col3:
-        valor_total = df['Item_Valor_Total'].sum() if 'Item_Valor_Total' in df else 0
+        valor_total = df_full['Item_Valor_Total'].sum() if 'Item_Valor_Total' in df_full else 0
         st.metric("💰 Valor Total", f"R$ {valor_total:,.2f}")
     
     with col4:
-        valor_icms = df['ICMS_vICMS'].sum() if 'ICMS_vICMS' in df else 0
+        valor_icms = df_full['ICMS_vICMS'].sum() if 'ICMS_vICMS' in df_full else 0
         st.metric("💸 ICMS Total", f"R$ {valor_icms:,.2f}")
     
     with col5:
@@ -594,7 +691,9 @@ if 'dados' in st.session_state and st.session_state['dados']:
         
         # Configuração do Excel com formatação
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='NF-e_Itens')
+            # Exportar com as colunas selecionadas
+            df_export = df_full[st.session_state['selected_columns']] if st.session_state.get('selected_columns') else df_full
+            df_export.to_excel(writer, index=False, sheet_name='NF-e_Itens')
             
             # Ajusta largura das colunas
             worksheet = writer.sheets['NF-e_Itens']
@@ -636,12 +735,14 @@ if 'dados' in st.session_state and st.session_state['dados']:
     # Botão para limpar dados (mantido)
     if st.button("🗑️ Limpar todos os dados", type="secondary"):
         st.session_state['dados'] = []
+        if 'selected_columns' in st.session_state:
+            del st.session_state['selected_columns']
         st.rerun()
 
 else:
     # Mensagem inicial (mantida)
     st.info("""
-    ### 👋 Bem-vindo ao Leitor XML NF-e
+    ### 👋 Bem-vindo ao Analisador Profissional NF-e
     
     **Como usar:**
     
@@ -650,6 +751,13 @@ else:
     3. **Pasta Local** - Informe o caminho de uma pasta com vários XMLs
     
     Após carregar, os dados aparecerão automaticamente nesta área principal.
+    
+    **Recursos disponíveis:**
+    - ✅ Seleção dinâmica de colunas no menu lateral
+    - ✅ Métricas inteligentes (IBS/CBS)
+    - ✅ Datas formatadas automaticamente
+    - ✅ Suporte completo ICMS (todos os tipos)
+    - ✅ Exportação Excel personalizada
     
     **Dados extraídos:**
     - ✅ Emitente (nome fantasia, CNPJ, UF, IE)
