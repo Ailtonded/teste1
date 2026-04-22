@@ -1,231 +1,170 @@
 import streamlit as st
-import re
 import pandas as pd
+import xml.etree.ElementTree as ET
+from io import BytesIO
 
-# =========================
-# 🔹 LAYOUT
-# =========================
 st.set_page_config(layout="wide")
+st.title("📦 Leitor de XML - SUPER ROBUSTO")
 
-st.markdown("""
-<style>
-[data-testid="stDataFrame"] div {
-    white-space: normal !important;
-}
-</style>
-""", unsafe_allow_html=True)
+uploaded_file = st.file_uploader("Selecione o XML", type="xml")
 
-# =========================
-# 🔹 FUNÇÕES BASE
-# =========================
+# -------------------------------
+# FUNÇÕES AUXILIARES
+# -------------------------------
+def remove_namespace(tag):
+    return tag.split("}")[-1]
 
-def limpar_tags(valor):
-    return re.sub(r"<.*?>", "", valor).strip() if valor else ""
+def formatar_data(data):
+    if data:
+        return data.split("T")[0]
+    return ""
 
-def extrair_tag(texto, tag):
-    if not texto:
-        return ""
-    padrao = fr"<(?:\\w+:)?{tag}[^>]*>(.*?)</(?:\\w+:)?{tag}>"
-    resultado = re.search(padrao, texto, re.DOTALL | re.IGNORECASE)
-    return limpar_tags(resultado.group(1)) if resultado else ""
-
-def extrair_blocos(texto, tag):
-    if not texto:
-        return []
-    padrao = fr"<(?:\\w+:)?{tag}[^>]*>(.*?)</(?:\\w+:)?{tag}>"
-    return re.findall(padrao, texto, re.DOTALL | re.IGNORECASE)
-
-def extrair_atributo(texto, atributo):
-    padrao = fr'{atributo}="(.*?)"'
-    resultado = re.search(padrao, texto)
-    return resultado.group(1) if resultado else ""
-
-def tratar_data(valor):
-    return valor.split("T")[0] if valor and "T" in valor else valor
-
-def traduz_indIEDest(valor):
+def indIEDest_desc(valor):
     mapa = {
         "1": "1 - Contribuinte ICMS",
-        "2": "2 - Isento de IE",
+        "2": "2 - Isento",
         "9": "9 - Não Contribuinte"
     }
     return mapa.get(valor, valor)
 
-def to_float(valor):
-    try:
-        return float(str(valor).replace(",", "."))
-    except:
-        return None
+def get_text(node, tag):
+    el = node.find(tag)
+    return el.text if el is not None else ""
 
-# =========================
-# 🔹 ICMS DINÂMICO
-# =========================
-def extrair_icms(imposto):
-    icms = extrair_tag(imposto, "ICMS")
+# -------------------------------
+# PROCESSAMENTO
+# -------------------------------
+if uploaded_file:
+    tree = ET.parse(uploaded_file)
+    root = tree.getroot()
 
-    tipos = [
-        "ICMS00","ICMS10","ICMS20","ICMS30",
-        "ICMS40","ICMS51","ICMS60","ICMS70","ICMS90"
-    ]
+    # REMOVE NAMESPACE (CRUCIAL)
+    for elem in root.iter():
+        elem.tag = remove_namespace(elem.tag)
 
-    for tipo in tipos:
-        bloco = extrair_tag(icms, tipo)
-        if bloco:
-            dados = {"ICMS_Tipo": tipo}
+    # GARANTE INFNFE
+    infNFe = root.find(".//infNFe")
 
-            campos = [
-                "orig","CST","modBC","pRedBC","vBC","pICMS","vICMS",
-                "pST","pRedBCEfet","vBCEfet","vBCSTRet",
-                "vICMSEfet","vICMSSubstituto","vICMSSTRet","pICMSEfet"
-            ]
+    ide = infNFe.find("ide")
+    emit = infNFe.find("emit")
+    dest = infNFe.find("dest")
 
-            for campo in campos:
-                dados[f"{tipo}_{campo}"] = extrair_tag(bloco, campo)
+    # EMITENTE
+    emit_xFant = get_text(emit, "xFant")
+    emit_CNPJ = get_text(emit, "CNPJ")
+    emit_UF = get_text(emit.find("enderEmit"), "UF") if emit.find("enderEmit") else ""
+    emit_IE = get_text(emit, "IE")
 
-            return dados
+    # DESTINATÁRIO
+    dest_nome = get_text(dest, "xNome")
+    dest_CNPJ = get_text(dest, "CNPJ")
+    dest_UF = get_text(dest.find("enderDest"), "UF") if dest.find("enderDest") else ""
+    dest_indIE = indIEDest_desc(get_text(dest, "indIEDest"))
 
-    return {}
+    # IDE
+    mod = get_text(ide, "mod")
+    nNF = get_text(ide, "nNF")
+    dhEmi = formatar_data(get_text(ide, "dhEmi"))
+    dhSaiEnt = formatar_data(get_text(ide, "dhSaiEnt"))
+    serie = get_text(ide, "serie")
+    natOp = get_text(ide, "natOp")
 
-# =========================
-# 🔹 IBSCBS
-# =========================
-def extrair_ibscbs(imposto):
-    ibs = extrair_tag(imposto, "IBSCBS")
-    g = extrair_tag(ibs, "gIBSCBS")
+    dados = []
 
-    dados = {}
+    # ITENS
+    for det in infNFe.findall("det"):
+        nItem = get_text(det, "nItem")
 
-    dados["IBSCBS_CST"] = extrair_tag(ibs, "CST")
-    dados["IBSCBS_cClassTrib"] = extrair_tag(ibs, "cClassTrib")
+        prod = det.find("prod")
 
-    dados["IBSCBS_vBC"] = extrair_tag(g, "vBC")
-    dados["IBSCBS_vIBS"] = extrair_tag(g, "vIBS")
+        imposto = det.find("imposto")
 
-    gCBS = extrair_tag(g, "gCBS")
-    dados["IBSCBS_pCBS"] = extrair_tag(gCBS, "pCBS")
-    dados["IBSCBS_vCBS"] = extrair_tag(gCBS, "vCBS")
-    dados["IBSCBS_vDevTrib_CBS"] = extrair_tag(gCBS, "vDevTrib")
+        # PRODUTO
+        item = {
+            "Emit_xFant": emit_xFant,
+            "Emit_CNPJ": emit_CNPJ,
+            "Emit_UF": emit_UF,
+            "Emit_IE": emit_IE,
+            "Dest_Nome": dest_nome,
+            "Dest_CNPJ": dest_CNPJ,
+            "Dest_UF": dest_UF,
+            "Dest_IndIEDest": dest_indIE,
+            "mod": mod,
+            "nNF": nNF,
+            "dhEmi": dhEmi,
+            "dhSaiEnt": dhSaiEnt,
+            "serie": serie,
+            "natOp": natOp,
+            "nItem": nItem,
+            "cEAN": get_text(prod, "cEAN"),
+            "cProd": get_text(prod, "cProd"),
+            "xProd": get_text(prod, "xProd"),
+            "NCM": get_text(prod, "NCM"),
+            "CFOP": get_text(prod, "CFOP"),
+            "CEST": get_text(prod, "CEST"),
+            "cBenef": get_text(prod, "cBenef"),
+            "qCom": get_text(prod, "qCom"),
+            "vUnCom": get_text(prod, "vUnCom"),
+            "vProd": get_text(prod, "vProd"),
+            "uCom": get_text(prod, "uCom"),
+            "uTrib": get_text(prod, "uTrib"),
+            "qTrib": get_text(prod, "qTrib"),
+            "vUnTrib": get_text(prod, "vUnTrib"),
+        }
 
-    gUF = extrair_tag(g, "gIBSUF")
-    dados["IBSCBS_pIBSUF"] = extrair_tag(gUF, "pIBSUF")
-    dados["IBSCBS_vIBSUF"] = extrair_tag(gUF, "vIBSUF")
-    dados["IBSCBS_vDevTrib_IBSUF"] = extrair_tag(gUF, "vDevTrib")
+        # ---------------- IBSCBS ----------------
+        ibscbs = imposto.find("IBSCBS") if imposto is not None else None
+        if ibscbs is not None:
+            g = ibscbs.find("gIBSCBS")
 
-    gMun = extrair_tag(g, "gIBSMun")
-    dados["IBSCBS_pIBSMun"] = extrair_tag(gMun, "pIBSMun")
-    dados["IBSCBS_vIBSMun"] = extrair_tag(gMun, "vIBSMun")
+            item.update({
+                "IBSCBS_CST": get_text(ibscbs, "CST"),
+                "IBSCBS_cClassTrib": get_text(ibscbs, "cClassTrib"),
+                "IBSCBS_vBC": get_text(g, "vBC") if g else "",
+                "IBSCBS_vIBS": get_text(g, "vIBS") if g else "",
+            })
 
-    return dados
+            # CBS
+            gCBS = g.find("gCBS") if g is not None else None
+            if gCBS is not None:
+                item["IBSCBS_pCBS"] = get_text(gCBS, "pCBS")
+                item["IBSCBS_vCBS"] = get_text(gCBS, "vCBS")
+                item["IBSCBS_vDevTrib_CBS"] = get_text(gCBS.find("gDevTrib"), "vDevTrib") if gCBS.find("gDevTrib") else ""
 
-# =========================
-# 🔹 APP
-# =========================
+            # IBS UF
+            gIBSUF = g.find("gIBSUF") if g is not None else None
+            if gIBSUF is not None:
+                item["IBSCBS_pIBSUF"] = get_text(gIBSUF, "pIBSUF")
+                item["IBSCBS_vIBSUF"] = get_text(gIBSUF, "vIBSUF")
+                item["IBSCBS_vDevTrib_IBSUF"] = get_text(gIBSUF.find("gDevTrib"), "vDevTrib") if gIBSUF.find("gDevTrib") else ""
 
-st.title("📦 Leitor de XML - SUPER ROBUSTO")
+            # IBS Mun
+            gIBSMun = g.find("gIBSMun") if g is not None else None
+            if gIBSMun is not None:
+                item["IBSCBS_pIBSMun"] = get_text(gIBSMun, "pIBSMun")
+                item["IBSCBS_vIBSMun"] = get_text(gIBSMun, "vIBSMun")
 
-arquivo = st.file_uploader("Selecione o XML", type=["xml"])
+        # ---------------- ICMS DINÂMICO ----------------
+        icms = imposto.find("ICMS") if imposto is not None else None
+        if icms is not None and list(icms):
+            tipo_icms = list(icms)[0]
+            for child in tipo_icms:
+                item[f"ICMS_{remove_namespace(tipo_icms.tag)}_{child.tag}"] = child.text
 
-if arquivo:
-    xml = arquivo.read().decode("utf-8", errors="ignore")
+        dados.append(item)
 
-    # 🔹 EMITENTE
-    emit = extrair_tag(xml, "emit")
+    df = pd.DataFrame(dados)
 
-    dados_emit = {
-        "Emit_xFant": extrair_tag(emit, "xFant"),
-        "Emit_CNPJ": extrair_tag(emit, "CNPJ"),
-        "Emit_UF": extrair_tag(emit, "UF"),
-        "Emit_IE": extrair_tag(emit, "IE"),
-    }
-
-    # 🔹 DESTINATÁRIO
-    dest = extrair_tag(xml, "dest")
-
-    dados_dest = {
-        "Dest_Nome": extrair_tag(dest, "xNome"),
-        "Dest_CNPJ": extrair_tag(dest, "CNPJ"),
-        "Dest_UF": extrair_tag(dest, "UF"),
-        "Dest_IndIEDest": traduz_indIEDest(extrair_tag(dest, "indIEDest")),
-    }
-
-    # 🔹 IDE
-    dados_ide = {
-        "mod": extrair_tag(xml, "mod"),
-        "nNF": extrair_tag(xml, "nNF"),
-        "dhEmi": tratar_data(extrair_tag(xml, "dhEmi")),
-        "dhSaiEnt": tratar_data(extrair_tag(xml, "dhSaiEnt")),
-        "serie": extrair_tag(xml, "serie"),
-        "natOp": extrair_tag(xml, "natOp"),
-    }
-
-    # 🔹 ITENS
-    dets = extrair_blocos(xml, "det")
-
-    linhas = []
-
-    for det in dets:
-        prod = extrair_tag(det, "prod")
-        imposto = extrair_tag(det, "imposto")
-
-        linha = {}
-
-        # 🔹 FIXOS
-        linha.update(dados_emit)
-        linha.update(dados_dest)
-        linha.update(dados_ide)
-
-        # 🔹 ITEM (atributo)
-        linha["nItem"] = extrair_atributo(det, "nItem")
-
-        # 🔹 PROD
-        linha["cEAN"] = extrair_tag(prod, "cEAN")
-        linha["cProd"] = extrair_tag(prod, "cProd")
-        linha["xProd"] = extrair_tag(prod, "xProd")
-        linha["NCM"] = extrair_tag(prod, "NCM")
-        linha["CFOP"] = extrair_tag(prod, "CFOP")
-        linha["CEST"] = extrair_tag(prod, "CEST")
-        linha["cBenef"] = extrair_tag(prod, "cBenef")
-        linha["qCom"] = extrair_tag(prod, "qCom")
-        linha["vUnCom"] = extrair_tag(prod, "vUnCom")
-        linha["vProd"] = extrair_tag(prod, "vProd")
-        linha["uCom"] = extrair_tag(prod, "uCom")
-        linha["uTrib"] = extrair_tag(prod, "uTrib")
-        linha["qTrib"] = extrair_tag(prod, "qTrib")
-        linha["vUnTrib"] = extrair_tag(prod, "vUnTrib")
-
-        # 🔹 IMPOSTOS
-        linha.update(extrair_ibscbs(imposto))
-        linha.update(extrair_icms(imposto))
-
-        linhas.append(linha)
-
-    df = pd.DataFrame(linhas)
-
-    # 🔹 NUMÉRICOS
-    for col in df.columns:
-        if any(x in col.lower() for x in ["v", "p", "q"]):
-            df[col] = df[col].apply(to_float)
-
-    # =========================
-    # 🔹 EXIBE
-    # =========================
     st.subheader("📊 Itens da Nota")
-    st.dataframe(df, use_container_width=True, height=600)
+    st.dataframe(df, use_container_width=True)
 
-    # =========================
-    # 🔹 EXPORTAR XLSX
-    # =========================
-    def gerar_excel(df):
-        from io import BytesIO
-        output = BytesIO()
-        df.to_excel(output, index=False)
-        return output.getvalue()
-
-    excel = gerar_excel(df)
+    # ---------------- EXPORTAR EXCEL ----------------
+    output = BytesIO()
+    df.to_excel(output, index=False, engine='openpyxl')
 
     st.download_button(
         label="📥 Baixar XLSX",
-        data=excel,
+        data=output.getvalue(),
         file_name="nota_fiscal.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
