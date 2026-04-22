@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # =========================
-# FUNÇÕES AUXILIARES
+# FUNÇÕES AUXILIARES (MANTIDAS)
 # =========================
 
 def get_text(parent, tag: str) -> str:
@@ -343,7 +343,7 @@ def processar_pasta_xml(pasta_path: str) -> List[Dict[str, Any]]:
 
 
 # =========================
-# CSS PERSONALIZADO
+# CSS PERSONALIZADO (OTIMIZADO)
 # =========================
 st.markdown("""
 <style>
@@ -364,60 +364,78 @@ st.markdown("""
         margin-right: 280px !important;
     }
     
-    /* Cards de métricas */
-    .metric-card {
+    /* Header compacto */
+    .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 12px;
+        padding: 8px 20px;
+        border-radius: 8px;
         color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
     
-    /* Tabela com scroll */
+    .main-header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+    
+    .main-header p {
+        margin: 0;
+        font-size: 0.8rem;
+        opacity: 0.9;
+    }
+    
+    /* Cards de métricas compactos */
+    .metric-container {
+        background: white;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 20px;
+    }
+    
+    /* Botão Excel alinhado */
+    .excel-button {
+        text-align: right;
+        margin-bottom: 15px;
+    }
+    
+    /* Tabela com scroll otimizada */
     .stDataFrame {
         max-height: 600px;
         overflow-y: auto;
     }
     
-    /* Título principal */
-    .main-title {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 12px;
-        color: white;
-        margin-bottom: 30px;
-    }
-    
-    /* Botões estilizados */
-    .stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        transition: all 0.3s;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    /* Remove padding desnecessário */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 0rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 # =========================
-# INTERFACE PRINCIPAL
+# INTERFACE PRINCIPAL (REFATORADA)
 # =========================
 
-# Título
-st.markdown("""
-<div class="main-title">
-    <h1 style="margin:0; color:white;">📄 Leitor XML NF-e</h1>
-    <p style="margin:5px 0 0 0; opacity:0.9;">Extração inteligente de dados de Notas Fiscais Eletrônicas</p>
-</div>
-""", unsafe_allow_html=True)
+# Header compacto
+col_title, col_spacer = st.columns([3, 1])
+with col_title:
+    st.markdown("""
+    <div class="main-header">
+        <div>
+            <h1>📄 Leitor XML NF-e</h1>
+            <p>Extração inteligente de dados de Notas Fiscais Eletrônicas</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # =========================
-# BARRA LATERAL DIREITA
+# BARRA LATERAL DIREITA (MANTIDA)
 # =========================
 with st.sidebar:
     st.markdown("### 📥 Entrada de Dados")
@@ -481,50 +499,13 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Botão de exportação
-    st.markdown("### 💾 Exportar")
-    
-    if st.button("📊 Baixar Excel", use_container_width=True, type="primary"):
-        if 'dados' in st.session_state and st.session_state['dados']:
-            df = pd.DataFrame(st.session_state['dados'])
-            output = BytesIO()
-            
-            # Configuração do Excel com formatação
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='NF-e_Itens')
-                
-                # Ajusta largura das colunas
-                worksheet = writer.sheets['NF-e_Itens']
-                for column in worksheet.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_width = min(max_length + 2, 50)
-                    worksheet.column_dimensions[column_letter].width = adjusted_width
-            
-            st.download_button(
-                label="💾 Fazer Download",
-                data=output.getvalue(),
-                file_name="nfe_exportado.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        else:
-            st.warning("Nenhum dado para exportar")
-    
     # Informações
-    st.markdown("---")
     st.markdown("""
     <div style="font-size:12px; color:#666; text-align:center;">
         <p>✅ Suporta múltiplos XMLs<br>
         ✅ Extrai emitente, destinatário e itens<br>
         ✅ Campos de impostos IBS/CBS<br>
-        ✅ <strong>Suporte completo ICMS</strong><br>
+        ✅ Suporte completo ICMS<br>
         ✅ Robusto contra XMLs incompletos</p>
     </div>
     """, unsafe_allow_html=True)
@@ -552,14 +533,30 @@ if 'dados' in st.session_state and st.session_state['dados']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     
-    # Métricas
-    col1, col2, col3, col4 = st.columns(4)
+    # Calcular métricas IBS/CBS
+    total_itens = len(df)
+    
+    # Critério: item tem IBS/CBS quando CST e cClassTrib não estão vazios
+    tem_ibs_cbs = df[
+        (df['IBS_CST'].notna()) & (df['IBS_CST'] != '') &
+        (df['IBS_Classificacao_Trib'].notna()) & (df['IBS_Classificacao_Trib'] != '')
+    ]
+    
+    qtd_com_ibs_cbs = len(tem_ibs_cbs)
+    qtd_sem_ibs_cbs = total_itens - qtd_com_ibs_cbs
+    percentual_com = (qtd_com_ibs_cbs / total_itens * 100) if total_itens > 0 else 0
+    percentual_sem = (qtd_sem_ibs_cbs / total_itens * 100) if total_itens > 0 else 0
+    
+    # Métricas compactas em linha única
+    st.markdown('<div class="metric-container">', unsafe_allow_html=True)
+    
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
         st.metric("📄 Notas Fiscais", df['Numero_NF'].nunique() if 'Numero_NF' in df else 0)
     
     with col2:
-        st.metric("📦 Total de Itens", len(df))
+        st.metric("📦 Total de Itens", total_itens)
     
     with col3:
         valor_total = df['Item_Valor_Total'].sum() if 'Item_Valor_Total' in df else 0
@@ -569,16 +566,64 @@ if 'dados' in st.session_state and st.session_state['dados']:
         valor_icms = df['ICMS_vICMS'].sum() if 'ICMS_vICMS' in df else 0
         st.metric("💸 ICMS Total", f"R$ {valor_icms:,.2f}")
     
-    st.markdown("---")
+    with col5:
+        st.metric(
+            "✅ IBS/CBS", 
+            f"{qtd_com_ibs_cbs} ({percentual_com:.0f}%)",
+            help="Itens com IBS/CBS preenchido (CST e cClassTrib não vazios)"
+        )
     
-    # Tabela de dados
-    st.subheader("📊 Detalhamento dos Itens")
+    with col6:
+        st.metric(
+            "❌ Sem IBS/CBS", 
+            f"{qtd_sem_ibs_cbs} ({percentual_sem:.0f}%)",
+            help="Itens sem IBS/CBS (CST ou cClassTrib vazios)"
+        )
     
-    # Configuração da tabela com scroll
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Tabela com botão Excel alinhado à direita
+    col_title, col_button = st.columns([3, 1])
+    
+    with col_title:
+        st.subheader("📊 Detalhamento dos Itens")
+    
+    with col_button:
+        # Botão de exportação
+        output = BytesIO()
+        
+        # Configuração do Excel com formatação
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='NF-e_Itens')
+            
+            # Ajusta largura das colunas
+            worksheet = writer.sheets['NF-e_Itens']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        st.download_button(
+            label="⬇️ Baixar Excel",
+            data=output.getvalue(),
+            file_name="nfe_exportado.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="excel_download"
+        )
+    
+    # Tabela de dados com scroll otimizado
     st.dataframe(
         df,
         use_container_width=True,
-        height=500,
+        height=550,
         column_config={
             "Item_Descricao": st.column_config.TextColumn("Descrição", width="medium"),
             "Item_Valor_Total": st.column_config.NumberColumn("Valor Total", format="R$ %.2f"),
@@ -588,13 +633,13 @@ if 'dados' in st.session_state and st.session_state['dados']:
         }
     )
     
-    # Botão para limpar dados
+    # Botão para limpar dados (mantido)
     if st.button("🗑️ Limpar todos os dados", type="secondary"):
         st.session_state['dados'] = []
         st.rerun()
 
 else:
-    # Mensagem inicial
+    # Mensagem inicial (mantida)
     st.info("""
     ### 👋 Bem-vindo ao Leitor XML NF-e
     
@@ -612,7 +657,7 @@ else:
     - ✅ Nota fiscal (número, série, data, natureza)
     - ✅ Itens (código, descrição, NCM, CFOP, quantidade, valores)
     - ✅ Impostos IBS/CBS (alíquotas, bases, valores)
-    - ✅ **ICMS (todos os tipos: ICMS00, ICMS10, ICMS20, ICMS30, ICMS40, ICMS41, ICMS50, ICMS51, ICMS60, ICMS70, ICMS90)**
+    - ✅ ICMS (todos os tipos: ICMS00, ICMS10, ICMS20, ICMS30, ICMS40, ICMS41, ICMS50, ICMS51, ICMS60, ICMS70, ICMS90)
     
-    **Exportação:** Use o botão "Baixar Excel" no menu lateral.
+    **Exportação:** Use o botão "Baixar Excel" ao lado do título da tabela.
     """)
