@@ -2,10 +2,11 @@ import streamlit as st
 import re
 import pandas as pd
 
-# 🔹 Layout tela cheia
+# =========================
+# 🔹 LAYOUT
+# =========================
 st.set_page_config(layout="wide")
 
-# 🔹 CSS para quebra de texto
 st.markdown("""
 <style>
 [data-testid="stDataFrame"] div {
@@ -15,16 +16,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔹 FUNÇÕES
+# 🔹 FUNÇÕES ROBUSTAS
 # =========================
+
 def extrair_tag(texto, tag):
-    padrao = fr"<{tag}>(.*?)</{tag}>"
-    resultado = re.search(padrao, texto, re.DOTALL)
+    if not texto:
+        return ""
+    padrao = fr"<{tag}[^>]*>(.*?)</{tag}>"
+    resultado = re.search(padrao, texto, re.DOTALL | re.IGNORECASE)
     return resultado.group(1).strip() if resultado else ""
 
 def extrair_blocos(texto, tag):
-    padrao = fr"<{tag}>(.*?)</{tag}>"
-    return re.findall(padrao, texto, re.DOTALL)
+    if not texto:
+        return []
+    padrao = fr"<{tag}[^>]*>(.*?)</{tag}>"
+    return re.findall(padrao, texto, re.DOTALL | re.IGNORECASE)
 
 def tratar_data(valor):
     return valor.split("T")[0] if valor and "T" in valor else valor
@@ -37,24 +43,24 @@ def traduz_indIEDest(valor):
     }
     return mapa.get(valor, valor)
 
+# 🔥 ICMS DINÂMICO (qualquer tipo)
 def extrair_icms(imposto):
     icms = extrair_tag(imposto, "ICMS")
 
-    tipos_icms = [
+    tipos = [
         "ICMS00","ICMS10","ICMS20","ICMS30",
         "ICMS40","ICMS51","ICMS60","ICMS70","ICMS90"
     ]
 
-    for tipo in tipos_icms:
+    for tipo in tipos:
         bloco = extrair_tag(icms, tipo)
         if bloco:
-            dados = {}
-            dados["ICMS_Tipo"] = tipo
+            dados = {"ICMS_Tipo": tipo}
 
             campos = [
-                "orig","CST","pST","pRedBCEfet","vBCEfet",
-                "vBCSTRet","vICMSEfet","vICMSSubstituto",
-                "vICMSSTRet","pICMSEfet","vBC","pICMS","vICMS"
+                "orig","CST","modBC","pRedBC","vBC","pICMS","vICMS",
+                "pST","pRedBCEfet","vBCEfet","vBCSTRet",
+                "vICMSEfet","vICMSSubstituto","vICMSSTRet","pICMSEfet"
             ]
 
             for campo in campos:
@@ -64,10 +70,42 @@ def extrair_icms(imposto):
 
     return {}
 
+# 🔥 IBSCBS FLEXÍVEL
+def extrair_ibscbs(imposto):
+    ibs = extrair_tag(imposto, "IBSCBS")
+    g = extrair_tag(ibs, "gIBSCBS")
+
+    dados = {}
+
+    dados["IBSCBS_CST"] = extrair_tag(ibs, "CST")
+    dados["IBSCBS_cClassTrib"] = extrair_tag(ibs, "cClassTrib")
+
+    dados["IBSCBS_vBC"] = extrair_tag(g, "vBC")
+    dados["IBSCBS_vIBS"] = extrair_tag(g, "vIBS")
+
+    # CBS
+    gCBS = extrair_tag(g, "gCBS")
+    dados["IBSCBS_pCBS"] = extrair_tag(gCBS, "pCBS")
+    dados["IBSCBS_vCBS"] = extrair_tag(gCBS, "vCBS")
+    dados["IBSCBS_vDevTrib_CBS"] = extrair_tag(gCBS, "vDevTrib")
+
+    # IBS UF
+    gUF = extrair_tag(g, "gIBSUF")
+    dados["IBSCBS_pIBSUF"] = extrair_tag(gUF, "pIBSUF")
+    dados["IBSCBS_vIBSUF"] = extrair_tag(gUF, "vIBSUF")
+    dados["IBSCBS_vDevTrib_IBSUF"] = extrair_tag(gUF, "vDevTrib")
+
+    # IBS MUN
+    gMun = extrair_tag(g, "gIBSMun")
+    dados["IBSCBS_pIBSMun"] = extrair_tag(gMun, "pIBSMun")
+    dados["IBSCBS_vIBSMun"] = extrair_tag(gMun, "vIBSMun")
+
+    return dados
+
 # =========================
 # 🔹 INTERFACE
 # =========================
-st.title("📦 Leitor de XML - Completo com ICMS")
+st.title("📦 Leitor de XML - SUPER ROBUSTO")
 
 arquivo = st.file_uploader("Selecione o XML", type=["xml"])
 
@@ -120,7 +158,6 @@ if arquivo:
     for det in dets:
         prod = extrair_tag(det, "prod")
         imposto = extrair_tag(det, "imposto")
-        ibscbs = extrair_tag(imposto, "IBSCBS")
 
         linha = {}
 
@@ -149,26 +186,9 @@ if arquivo:
         linha["vUnTrib"] = extrair_tag(prod, "vUnTrib")
 
         # 🔹 IBSCBS
-        linha["IBSCBS_CST"] = extrair_tag(ibscbs, "CST")
-        linha["IBSCBS_cClassTrib"] = extrair_tag(ibscbs, "cClassTrib")
-        linha["IBSCBS_vBC"] = extrair_tag(ibscbs, "vBC")
-        linha["IBSCBS_vIBS"] = extrair_tag(ibscbs, "vIBS")
-        linha["IBSCBS_pCBS"] = extrair_tag(ibscbs, "pCBS")
-        linha["IBSCBS_vCBS"] = extrair_tag(ibscbs, "vCBS")
+        linha.update(extrair_ibscbs(imposto))
 
-        gCBS = extrair_tag(ibscbs, "gCBS")
-        linha["IBSCBS_vDevTrib_CBS"] = extrair_tag(gCBS, "vDevTrib")
-
-        linha["IBSCBS_pIBSUF"] = extrair_tag(ibscbs, "pIBSUF")
-        linha["IBSCBS_vIBSUF"] = extrair_tag(ibscbs, "vIBSUF")
-
-        gIBSUF = extrair_tag(ibscbs, "gIBSUF")
-        linha["IBSCBS_vDevTrib_IBSUF"] = extrair_tag(gIBSUF, "vDevTrib")
-
-        linha["IBSCBS_pIBSMun"] = extrair_tag(ibscbs, "pIBSMun")
-        linha["IBSCBS_vIBSMun"] = extrair_tag(ibscbs, "vIBSMun")
-
-        # 🔹 ICMS DINÂMICO
+        # 🔹 ICMS
         linha.update(extrair_icms(imposto))
 
         linhas.append(linha)
@@ -179,4 +199,4 @@ if arquivo:
     # 🔹 EXIBE
     # =========================
     st.subheader("📊 Itens da Nota")
-    st.dataframe(df, use_container_width=True, height=500)
+    st.dataframe(df, use_container_width=True, height=600)
