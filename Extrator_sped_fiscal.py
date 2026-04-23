@@ -1,13 +1,33 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="SPED Fiscal - C100 e C190", layout="wide")
+st.set_page_config(page_title="SPED Fiscal", layout="wide")
 
-st.title("📄 Leitor SPED Fiscal (C100 + C190)")
+st.title("📊 Leitor SPED Fiscal (C100 + C190)")
 
-uploaded_file = st.file_uploader("Envie o SPED (.txt)", type=["txt"])
+uploaded_file = st.file_uploader("Envie o arquivo SPED (.txt)", type=["txt"])
 
 
+# =========================
+# FUNÇÕES AUXILIARES
+# =========================
+def to_float(valor):
+    try:
+        if valor is None:
+            return 0.0
+        valor = str(valor).replace(",", ".").strip()
+        return float(valor) if valor else 0.0
+    except:
+        return 0.0
+
+
+def get_part(parts, index):
+    return parts[index] if len(parts) > index else ""
+
+
+# =========================
+# PARSER SPED
+# =========================
 def parse_sped(lines):
     notas = []
     impostos = []
@@ -27,62 +47,79 @@ def parse_sped(lines):
         # =========================
         if reg == "C100":
             nota_atual = {
-                "NUM_DOC": parts[8] if len(parts) > 8 else "",
-                "SER": parts[7] if len(parts) > 7 else "",
-                "DT_DOC": parts[10] if len(parts) > 10 else "",
-                "VL_DOC": float(parts[12]) if len(parts) > 12 and parts[12] else 0,
+                "NUM_DOC": get_part(parts, 8),
+                "SER": get_part(parts, 7),
+                "DT_DOC": get_part(parts, 10),
+                "VL_DOC": to_float(get_part(parts, 12)),
+                "CHAVE_NFE": get_part(parts, 9),
             }
 
             notas.append(nota_atual)
 
         # =========================
-        # C190 - ICMS POR CFOP/CST
+        # C190 - ICMS
         # =========================
         elif reg == "C190" and nota_atual is not None:
             impostos.append({
                 "NUM_DOC": nota_atual["NUM_DOC"],
                 "SER": nota_atual["SER"],
                 "DT_DOC": nota_atual["DT_DOC"],
-                "CST_ICMS": parts[2] if len(parts) > 2 else "",
-                "CFOP": parts[3] if len(parts) > 3 else "",
-                "VL_OPR": float(parts[4]) if len(parts) > 4 and parts[4] else 0,
-                "VL_BC_ICMS": float(parts[6]) if len(parts) > 6 and parts[6] else 0,
-                "VL_ICMS": float(parts[7]) if len(parts) > 7 and parts[7] else 0,
+                "CHAVE_NFE": nota_atual["CHAVE_NFE"],
+
+                "CST_ICMS": get_part(parts, 2),
+                "CFOP": get_part(parts, 3),
+
+                "VL_OPR": to_float(get_part(parts, 4)),
+                "VL_BC_ICMS": to_float(get_part(parts, 6)),
+                "VL_ICMS": to_float(get_part(parts, 7)),
             })
 
     df_notas = pd.DataFrame(notas)
     df_impostos = pd.DataFrame(impostos)
 
-    # Converter data
+    # =========================
+    # TRATAR DATAS
+    # =========================
     if not df_notas.empty:
-        df_notas["DT_DOC"] = pd.to_datetime(df_notas["DT_DOC"], format="%d%m%Y", errors="coerce")
+        df_notas["DT_DOC"] = pd.to_datetime(
+            df_notas["DT_DOC"], format="%d%m%Y", errors="coerce"
+        )
 
     if not df_impostos.empty:
-        df_impostos["DT_DOC"] = pd.to_datetime(df_impostos["DT_DOC"], format="%d%m%Y", errors="coerce")
+        df_impostos["DT_DOC"] = pd.to_datetime(
+            df_impostos["DT_DOC"], format="%d%m%Y", errors="coerce"
+        )
 
     return df_notas, df_impostos
 
 
+# =========================
+# EXECUÇÃO
+# =========================
 if uploaded_file:
+
     content = uploaded_file.read().decode("latin-1")
     lines = content.splitlines()
 
     df_notas, df_impostos = parse_sped(lines)
 
-    st.subheader("📄 Notas Fiscais (C100)")
+    # =========================
+    # MOSTRAR DADOS
+    # =========================
+    st.subheader("📄 Notas (C100)")
     st.dataframe(df_notas, use_container_width=True)
 
-    st.subheader("📊 ICMS por CFOP/CST (C190)")
+    st.subheader("📊 ICMS (C190)")
     st.dataframe(df_impostos, use_container_width=True)
 
     # =========================
-    # FILTRO POR DATA
+    # FILTRO
     # =========================
-    if not df_notas.empty:
+    if not df_impostos.empty:
         st.subheader("🔎 Filtro por Data")
 
-        min_date = df_notas["DT_DOC"].min()
-        max_date = df_notas["DT_DOC"].max()
+        min_date = df_impostos["DT_DOC"].min()
+        max_date = df_impostos["DT_DOC"].max()
 
         col1, col2 = st.columns(2)
 
@@ -112,9 +149,30 @@ if uploaded_file:
         st.subheader("📈 Resumo por CFOP/CST")
         st.dataframe(resumo, use_container_width=True)
 
+        # =========================
+        # VALIDAÇÃO
+        # =========================
+        st.subheader("🧠 Validação (C190 vs Nota)")
+
+        total_notas = df_notas["VL_DOC"].sum()
+        total_icms = df_impostos["VL_OPR"].sum()
+
+        col1, col2 = st.columns(2)
+
+        col1.metric("Total Notas", f"R$ {total_notas:,.2f}")
+        col2.metric("Total C190 (VL_OPR)", f"R$ {total_icms:,.2f}")
+
+        if abs(total_notas - total_icms) > 1:
+            st.error("⚠️ Diferença entre C100 e C190!")
+        else:
+            st.success("✅ Valores batem!")
+
+        # =========================
+        # DOWNLOAD
+        # =========================
         st.download_button(
-            "📥 Baixar resumo",
+            "📥 Baixar Resumo CSV",
             resumo.to_csv(index=False).encode("utf-8"),
-            "resumo_icms.csv",
+            "resumo_sped.csv",
             "text/csv"
         )
