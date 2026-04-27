@@ -286,9 +286,9 @@ with st.sidebar:
     # Upload da tabela de CFOP
     st.subheader("📚 Tabela de CFOP")
     arquivo_cfop = st.file_uploader(
-    "Carregar tabela CFOP (Excel)", 
-    type=["xlsx", "xls"],
-    help="Arquivo Excel com colunas: CFOP/Código e Descrição"
+        "Carregar tabela CFOP (Excel)", 
+        type=["xlsx", "xls"],
+        help="Arquivo Excel com colunas: CFOP/Código e Descrição"
     )
     
     # Carregar dicionário de CFOP
@@ -312,31 +312,6 @@ with st.sidebar:
         accept_multiple_files=True,
         help="Selecione um ou mais arquivos SPED no formato TXT"
     )
-    
-    # Botões de download na lateral (aparecem apenas se tiver dados)
-    if 'df_exibicao' in locals() and df_exibicao is not None and len(df_exibicao) > 0:
-        st.divider()
-        st.subheader("📥 Download dos dados")
-        
-        # Download em CSV
-        csv_data = df_exibicao.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "📄 Baixar como CSV",
-            csv_data,
-            "dados_sped_completos.csv",
-            "text/csv",
-            use_container_width=True
-        )
-        
-        # Download em Excel
-        excel_data = to_excel(df_exibicao)
-        st.download_button(
-            "📊 Baixar como Excel",
-            excel_data,
-            "dados_sped_completos.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
 
 # =========================
 # CONTEÚDO PRINCIPAL
@@ -387,6 +362,34 @@ if uploaded_files:
         
         # Mostrar resumo
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
+        
+        # Botões de download na parte inferior (abaixo do grid)
+        st.divider()
+        st.subheader("📥 Download dos dados")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Download em CSV
+            csv_data = df_exibicao.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📄 Baixar como CSV",
+                csv_data,
+                "dados_sped_completos.csv",
+                "text/csv",
+                use_container_width=True
+            )
+        
+        with col2:
+            # Download em Excel (XLSX)
+            excel_data = to_excel(df_exibicao)
+            st.download_button(
+                "📊 Baixar como Excel",
+                excel_data,
+                "dados_sped_completos.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
