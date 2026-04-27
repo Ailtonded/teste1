@@ -48,9 +48,8 @@ def get_class_fis(cst_icms):
     """Extrai os dois primeiros dígitos do CST_ICMS e retorna com descrição"""
     try:
         if cst_icms and len(str(cst_icms)) >= 2:
-            class_fis_num = str(cst_icms)[:2]  # Pega os dois primeiros dígitos
+            class_fis_num = str(cst_icms)[:2]
             
-            # Mapeamento da CLASS_FIS com descrição
             class_fis_map = {
                 "00": "00 - Tributada integralmente",
                 "10": "10 - Tributada e com cobrança do ICMS por substituição tributária",
@@ -90,8 +89,21 @@ def parse_bloco_0000(lines):
         reg = parts[1]
         
         if reg == "0000":
-            info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI (formato AAAAMMDD)
-            info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN (formato AAAAMMDD)
+            # POSIÇÕES CORRETAS DO REGISTRO 0000:
+            # parts[0] = vazio
+            # parts[1] = "0000"
+            # parts[2] = COD_VER
+            # parts[3] = COD_FIN
+            # parts[4] = DT_INI (DATA INICIAL - formato DDMMAAAA)
+            # parts[5] = DT_FIN (DATA FINAL - formato DDMMAAAA)
+            # parts[6] = NOME (NOME EMPRESARIAL)
+            # parts[7] = CNPJ
+            # parts[8] = CPF
+            # parts[9] = UF
+            # parts[10] = IE (INSCRIÇÃO ESTADUAL)
+            
+            info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI (DDMMAAAA)
+            info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN (DDMMAAAA)
             info["NOME_EMPRESA"] = get_part(parts, 6)   # Posição 6 = NOME
             info["CNPJ"] = get_part(parts, 7)           # Posição 7 = CNPJ
             info["UF"] = get_part(parts, 9)             # Posição 9 = UF
@@ -102,7 +114,7 @@ def parse_bloco_0000(lines):
 
 
 def formatar_data_brasil(data_str):
-    """Converte data do formato AAAAMMDD para DD/MM/AAAA"""
+    """Converte data do formato DDMMAAAA para DD/MM/AAAA"""
     try:
         if not data_str:
             return ""
@@ -111,10 +123,10 @@ def formatar_data_brasil(data_str):
         
         # Verifica se tem 8 dígitos
         if len(data_str) == 8 and data_str.isdigit():
-            # Formato AAAAMMDD (ANO MÊS DIA)
-            ano = data_str[0:4]
-            mes = data_str[4:6]
-            dia = data_str[6:8]
+            # Formato DDMMAAAA
+            dia = data_str[0:2]
+            mes = data_str[2:4]
+            ano = data_str[4:8]
             
             # Retorna no formato DD/MM/AAAA
             return f"{dia}/{mes}/{ano}"
@@ -258,13 +270,15 @@ if uploaded_files:
         # Mostrar resumo de quantos arquivos foram processados
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
-        # DEBUG: Mostrar exemplo dos valores para verificar
-        with st.expander("🔍 Verificar CLASS_FIS (DEBUG)"):
+        # Mostrar exemplo das primeiras datas para verificar
+        with st.expander("🔍 Verificar datas convertidas"):
             if len(df_final) > 0:
-                st.write("Exemplos de CLASS_FIS encontrados:")
-                valores_unicos = df_final["CLASS_FIS"].unique()[:10]
-                for valor in valores_unicos:
-                    st.write(f"  - {valor}")
+                st.write("**Exemplo de conversão de datas:**")
+                st.write(f"Data inicial no SPED (bruto): {info_empresa['DATA_INICIAL'] if 'info_empresa' in locals() else 'N/A'}")
+                st.write(f"Data final no SPED (bruto): {info_empresa['DATA_FINAL'] if 'info_empresa' in locals() else 'N/A'}")
+                st.write(f"PERIODO_INICIAL convertido: {df_final['PERIODO_INICIAL'].iloc[0]}")
+                st.write(f"PERIODO_FINAL convertido: {df_final['PERIODO_FINAL'].iloc[0]}")
+                st.write(f"DT_DOC convertido: {df_final['DT_DOC'].iloc[0]}")
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
