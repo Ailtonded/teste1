@@ -129,34 +129,69 @@ if uploaded_file:
         st.dataframe(df_exibicao, use_container_width=True)
 
         # =========================
-        # FILTRO POR DATA
+        # MÉTRICAS DETALHADAS
         # =========================
-        st.subheader("🔎 Filtro por Data")
+        st.subheader("📊 Métricas Gerais")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total ICMS", f"R$ {df_completo['VL_ICMS'].sum():,.2f}")
+        with col2:
+            st.metric("Total ICMS ST", f"R$ {df_completo['VL_ICMS_ST'].sum():,.2f}")
+        with col3:
+            st.metric("Total IPI", f"R$ {df_completo['VL_IPI'].sum():,.2f}")
+        with col4:
+            st.metric("Total não tributado", f"R$ {df_completo['VL_RED_BC'].sum():,.2f}")
 
-        min_date = df_completo["DT_DOC"].min()
-        max_date = df_completo["DT_DOC"].max()
+        # =========================
+        # VALIDAÇÃO
+        # =========================
+        st.subheader("🧠 Validação (C100 vs C190)")
+        
+        # Agrupa por documento para comparar valores
+        validacao = df_completo.groupby(["NUM_DOC", "SER"]).agg({
+            "VL_DOC": "first",
+            "VL_OPR": "sum"
+        }).reset_index()
+        
+        validacao["DIFERENCA"] = validacao["VL_DOC"] - validacao["VL_OPR"]
+        validacao["STATUS"] = validacao["DIFERENCA"].apply(
+            lambda x: "✅ OK" if abs(x) <= 1 else "⚠️ Divergência"
+        )
+        
+        st.dataframe(validacao, use_container_width=True)
+        
+        total_notas = df_completo["VL_DOC"].sum()
+        total_icms_opr = df_completo["VL_OPR"].sum()
 
         col1, col2 = st.columns(2)
+        col1.metric("Total Notas (C100)", f"R$ {total_notas:,.2f}")
+        col2.metric("Total C190 (VL_OPR)", f"R$ {total_icms_opr:,.2f}")
 
+        if abs(total_notas - total_icms_opr) > 1:
+            st.error("⚠️ Diferença entre C100 e C190!")
+        else:
+            st.success("✅ Valores batem!")
+
+        # =========================
+        # DOWNLOAD
+        # =========================
+        st.subheader("📥 Downloads")
+        
+        col1, col2 = st.columns(2)
+        
         with col1:
-            data_ini = st.date_input("Data inicial", min_date)
-
+            st.download_button(
+                "📥 Baixar Dados Completos CSV",
+                df_completo[colunas_ordenadas].to_csv(index=False).encode("utf-8"),
+                "sped_c100_c190_completo.csv",
+                "text/csv"
+            )
+        
         with col2:
-            data_fim = st.date_input("Data final", max_date)
-
-        df_filtrado = df_completo[
-            (df_completo["DT_DOC"] >= pd.to_datetime(data_ini)) &
-            (df_completo["DT_DOC"] <= pd.to_datetime(data_fim))
-        ]
-
-        st.subheader("📊 Dados Filtrados")
-        st.dataframe(df_filtrado[colunas_ordenadas], use_container_width=True)
-
-        # =========================
-        # RESUMO POR CFOP/CST
-        # =========================
-        if not df_filtrado.empty:
-            resumo = df_filtrado.groupby(["CFOP", "CST_ICMS"]).agg({
+            # Resumo simples por CFOP/CST (opcional, sem exibir na tela)
+            resumo = df_completo.groupby(["CFOP", "CST_ICMS"]).agg({
                 "VL_OPR": "sum",
                 "VL_BC_ICMS": "sum",
                 "VL_ICMS": "sum",
@@ -165,75 +200,10 @@ if uploaded_file:
                 "VL_RED_BC": "sum",
                 "VL_IPI": "sum"
             }).reset_index()
-
-            st.subheader("📈 Resumo por CFOP/CST")
-            st.dataframe(resumo, use_container_width=True)
-
-            # =========================
-            # MÉTRICAS DETALHADAS
-            # =========================
-            st.subheader("📊 Métricas Gerais")
             
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total ICMS", f"R$ {df_filtrado['VL_ICMS'].sum():,.2f}")
-            with col2:
-                st.metric("Total ICMS ST", f"R$ {df_filtrado['VL_ICMS_ST'].sum():,.2f}")
-            with col3:
-                st.metric("Total IPI", f"R$ {df_filtrado['VL_IPI'].sum():,.2f}")
-            with col4:
-                st.metric("Total não tributado", f"R$ {df_filtrado['VL_RED_BC'].sum():,.2f}")
-
-            # =========================
-            # VALIDAÇÃO
-            # =========================
-            st.subheader("🧠 Validação (C100 vs C190)")
-            
-            # Agrupa por documento para comparar valores
-            validacao = df_filtrado.groupby(["NUM_DOC", "SER"]).agg({
-                "VL_DOC": "first",
-                "VL_OPR": "sum"
-            }).reset_index()
-            
-            validacao["DIFERENCA"] = validacao["VL_DOC"] - validacao["VL_OPR"]
-            validacao["STATUS"] = validacao["DIFERENCA"].apply(
-                lambda x: "✅ OK" if abs(x) <= 1 else "⚠️ Divergência"
+            st.download_button(
+                "📥 Baixar Resumo CSV",
+                resumo.to_csv(index=False).encode("utf-8"),
+                "resumo_sped.csv",
+                "text/csv"
             )
-            
-            st.dataframe(validacao, use_container_width=True)
-            
-            total_notas = df_filtrado["VL_DOC"].sum()
-            total_icms_opr = df_filtrado["VL_OPR"].sum()
-
-            col1, col2 = st.columns(2)
-            col1.metric("Total Notas (C100)", f"R$ {total_notas:,.2f}")
-            col2.metric("Total C190 (VL_OPR)", f"R$ {total_icms_opr:,.2f}")
-
-            if abs(total_notas - total_icms_opr) > 1:
-                st.error("⚠️ Diferença entre C100 e C190!")
-            else:
-                st.success("✅ Valores batem!")
-
-            # =========================
-            # DOWNLOAD
-            # =========================
-            st.subheader("📥 Downloads")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.download_button(
-                    "📥 Baixar Dados Completos CSV",
-                    df_filtrado[colunas_ordenadas].to_csv(index=False).encode("utf-8"),
-                    "sped_c100_c190_completo.csv",
-                    "text/csv"
-                )
-            
-            with col2:
-                st.download_button(
-                    "📥 Baixar Resumo CSV",
-                    resumo.to_csv(index=False).encode("utf-8"),
-                    "resumo_sped.csv",
-                    "text/csv"
-                )
