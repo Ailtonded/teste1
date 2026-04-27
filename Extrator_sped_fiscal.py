@@ -27,7 +27,6 @@ def get_origem_produto(cst_icms):
     try:
         if cst_icms and len(str(cst_icms)) > 0:
             primeiro_digito = str(cst_icms)[0]
-            # Mapeamento conforme tabela de origem do SPED com o número no início
             origem_map = {
                 "0": "0 - Nacional",
                 "1": "1 - Estrangeira - Importação direta",
@@ -74,21 +73,8 @@ def parse_bloco_0000(lines):
         reg = parts[1]
         
         if reg == "0000":
-            # POSIÇÕES CORRETAS DO REGISTRO 0000:
-            # parts[0] = vazio
-            # parts[1] = "0000"
-            # parts[2] = COD_VER
-            # parts[3] = COD_FIN
-            # parts[4] = DT_INI (DATA INICIAL)
-            # parts[5] = DT_FIN (DATA FINAL)
-            # parts[6] = NOME (NOME EMPRESARIAL)
-            # parts[7] = CNPJ
-            # parts[8] = CPF
-            # parts[9] = UF
-            # parts[10] = IE (INSCRIÇÃO ESTADUAL)
-            
-            info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI
-            info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN  
+            info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI (formato AAAAMMDD)
+            info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN (formato AAAAMMDD)
             info["NOME_EMPRESA"] = get_part(parts, 6)   # Posição 6 = NOME
             info["CNPJ"] = get_part(parts, 7)           # Posição 7 = CNPJ
             info["UF"] = get_part(parts, 9)             # Posição 9 = UF
@@ -103,16 +89,22 @@ def formatar_data_brasil(data_str):
     try:
         if not data_str:
             return ""
+        
         data_str = str(data_str).strip()
+        
+        # Verifica se tem 8 dígitos
         if len(data_str) == 8 and data_str.isdigit():
-            # Formato AAAAMMDD
-            return f"{data_str[6:8]}/{data_str[4:6]}/{data_str[0:4]}"
-        elif len(data_str) == 8:
-            # Formato DDMMAAAA
-            return f"{data_str[0:2]}/{data_str[2:4]}/{data_str[4:8]}"
+            # Formato AAAAMMDD (ANO MÊS DIA)
+            ano = data_str[0:4]
+            mes = data_str[4:6]
+            dia = data_str[6:8]
+            
+            # Retorna no formato DD/MM/AAAA
+            return f"{dia}/{mes}/{ano}"
         else:
+            # Se não for números ou tamanho diferente, retorna o original
             return data_str
-    except:
+    except Exception as e:
         return data_str
 
 
@@ -174,6 +166,7 @@ def parse_sped(lines):
     df = pd.DataFrame(dados_completos)
 
     if not df.empty:
+        # Converte DT_DOC (formato DDMMAAAA)
         df["DT_DOC"] = pd.to_datetime(
             df["DT_DOC"], format="%d%m%Y", errors="coerce"
         )
@@ -247,6 +240,12 @@ if uploaded_files:
         
         # Mostrar resumo de quantos arquivos foram processados
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
+        
+        # DEBUG: Mostrar exemplo das primeiras datas para verificar
+        with st.expander("🔍 Verificar datas (DEBUG)"):
+            st.write("Exemplo de PERIODO_INICIAL:", df_final["PERIODO_INICIAL"].iloc[0] if len(df_final) > 0 else "N/A")
+            st.write("Exemplo de PERIODO_FINAL:", df_final["PERIODO_FINAL"].iloc[0] if len(df_final) > 0 else "N/A")
+            st.write("Exemplo de DT_DOC:", df_final["DT_DOC"].iloc[0] if len(df_final) > 0 else "N/A")
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
