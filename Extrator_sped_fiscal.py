@@ -27,19 +27,20 @@ def get_origem_produto(cst_icms):
     try:
         if cst_icms and len(str(cst_icms)) > 0:
             primeiro_digito = str(cst_icms)[0]
+            # Mapeamento conforme tabela de origem do SPED com o número no início
             origem_map = {
-                "0": "Nacional",
-                "1": "Estrangeira - Importação direta",
-                "2": "Estrangeira - Adquirida no mercado interno",
-                "3": "Nacional - Conteúdo de importação > 40%",
-                "4": "Nacional - Produção conforme processo produtivo básico",
-                "5": "Nacional - Conteúdo de importação < 40%",
-                "6": "Estrangeira - Importação direta sem similar nacional",
-                "7": "Estrangeira - Adquirida no mercado interno sem similar nacional",
-                "8": "Nacional - Conteúdo de importação > 70%"
+                "0": "0 - Nacional",
+                "1": "1 - Estrangeira - Importação direta",
+                "2": "2 - Estrangeira - Adquirida no mercado interno",
+                "3": "3 - Nacional - Conteúdo de importação > 40%",
+                "4": "4 - Nacional - Produção conforme processo produtivo básico",
+                "5": "5 - Nacional - Conteúdo de importação < 40%",
+                "6": "6 - Estrangeira - Importação direta sem similar nacional",
+                "7": "7 - Estrangeira - Adquirida no mercado interno sem similar nacional",
+                "8": "8 - Nacional - Conteúdo de importação > 70%"
             }
-            return origem_map.get(primeiro_digito, f"Origem {primeiro_digito}")
-        return "Não informado"
+            return origem_map.get(primeiro_digito, f"{primeiro_digito} - Origem desconhecida")
+        return "Sem origem"
     except:
         return "Erro"
 
