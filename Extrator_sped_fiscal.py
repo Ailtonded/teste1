@@ -61,10 +61,11 @@ def get_origem_produto(cst_icms):
 
 
 def get_class_fis(cst_icms):
-    """Extrai os dois primeiros dígitos do CST_ICMS e retorna com descrição"""
+    """Extrai as posições 2 e 3 do CST_ICMS (dois últimos dígitos) e retorna com descrição"""
     try:
-        if cst_icms and len(str(cst_icms)) >= 2:
-            class_fis_num = str(cst_icms)[:2]
+        if cst_icms and len(str(cst_icms)) >= 3:
+            cst_str = str(cst_icms)
+            class_fis_num = cst_str[1:3]  # Pega posições 2 e 3 (índices 1 e 2)
             
             class_fis_map = {
                 "00": "00 - Tributada integralmente",
@@ -80,6 +81,23 @@ def get_class_fis(cst_icms):
                 "90": "90 - Outras"
             }
             
+            return class_fis_map.get(class_fis_num, f"{class_fis_num} - Classificação não mapeada")
+        elif cst_icms and len(str(cst_icms)) == 2:
+            # Caso tenha apenas 2 dígitos
+            class_fis_num = str(cst_icms)
+            class_fis_map = {
+                "00": "00 - Tributada integralmente",
+                "10": "10 - Tributada e com cobrança do ICMS por substituição tributária",
+                "20": "20 - Com redução de base de cálculo",
+                "30": "30 - Isenta ou não tributada e com cobrança do ICMS por substituição tributária",
+                "40": "40 - Isenta",
+                "41": "41 - Não tributada",
+                "50": "50 - Suspensão",
+                "51": "51 - Diferimento",
+                "60": "60 - ICMS cobrado anteriormente por substituição tributária",
+                "70": "70 - Com redução de base de cálculo e cobrança do ICMS por substituição tributária",
+                "90": "90 - Outras"
+            }
             return class_fis_map.get(class_fis_num, f"{class_fis_num} - Classificação não mapeada")
         return ""
     except:
@@ -157,12 +175,13 @@ def parse_bloco_0000(lines):
         reg = parts[1]
         
         if reg == "0000":
-            info["DATA_INICIAL"] = get_part(parts, 4)
-            info["DATA_FINAL"] = get_part(parts, 5)
-            info["NOME_EMPRESA"] = get_part(parts, 6)
-            info["CNPJ"] = get_part(parts, 7)
-            info["UF"] = get_part(parts, 9)
-            info["IE"] = get_part(parts, 10)
+            # Posições do SPED
+            info["DATA_INICIAL"] = get_part(parts, 4)   # DT_INI (DDMMAAAA)
+            info["DATA_FINAL"] = get_part(parts, 5)     # DT_FIN (DDMMAAAA)
+            info["NOME_EMPRESA"] = get_part(parts, 6)   # NOME
+            info["CNPJ"] = get_part(parts, 7)           # CNPJ
+            info["UF"] = get_part(parts, 9)             # UF
+            info["IE"] = get_part(parts, 10)            # IE
             break
             
     return info
@@ -354,7 +373,9 @@ if uploaded_files:
             # Dados do C100
             "NUM_DOC", "SER", "DT_DOC", "CHAVE_NFE", "VL_DOC",
             # Dados do C190 na ordem solicitada
-            "CST_ICMS",           # CST/ICMS
+            "CST_ICMS",           # CST/ICMS (completo)
+            "ORIGEM_PRODUTO",     # Origem (1º dígito)
+            "CLASS_FIS",          # Classificação fiscal (posições 2 e 3)
             "CFOP",               # CFOP
             "DESC_CFOP",          # Descrição do CFOP
             "ALIQ_ICMS",          # Alíquota do ICMS(%)
@@ -366,9 +387,7 @@ if uploaded_files:
             "VL_RED_BC",          # Valor não tributado base do ICMS
             "VL_IPI",             # Valor do IPI
             "COD_OBS",            # Código observação lançamento
-            # Campos auxiliares
-            "ORIGEM_PRODUTO", 
-            "CLASS_FIS", 
+            # Campo auxiliar
             "ARQUIVO_ORIGEM"
         ]
         
