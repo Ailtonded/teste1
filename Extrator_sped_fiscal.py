@@ -16,7 +16,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Leitor SPED Fiscal (C100 + C190)")
+st.title("📊 Leitor SPED Fiscal (C100 + C190 + C197)")
 
 # =========================
 # FUNÇÕES AUXILIARES
@@ -200,9 +200,10 @@ def formatar_data_brasil(data_str):
 
 
 def parse_sped(lines, dict_cfop):
-    """Parser para C100 + C190 na mesma linha com índices corrigidos"""
+    """Parser para C100 + C190 + C197 na mesma linha"""
     dados_completos = []
     nota_atual = None
+    primeiro_item_c197 = None
 
     for line in lines:
         parts = line.strip().split("|")
@@ -233,33 +234,48 @@ def parse_sped(lines, dict_cfop):
                 "COD_OBS": "",
                 "ORIGEM_PRODUTO": "",
                 "CLASS_FIS": "",
+                "COD_ITEM": "",  # Novo campo do C197
             }
+            primeiro_item_c197 = None  # Reseta o controle do C197
+
+        elif reg == "C197" and nota_atual is not None and primeiro_item_c197 is None:
+            # Captura apenas o PRIMEIRO item C197 da nota
+            # Layout C197:
+            # parts[2] = COD_ITEM (Código do item)
+            # parts[3] = COD_CLASS (Código da classificação)
+            # parts[4] = QTDE (Quantidade)
+            # parts[5] = UNID (Unidade)
+            # parts[6] = VL_ITEM (Valor do item)
+            # parts[7] = VL_DESC (Valor do desconto)
+            
+            cod_item = get_part(parts, 2)  # Código do item
+            primeiro_item_c197 = cod_item
 
         elif reg == "C190" and nota_atual is not None:
             cst_icms_original = get_part(parts, 2)
             cfop_numero = get_part(parts, 3)
             
-            # CORREÇÃO DOS ÍNDICES DO C190
-            # Baseado no layout oficial do SPED Fiscal
             linha_completa = nota_atual.copy()
             linha_completa.update({
-                "CST_ICMS": cst_icms_original,                    # parts[2]
-                "CFOP": cfop_numero,                               # parts[3]
+                "CST_ICMS": cst_icms_original,
+                "CFOP": cfop_numero,
                 "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),
-                "ALIQ_ICMS": to_float(get_part(parts, 4)),        # parts[4] - Alíquota do ICMS
-                "VL_OPR": to_float(get_part(parts, 5)),           # parts[5] - Valor da operação
-                "VL_BC_ICMS": to_float(get_part(parts, 6)),       # parts[6] - Base ICMS
-                "VL_ICMS": to_float(get_part(parts, 7)),          # parts[7] - Valor ICMS
-                "VL_BC_ICMS_ST": to_float(get_part(parts, 8)),    # parts[8] - Base ICMS ST
-                "VL_ICMS_ST": to_float(get_part(parts, 9)),       # parts[9] - Valor ICMS ST
-                "VL_RED_BC": to_float(get_part(parts, 10)),       # parts[10] - Redução BC
-                "VL_IPI": to_float(get_part(parts, 11)),          # parts[11] - Valor IPI
-                "COD_OBS": get_part(parts, 12),                   # parts[12] - Código observação
+                "ALIQ_ICMS": to_float(get_part(parts, 4)),
+                "VL_OPR": to_float(get_part(parts, 5)),
+                "VL_BC_ICMS": to_float(get_part(parts, 6)),
+                "VL_ICMS": to_float(get_part(parts, 7)),
+                "VL_BC_ICMS_ST": to_float(get_part(parts, 8)),
+                "VL_ICMS_ST": to_float(get_part(parts, 9)),
+                "VL_RED_BC": to_float(get_part(parts, 10)),
+                "VL_IPI": to_float(get_part(parts, 11)),
+                "COD_OBS": get_part(parts, 12),
                 "ORIGEM_PRODUTO": get_origem_produto(cst_icms_original),
                 "CLASS_FIS": get_class_fis(cst_icms_original),
+                "COD_ITEM": primeiro_item_c197 if primeiro_item_c197 else "",  # Adiciona o código do item
             })
             dados_completos.append(linha_completa)
             nota_atual = None
+            primeiro_item_c197 = None  # Reseta após usar
 
     df = pd.DataFrame(dados_completos)
 
@@ -356,6 +372,7 @@ if uploaded_files:
             "CFOP", "DESC_CFOP",
             "ALIQ_ICMS", "VL_OPR", "VL_BC_ICMS", "VL_ICMS",
             "VL_BC_ICMS_ST", "VL_ICMS_ST", "VL_RED_BC", "VL_IPI", "COD_OBS",
+            "COD_ITEM",  # Campo extraído do C197
             "ARQUIVO_ORIGEM"
         ]
         
