@@ -45,7 +45,7 @@ def get_origem_produto(cst_icms):
 
 
 def get_class_fis(cst_icms):
-    """Extrai os dois últimos dígitos do CST_ICMS (posições 2 e 3) para CLASS_FIS"""
+    """Extrai os dois primeiros dígitos do CST_ICMS para CLASS_FIS"""
     try:
         if cst_icms and len(str(cst_icms)) >= 2:
             return str(cst_icms)[:2]
@@ -55,7 +55,7 @@ def get_class_fis(cst_icms):
 
 
 def parse_bloco_0000(lines):
-    """Extrai informações do bloco 0000 (ABERTURA DO ARQUIVO DIGITAL)"""
+    """Extrai informações do bloco 0000 - POSIÇÕES CORRETAS DO SPED"""
     info = {
         "DATA_INICIAL": "",
         "DATA_FINAL": "",
@@ -73,26 +73,42 @@ def parse_bloco_0000(lines):
         reg = parts[1]
         
         if reg == "0000":
-            info["DATA_INICIAL"] = get_part(parts, 4)
-            info["DATA_FINAL"] = get_part(parts, 5)
-            info["NOME_EMPRESA"] = get_part(parts, 6)
-            info["CNPJ"] = get_part(parts, 9)
-            info["UF"] = get_part(parts, 12)
-            info["IE"] = get_part(parts, 13)
+            # POSIÇÕES CORRETAS DO REGISTRO 0000:
+            # parts[0] = vazio
+            # parts[1] = "0000"
+            # parts[2] = COD_VER
+            # parts[3] = COD_FIN
+            # parts[4] = DT_INI (DATA INICIAL)
+            # parts[5] = DT_FIN (DATA FINAL)
+            # parts[6] = NOME (NOME EMPRESARIAL)
+            # parts[7] = CNPJ
+            # parts[8] = CPF
+            # parts[9] = UF
+            # parts[10] = IE (INSCRIÇÃO ESTADUAL)
+            
+            info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI
+            info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN  
+            info["NOME_EMPRESA"] = get_part(parts, 6)   # Posição 6 = NOME
+            info["CNPJ"] = get_part(parts, 7)           # Posição 7 = CNPJ
+            info["UF"] = get_part(parts, 9)             # Posição 9 = UF
+            info["IE"] = get_part(parts, 10)            # Posição 10 = IE
             break
             
     return info
 
 
 def formatar_data_brasil(data_str):
-    """Converte data do formato AAAAMMDD ou DDMMAAAA para DD/MM/AAAA"""
+    """Converte data do formato AAAAMMDD para DD/MM/AAAA"""
     try:
         if not data_str:
             return ""
+        data_str = str(data_str).strip()
         if len(data_str) == 8 and data_str.isdigit():
-            return f"{data_str[0:2]}/{data_str[2:4]}/{data_str[4:8]}"
-        elif len(data_str) == 8:
+            # Formato AAAAMMDD
             return f"{data_str[6:8]}/{data_str[4:6]}/{data_str[0:4]}"
+        elif len(data_str) == 8:
+            # Formato DDMMAAAA
+            return f"{data_str[0:2]}/{data_str[2:4]}/{data_str[4:8]}"
         else:
             return data_str
     except:
@@ -193,9 +209,6 @@ if uploaded_files:
             info_empresa, df_completo, nome_arquivo = processar_arquivo(arquivo)
             
             if not df_completo.empty:
-                # Adiciona coluna com o nome do arquivo
-                df_completo["ARQUIVO_ORIGEM"] = nome_arquivo
-                
                 # Adiciona informações da empresa em CADA LINHA
                 df_completo["EMPRESA"] = info_empresa["NOME_EMPRESA"]
                 df_completo["CNPJ"] = info_empresa["CNPJ"]
@@ -203,6 +216,7 @@ if uploaded_files:
                 df_completo["PERIODO_FINAL"] = formatar_data_brasil(info_empresa["DATA_FINAL"])
                 df_completo["UF"] = info_empresa["UF"]
                 df_completo["IE"] = info_empresa["IE"]
+                df_completo["ARQUIVO_ORIGEM"] = nome_arquivo
                 
                 todos_os_dados.append(df_completo)
     
@@ -230,17 +244,8 @@ if uploaded_files:
         
         st.dataframe(df_exibicao, use_container_width=True, height=500)
         
-        # =========================
-        # OPCIONAL: MOSTRAR ESTATÍSTICAS POR ARQUIVO
-        # =========================
-        with st.expander("📊 Estatísticas por arquivo"):
-            stats = df_final.groupby(["ARQUIVO_ORIGEM", "EMPRESA", "CNPJ"]).agg({
-                "VL_DOC": "count",
-                "VL_OPR": "sum",
-                "VL_ICMS": "sum"
-            }).reset_index()
-            stats.columns = ["Arquivo", "Empresa", "CNPJ", "Qtde Notas", "Total Operações", "Total ICMS"]
-            st.dataframe(stats, use_container_width=True)
+        # Mostrar resumo de quantos arquivos foram processados
+        st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
