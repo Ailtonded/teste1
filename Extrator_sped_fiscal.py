@@ -4,6 +4,21 @@ from io import BytesIO
 
 st.set_page_config(page_title="SPED Fiscal", layout="wide")
 
+# CSS para reduzir a fonte do grid em 25%
+st.markdown("""
+<style>
+    .stDataFrame {
+        font-size: 75% !important;
+    }
+    .dataframe {
+        font-size: 75% !important;
+    }
+    .stDataFrame div[data-testid="stHorizontalBlock"] {
+        font-size: 75% !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 Leitor SPED Fiscal (C100 + C190)")
 
 # =========================
@@ -264,36 +279,68 @@ def to_excel(df):
 # =========================
 # INTERFACE PARA MÚLTIPLOS ARQUIVOS
 # =========================
-st.sidebar.header("⚙️ Configurações")
-
-# Upload da tabela de CFOP
-st.sidebar.subheader("📚 Tabela de CFOP")
-arquivo_cfop = st.sidebar.file_uploader(
+# Criar layout com sidebar e conteúdo principal
+with st.sidebar:
+    st.header("⚙️ Configurações")
+    
+    # Upload da tabela de CFOP
+    st.subheader("📚 Tabela de CFOP")
+    arquivo_cfop = st.file_uploader(
     "Carregar tabela CFOP (Excel)", 
     type=["xlsx", "xls"],
     help="Arquivo Excel com colunas: CFOP/Código e Descrição"
-)
-
-# Carregar dicionário de CFOP
-dict_cfop = {}
-if arquivo_cfop:
-    dict_cfop = carregar_tabela_cfop(arquivo_cfop)
-    if dict_cfop is not None:
-        st.sidebar.success(f"✅ Tabela CFOP carregada com {len(dict_cfop)} registros")
+    )
+    
+    # Carregar dicionário de CFOP
+    dict_cfop = {}
+    if arquivo_cfop:
+        dict_cfop = carregar_tabela_cfop(arquivo_cfop)
+        if dict_cfop is not None:
+            st.success(f"✅ Tabela CFOP carregada com {len(dict_cfop)} registros")
+        else:
+            st.error("❌ Erro ao carregar tabela CFOP")
     else:
-        st.sidebar.error("❌ Erro ao carregar tabela CFOP")
-else:
-    st.sidebar.info("ℹ️ Opcional: Carregue uma tabela CFOP para ver descrições")
+        st.info("ℹ️ Opcional: Carregue uma tabela CFOP para ver descrições")
+    
+    st.divider()
+    
+    # Upload dos arquivos SPED
+    st.subheader("📁 Arquivos SPED")
+    uploaded_files = st.file_uploader(
+        "Envie os arquivos SPED (.txt)", 
+        type=["txt"], 
+        accept_multiple_files=True,
+        help="Selecione um ou mais arquivos SPED no formato TXT"
+    )
+    
+    # Botões de download na lateral (aparecem apenas se tiver dados)
+    if 'df_exibicao' in locals() and df_exibicao is not None and len(df_exibicao) > 0:
+        st.divider()
+        st.subheader("📥 Download dos dados")
+        
+        # Download em CSV
+        csv_data = df_exibicao.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "📄 Baixar como CSV",
+            csv_data,
+            "dados_sped_completos.csv",
+            "text/csv",
+            use_container_width=True
+        )
+        
+        # Download em Excel
+        excel_data = to_excel(df_exibicao)
+        st.download_button(
+            "📊 Baixar como Excel",
+            excel_data,
+            "dados_sped_completos.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
 
-st.sidebar.divider()
-
-# Upload dos arquivos SPED
-uploaded_files = st.file_uploader(
-    "Envie os arquivos SPED (.txt)", 
-    type=["txt"], 
-    accept_multiple_files=True
-)
-
+# =========================
+# CONTEÚDO PRINCIPAL
+# =========================
 if uploaded_files:
     todos_os_dados = []
     
@@ -335,41 +382,13 @@ if uploaded_files:
         colunas_existentes = [col for col in colunas_ordenadas if col in df_final.columns]
         df_exibicao = df_final[colunas_existentes]
         
-        st.dataframe(df_exibicao, use_container_width=True, height=500)
+        # Exibir o grid com altura maior e fonte reduzida
+        st.dataframe(df_exibicao, use_container_width=True, height=600)
         
         # Mostrar resumo
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
-        # =========================
-        # BOTÕES DE DOWNLOAD
-        # =========================
-        st.subheader("📥 Download dos dados")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Download em CSV
-            csv_data = df_exibicao.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📄 Baixar como CSV",
-                csv_data,
-                "dados_sped_completos.csv",
-                "text/csv",
-                use_container_width=True
-            )
-        
-        with col2:
-            # Download em Excel
-            excel_data = to_excel(df_exibicao)
-            st.download_button(
-                "📊 Baixar como Excel",
-                excel_data,
-                "dados_sped_completos.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
 else:
-    st.info("👆 Selecione um ou mais arquivos SPED para começar")
+    st.info("👆 Selecione um ou mais arquivos SPED na barra lateral para começar")
