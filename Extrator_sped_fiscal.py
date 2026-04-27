@@ -207,6 +207,7 @@ def parse_sped(lines, dict_cfop):
                 "DT_DOC": get_part(parts, 10),
                 "VL_DOC": to_float(get_part(parts, 12)),
                 "CHAVE_NFE": get_part(parts, 9),
+                # Campos do C190 que serão preenchidos
                 "CST_ICMS": "",
                 "CFOP": "",
                 "DESC_CFOP": "",
@@ -219,6 +220,8 @@ def parse_sped(lines, dict_cfop):
                 "VL_RED_BC": 0.0,
                 "VL_IPI": 0.0,
                 "COD_OBS": "",
+                "ORIGEM_PRODUTO": "",
+                "CLASS_FIS": "",
             }
 
         elif reg == "C190" and nota_atual is not None:
@@ -340,17 +343,33 @@ if uploaded_files:
         df_final = pd.concat(todos_os_dados, ignore_index=True)
         
         # =========================
-        # GRID ÚNICO COM TUDO (EMPRESA + NOTAS)
+        # GRID ÚNICO COM TODOS OS CAMPOS NA ORDEM CORRETA
         # =========================
         st.subheader("📄 Notas Fiscais + ICMS + Dados da Empresa")
         
-        # Ordenar colunas para exibição
+        # Ordenar colunas conforme solicitado
         colunas_ordenadas = [
+            # Informações da empresa
             "EMPRESA", "CNPJ", "UF", "IE", "PERIODO_INICIAL", "PERIODO_FINAL",
+            # Dados do C100
             "NUM_DOC", "SER", "DT_DOC", "CHAVE_NFE", "VL_DOC",
-            "CST_ICMS", "ORIGEM_PRODUTO", "CLASS_FIS", "CFOP", "DESC_CFOP", "ALIQ_ICMS", 
-            "VL_OPR", "VL_BC_ICMS", "VL_ICMS", "VL_BC_ICMS_ST", "VL_ICMS_ST", 
-            "VL_RED_BC", "VL_IPI", "COD_OBS", "ARQUIVO_ORIGEM"
+            # Dados do C190 na ordem solicitada
+            "CST_ICMS",           # CST/ICMS
+            "CFOP",               # CFOP
+            "DESC_CFOP",          # Descrição do CFOP
+            "ALIQ_ICMS",          # Alíquota do ICMS(%)
+            "VL_OPR",             # Valor da operação
+            "VL_BC_ICMS",         # Base de cálculo do ICMS
+            "VL_ICMS",            # Valor do ICMS
+            "VL_BC_ICMS_ST",      # Base de cálculo do ICMS ST
+            "VL_ICMS_ST",         # Valor do ICMS ST
+            "VL_RED_BC",          # Valor não tributado base do ICMS
+            "VL_IPI",             # Valor do IPI
+            "COD_OBS",            # Código observação lançamento
+            # Campos auxiliares
+            "ORIGEM_PRODUTO", 
+            "CLASS_FIS", 
+            "ARQUIVO_ORIGEM"
         ]
         
         # Garantir que todas as colunas existam
@@ -363,7 +382,7 @@ if uploaded_files:
         # Mostrar resumo
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
-        # Botões de download na parte inferior (abaixo do grid)
+        # Botões de download na parte inferior
         st.divider()
         st.subheader("📥 Download dos dados")
         
