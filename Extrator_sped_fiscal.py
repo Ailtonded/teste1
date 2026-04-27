@@ -77,7 +77,6 @@ def carregar_tabela_cfop(arquivo_cfop):
             df_cfop = pd.read_excel(arquivo_cfop)
             
             # Verifica se as colunas necessárias existem
-            # Aceita variações nos nomes das colunas
             coluna_cfop = None
             coluna_descricao = None
             
@@ -107,20 +106,20 @@ def carregar_tabela_cfop(arquivo_cfop):
 
 
 def get_descricao_cfop(cfop, dict_cfop):
-    """Retorna a descrição do CFOP baseado no dicionário carregado"""
+    """Retorna apenas a descrição do CFOP sem o número"""
     try:
         if not dict_cfop:
-            return cfop  # Retorna apenas o número se não tiver dicionário
+            return ""  # Retorna vazio se não tiver dicionário
         
         cfop_str = str(cfop).strip()
         descricao = dict_cfop.get(cfop_str, "")
         
         if descricao:
-            return f"{cfop_str} - {descricao}"
+            return descricao  # Retorna apenas a descrição, sem o número
         else:
-            return f"{cfop_str} - CFOP não encontrado"
+            return "CFOP não encontrado"
     except:
-        return str(cfop)
+        return ""
 
 
 def parse_bloco_0000(lines):
@@ -214,7 +213,7 @@ def parse_sped(lines, dict_cfop):
             linha_completa.update({
                 "CST_ICMS": cst_icms_original,
                 "CFOP": cfop_numero,
-                "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),
+                "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),  # Agora só a descrição
                 "ALIQ_ICMS": to_float(get_part(parts, 9)),
                 "VL_OPR": to_float(get_part(parts, 4)),
                 "VL_BC_ICMS": to_float(get_part(parts, 6)),
