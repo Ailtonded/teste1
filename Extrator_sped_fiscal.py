@@ -70,6 +70,59 @@ def get_class_fis(cst_icms):
         return ""
 
 
+def carregar_tabela_cfop(arquivo_cfop):
+    """Carrega a tabela de CFOP do arquivo Excel"""
+    try:
+        if arquivo_cfop is not None:
+            df_cfop = pd.read_excel(arquivo_cfop)
+            
+            # Verifica se as colunas necessárias existem
+            # Aceita variações nos nomes das colunas
+            coluna_cfop = None
+            coluna_descricao = None
+            
+            for col in df_cfop.columns:
+                col_lower = col.lower()
+                if 'cfop' in col_lower or 'código' in col_lower:
+                    coluna_cfop = col
+                if 'descri' in col_lower or 'descrição' in col_lower:
+                    coluna_descricao = col
+            
+            if coluna_cfop and coluna_descricao:
+                # Renomeia as colunas para padronizar
+                df_cfop = df_cfop.rename(columns={coluna_cfop: "CFOP", coluna_descricao: "DESCRICAO"})
+                # Converte CFOP para string e remove espaços
+                df_cfop["CFOP"] = df_cfop["CFOP"].astype(str).str.strip()
+                # Cria um dicionário para busca rápida
+                dict_cfop = dict(zip(df_cfop["CFOP"], df_cfop["DESCRICAO"]))
+                return dict_cfop
+            else:
+                st.error("❌ O arquivo Excel deve conter colunas com 'CFOP'/'Código' e 'Descrição'")
+                return None
+        else:
+            return {}
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar arquivo de CFOP: {str(e)}")
+        return None
+
+
+def get_descricao_cfop(cfop, dict_cfop):
+    """Retorna a descrição do CFOP baseado no dicionário carregado"""
+    try:
+        if not dict_cfop:
+            return cfop  # Retorna apenas o número se não tiver dicionário
+        
+        cfop_str = str(cfop).strip()
+        descricao = dict_cfop.get(cfop_str, "")
+        
+        if descricao:
+            return f"{cfop_str} - {descricao}"
+        else:
+            return f"{cfop_str} - CFOP não encontrado"
+    except:
+        return str(cfop)
+
+
 def parse_bloco_0000(lines):
     """Extrai informações do bloco 0000 - POSIÇÕES CORRETAS DO SPED"""
     info = {
@@ -89,19 +142,6 @@ def parse_bloco_0000(lines):
         reg = parts[1]
         
         if reg == "0000":
-            # POSIÇÕES CORRETAS DO REGISTRO 0000:
-            # parts[0] = vazio
-            # parts[1] = "0000"
-            # parts[2] = COD_VER
-            # parts[3] = COD_FIN
-            # parts[4] = DT_INI (DATA INICIAL - formato DDMMAAAA)
-            # parts[5] = DT_FIN (DATA FINAL - formato DDMMAAAA)
-            # parts[6] = NOME (NOME EMPRESARIAL)
-            # parts[7] = CNPJ
-            # parts[8] = CPF
-            # parts[9] = UF
-            # parts[10] = IE (INSCRIÇÃO ESTADUAL)
-            
             info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI (DDMMAAAA)
             info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN (DDMMAAAA)
             info["NOME_EMPRESA"] = get_part(parts, 6)   # Posição 6 = NOME
@@ -121,23 +161,18 @@ def formatar_data_brasil(data_str):
         
         data_str = str(data_str).strip()
         
-        # Verifica se tem 8 dígitos
         if len(data_str) == 8 and data_str.isdigit():
-            # Formato DDMMAAAA
             dia = data_str[0:2]
             mes = data_str[2:4]
             ano = data_str[4:8]
-            
-            # Retorna no formato DD/MM/AAAA
             return f"{dia}/{mes}/{ano}"
         else:
-            # Se não for números ou tamanho diferente, retorna o original
             return data_str
     except Exception as e:
         return data_str
 
 
-def parse_sped(lines):
+def parse_sped(lines, dict_cfop):
     """Parser para C100 + C190 na mesma linha"""
     dados_completos = []
     nota_atual = None
@@ -159,6 +194,7 @@ def parse_sped(lines):
                 "CHAVE_NFE": get_part(parts, 9),
                 "CST_ICMS": "",
                 "CFOP": "",
+                "DESC_CFOP": "",
                 "ALIQ_ICMS": 0.0,
                 "VL_OPR": 0.0,
                 "VL_BC_ICMS": 0.0,
@@ -172,11 +208,13 @@ def parse_sped(lines):
 
         elif reg == "C190" and nota_atual is not None:
             cst_icms_original = get_part(parts, 2)
+            cfop_numero = get_part(parts, 3)
             
             linha_completa = nota_atual.copy()
             linha_completa.update({
                 "CST_ICMS": cst_icms_original,
-                "CFOP": get_part(parts, 3),
+                "CFOP": cfop_numero,
+                "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),
                 "ALIQ_ICMS": to_float(get_part(parts, 9)),
                 "VL_OPR": to_float(get_part(parts, 4)),
                 "VL_BC_ICMS": to_float(get_part(parts, 6)),
@@ -195,7 +233,6 @@ def parse_sped(lines):
     df = pd.DataFrame(dados_completos)
 
     if not df.empty:
-        # Converte DT_DOC (formato DDMMAAAA)
         df["DT_DOC"] = pd.to_datetime(
             df["DT_DOC"], format="%d%m%Y", errors="coerce"
         )
@@ -204,13 +241,13 @@ def parse_sped(lines):
     return df
 
 
-def processar_arquivo(uploaded_file):
+def processar_arquivo(uploaded_file, dict_cfop):
     """Processa um único arquivo SPED e retorna as informações"""
     content = uploaded_file.read().decode("latin-1")
     lines = content.splitlines()
     
     info_empresa = parse_bloco_0000(lines)
-    df_completo = parse_sped(lines)
+    df_completo = parse_sped(lines, dict_cfop)
     
     return info_empresa, df_completo, uploaded_file.name
 
@@ -218,6 +255,30 @@ def processar_arquivo(uploaded_file):
 # =========================
 # INTERFACE PARA MÚLTIPLOS ARQUIVOS
 # =========================
+st.sidebar.header("⚙️ Configurações")
+
+# Upload da tabela de CFOP
+st.sidebar.subheader("📚 Tabela de CFOP")
+arquivo_cfop = st.sidebar.file_uploader(
+    "Carregar tabela CFOP (Excel)", 
+    type=["xlsx", "xls"],
+    help="Arquivo Excel com colunas: CFOP/Código e Descrição"
+)
+
+# Carregar dicionário de CFOP
+dict_cfop = {}
+if arquivo_cfop:
+    dict_cfop = carregar_tabela_cfop(arquivo_cfop)
+    if dict_cfop is not None:
+        st.sidebar.success(f"✅ Tabela CFOP carregada com {len(dict_cfop)} registros")
+    else:
+        st.sidebar.error("❌ Erro ao carregar tabela CFOP")
+else:
+    st.sidebar.info("ℹ️ Opcional: Carregue uma tabela CFOP para ver descrições")
+
+st.sidebar.divider()
+
+# Upload dos arquivos SPED
 uploaded_files = st.file_uploader(
     "Envie os arquivos SPED (.txt)", 
     type=["txt"], 
@@ -229,7 +290,7 @@ if uploaded_files:
     
     with st.spinner(f"Processando {len(uploaded_files)} arquivo(s)..."):
         for arquivo in uploaded_files:
-            info_empresa, df_completo, nome_arquivo = processar_arquivo(arquivo)
+            info_empresa, df_completo, nome_arquivo = processar_arquivo(arquivo, dict_cfop)
             
             if not df_completo.empty:
                 # Adiciona informações da empresa em CADA LINHA
@@ -252,11 +313,11 @@ if uploaded_files:
         # =========================
         st.subheader("📄 Notas Fiscais + ICMS + Dados da Empresa")
         
-        # Ordenar colunas para exibição (informações da empresa primeiro)
+        # Ordenar colunas para exibição
         colunas_ordenadas = [
             "EMPRESA", "CNPJ", "UF", "IE", "PERIODO_INICIAL", "PERIODO_FINAL",
             "NUM_DOC", "SER", "DT_DOC", "CHAVE_NFE", "VL_DOC",
-            "CST_ICMS", "ORIGEM_PRODUTO", "CLASS_FIS", "CFOP", "ALIQ_ICMS", 
+            "CST_ICMS", "ORIGEM_PRODUTO", "CLASS_FIS", "CFOP", "DESC_CFOP", "ALIQ_ICMS", 
             "VL_OPR", "VL_BC_ICMS", "VL_ICMS", "VL_BC_ICMS_ST", "VL_ICMS_ST", 
             "VL_RED_BC", "VL_IPI", "COD_OBS", "ARQUIVO_ORIGEM"
         ]
@@ -267,18 +328,16 @@ if uploaded_files:
         
         st.dataframe(df_exibicao, use_container_width=True, height=500)
         
-        # Mostrar resumo de quantos arquivos foram processados
+        # Mostrar resumo
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
-        # Mostrar exemplo das primeiras datas para verificar
-        with st.expander("🔍 Verificar datas convertidas"):
-            if len(df_final) > 0:
-                st.write("**Exemplo de conversão de datas:**")
-                st.write(f"Data inicial no SPED (bruto): {info_empresa['DATA_INICIAL'] if 'info_empresa' in locals() else 'N/A'}")
-                st.write(f"Data final no SPED (bruto): {info_empresa['DATA_FINAL'] if 'info_empresa' in locals() else 'N/A'}")
-                st.write(f"PERIODO_INICIAL convertido: {df_final['PERIODO_INICIAL'].iloc[0]}")
-                st.write(f"PERIODO_FINAL convertido: {df_final['PERIODO_FINAL'].iloc[0]}")
-                st.write(f"DT_DOC convertido: {df_final['DT_DOC'].iloc[0]}")
+        # Botão para download
+        st.download_button(
+            "📥 Baixar dados completos (CSV)",
+            df_exibicao.to_csv(index=False).encode("utf-8"),
+            "dados_sped_completos.csv",
+            "text/csv"
+        )
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
