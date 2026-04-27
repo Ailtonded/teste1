@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
 
 st.set_page_config(page_title="SPED Fiscal", layout="wide")
 
@@ -109,13 +110,13 @@ def get_descricao_cfop(cfop, dict_cfop):
     """Retorna apenas a descrição do CFOP sem o número"""
     try:
         if not dict_cfop:
-            return ""  # Retorna vazio se não tiver dicionário
+            return ""
         
         cfop_str = str(cfop).strip()
         descricao = dict_cfop.get(cfop_str, "")
         
         if descricao:
-            return descricao  # Retorna apenas a descrição, sem o número
+            return descricao
         else:
             return "CFOP não encontrado"
     except:
@@ -141,12 +142,12 @@ def parse_bloco_0000(lines):
         reg = parts[1]
         
         if reg == "0000":
-            info["DATA_INICIAL"] = get_part(parts, 4)   # Posição 4 = DT_INI (DDMMAAAA)
-            info["DATA_FINAL"] = get_part(parts, 5)     # Posição 5 = DT_FIN (DDMMAAAA)
-            info["NOME_EMPRESA"] = get_part(parts, 6)   # Posição 6 = NOME
-            info["CNPJ"] = get_part(parts, 7)           # Posição 7 = CNPJ
-            info["UF"] = get_part(parts, 9)             # Posição 9 = UF
-            info["IE"] = get_part(parts, 10)            # Posição 10 = IE
+            info["DATA_INICIAL"] = get_part(parts, 4)
+            info["DATA_FINAL"] = get_part(parts, 5)
+            info["NOME_EMPRESA"] = get_part(parts, 6)
+            info["CNPJ"] = get_part(parts, 7)
+            info["UF"] = get_part(parts, 9)
+            info["IE"] = get_part(parts, 10)
             break
             
     return info
@@ -213,7 +214,7 @@ def parse_sped(lines, dict_cfop):
             linha_completa.update({
                 "CST_ICMS": cst_icms_original,
                 "CFOP": cfop_numero,
-                "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),  # Agora só a descrição
+                "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),
                 "ALIQ_ICMS": to_float(get_part(parts, 9)),
                 "VL_OPR": to_float(get_part(parts, 4)),
                 "VL_BC_ICMS": to_float(get_part(parts, 6)),
@@ -249,6 +250,15 @@ def processar_arquivo(uploaded_file, dict_cfop):
     df_completo = parse_sped(lines, dict_cfop)
     
     return info_empresa, df_completo, uploaded_file.name
+
+
+def to_excel(df):
+    """Converte DataFrame para Excel em memória"""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Dados SPED')
+    processed_data = output.getvalue()
+    return processed_data
 
 
 # =========================
@@ -330,13 +340,34 @@ if uploaded_files:
         # Mostrar resumo
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
-        # Botão para download
-        st.download_button(
-            "📥 Baixar dados completos (CSV)",
-            df_exibicao.to_csv(index=False).encode("utf-8"),
-            "dados_sped_completos.csv",
-            "text/csv"
-        )
+        # =========================
+        # BOTÕES DE DOWNLOAD
+        # =========================
+        st.subheader("📥 Download dos dados")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Download em CSV
+            csv_data = df_exibicao.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📄 Baixar como CSV",
+                csv_data,
+                "dados_sped_completos.csv",
+                "text/csv",
+                use_container_width=True
+            )
+        
+        with col2:
+            # Download em Excel
+            excel_data = to_excel(df_exibicao)
+            st.download_button(
+                "📊 Baixar como Excel",
+                excel_data,
+                "dados_sped_completos.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
