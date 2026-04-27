@@ -45,10 +45,27 @@ def get_origem_produto(cst_icms):
 
 
 def get_class_fis(cst_icms):
-    """Extrai os dois primeiros dígitos do CST_ICMS para CLASS_FIS"""
+    """Extrai os dois primeiros dígitos do CST_ICMS e retorna com descrição"""
     try:
         if cst_icms and len(str(cst_icms)) >= 2:
-            return str(cst_icms)[:2]
+            class_fis_num = str(cst_icms)[:2]  # Pega os dois primeiros dígitos
+            
+            # Mapeamento da CLASS_FIS com descrição
+            class_fis_map = {
+                "00": "00 - Tributada integralmente",
+                "10": "10 - Tributada e com cobrança do ICMS por substituição tributária",
+                "20": "20 - Com redução de base de cálculo",
+                "30": "30 - Isenta ou não tributada e com cobrança do ICMS por substituição tributária",
+                "40": "40 - Isenta",
+                "41": "41 - Não tributada",
+                "50": "50 - Suspensão",
+                "51": "51 - Diferimento",
+                "60": "60 - ICMS cobrado anteriormente por substituição tributária",
+                "70": "70 - Com redução de base de cálculo e cobrança do ICMS por substituição tributária",
+                "90": "90 - Outras"
+            }
+            
+            return class_fis_map.get(class_fis_num, f"{class_fis_num} - Classificação não mapeada")
         return ""
     except:
         return ""
@@ -241,11 +258,13 @@ if uploaded_files:
         # Mostrar resumo de quantos arquivos foram processados
         st.success(f"✅ {len(uploaded_files)} arquivo(s) processado(s) com sucesso! Total de {len(df_final)} registros de notas fiscais.")
         
-        # DEBUG: Mostrar exemplo das primeiras datas para verificar
-        with st.expander("🔍 Verificar datas (DEBUG)"):
-            st.write("Exemplo de PERIODO_INICIAL:", df_final["PERIODO_INICIAL"].iloc[0] if len(df_final) > 0 else "N/A")
-            st.write("Exemplo de PERIODO_FINAL:", df_final["PERIODO_FINAL"].iloc[0] if len(df_final) > 0 else "N/A")
-            st.write("Exemplo de DT_DOC:", df_final["DT_DOC"].iloc[0] if len(df_final) > 0 else "N/A")
+        # DEBUG: Mostrar exemplo dos valores para verificar
+        with st.expander("🔍 Verificar CLASS_FIS (DEBUG)"):
+            if len(df_final) > 0:
+                st.write("Exemplos de CLASS_FIS encontrados:")
+                valores_unicos = df_final["CLASS_FIS"].unique()[:10]
+                for valor in valores_unicos:
+                    st.write(f"  - {valor}")
         
     else:
         st.warning("⚠️ Nenhum registro C100/C190 encontrado nos arquivos!")
