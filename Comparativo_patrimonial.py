@@ -5,69 +5,51 @@ def main():
     st.set_page_config(page_title="Leitor de Excel", layout="wide")
     
     st.title("📊 Leitor de Arquivos Excel")
-    st.write("Faça upload de um arquivo Excel para visualizar suas colunas e linhas")
+    st.write("Faça upload de um arquivo Excel para visualizar seus dados")
     
     # Upload do arquivo
     arquivo = st.file_uploader("Escolha um arquivo Excel", type=["xlsx", "xls"])
     
     if arquivo is not None:
         try:
-            # Ler o arquivo Excel
-            df = pd.read_excel(arquivo)
+            # Ler todas as abas do Excel
+            arquivo_excel = pd.ExcelFile(arquivo)
+            abas = arquivo_excel.sheet_names
             
-            # Exibir informações básicas
-            st.subheader("📋 Informações do Arquivo")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Total de Linhas", df.shape[0])
-            
-            with col2:
-                st.metric("Total de Colunas", df.shape[1])
-            
-            with col3:
-                st.metric("Total de Células", df.shape[0] * df.shape[1])
-            
-            # Exibir colunas
-            st.subheader("📑 Colunas da Planilha")
-            
-            colunas_df = pd.DataFrame({
-                "Nº": range(1, len(df.columns) + 1),
-                "Nome da Coluna": df.columns,
-                "Tipo de Dado": df.dtypes.values
-            })
-            
-            st.dataframe(colunas_df, use_container_width=True)
-            
-            # Opção para visualizar os dados
-            st.subheader("🔍 Visualização dos Dados")
-            
-            linhas_para_mostrar = st.slider(
-                "Quantas linhas deseja visualizar?",
-                min_value=1,
-                max_value=min(100, df.shape[0]),
-                value=min(10, df.shape[0])
+            # Perguntar qual aba visualizar
+            aba_selecionada = st.selectbox(
+                "Selecione a aba que deseja visualizar:",
+                options=abas
             )
             
-            # Exibir as primeiras linhas
-            st.write(f"Mostrando as primeiras **{linhas_para_mostrar}** linhas:")
-            st.dataframe(df.head(linhas_para_mostrar), use_container_width=True)
-            
-            # Opção para ver estatísticas
-            if st.checkbox("Mostrar estatísticas básicas"):
-                st.subheader("📊 Estatísticas Básicas")
-                st.dataframe(df.describe(), use_container_width=True)
-            
-            # Opção para ver valores nulos
-            if st.checkbox("Mostrar valores nulos por coluna"):
-                st.subheader("❓ Valores Nulos")
-                nulos = pd.DataFrame({
-                    "Coluna": df.columns,
-                    "Valores Nulos": df.isnull().sum(),
-                    "Percentual (%)": (df.isnull().sum() / len(df) * 100).round(2)
-                })
-                st.dataframe(nulos, use_container_width=True)
+            if aba_selecionada:
+                # Ler a aba selecionada
+                df = pd.read_excel(arquivo, sheet_name=aba_selecionada)
+                
+                # Exibir informações
+                st.success(f"Exibindo aba: **{aba_selecionada}**")
+                
+                # Exibir total de linhas e colunas
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total de Linhas", df.shape[0])
+                with col2:
+                    st.metric("Total de Colunas", df.shape[1])
+                
+                # Exibir os dados (10 colunas e 10 linhas)
+                st.subheader("📋 Dados da Planilha")
+                st.write("Mostrando as primeiras 10 linhas e 10 colunas:")
+                
+                # Pegar apenas as 10 primeiras linhas e 10 primeiras colunas
+                linhas_10 = df.head(10)
+                colunas_10 = linhas_10.iloc[:, :10]
+                
+                # Exibir a tabela
+                st.dataframe(colunas_10, use_container_width=True)
+                
+                # Informação adicional
+                if df.shape[0] > 10 or df.shape[1] > 10:
+                    st.info(f"⚠️ A planilha tem {df.shape[0]} linhas e {df.shape[1]} colunas. Exibindo apenas as primeiras 10 linhas e 10 colunas.")
                 
         except Exception as e:
             st.error(f"Erro ao ler o arquivo: {str(e)}")
