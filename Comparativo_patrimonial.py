@@ -44,7 +44,7 @@ if arquivo:
         df = df_raw.iloc[linha_header + 1:].copy()
         df.columns = cabecalho
         
-        # ========== AUDITORIA ==========
+        # ========== AUDITORIA EXISTENTE ==========
         st.subheader("📊 Auditoria do Tratamento da Coluna Conta")
         
         if "Conta" in df.columns:
@@ -62,17 +62,46 @@ if arquivo:
             st.write("**3. DEPOIS do corte de 10 caracteres (primeiras 20 linhas):**")
             st.write(df["Conta_10_caracteres"].head(20).tolist())
             
+            # ========== NOVA AUDITORIA: Frequência dos prefixos ==========
+            st.write("**4. FREQUÊNCIA dos primeiros 10 caracteres (todos os registros):**")
+            frequencia_prefixos = df["Conta_10_caracteres"].value_counts()
+            st.write(frequencia_prefixos)
+            
+            # Mostrar prefixos que começam com 2 (fornecedores)
+            prefixos_fornecedores = frequencia_prefixos[frequencia_prefixos.index.str.startswith("2") if len(frequencia_prefixos) > 0 else []]
+            if len(prefixos_fornecedores) > 0:
+                st.write("**Prefixos que começam com 2 (potenciais fornecedores):**")
+                st.write(prefixos_fornecedores)
+            
             # Totais
             st.write(f"**Total de registros antes do filtro:** {len(df)}")
+            
+            # ========== FILTRO TEMPORÁRIO PARA VALIDAÇÃO ==========
+            # Usar filtro que começa com "2" para trazer todos os fornecedores
+            df_filtrado = df[df["Conta_10_caracteres"].astype(str).str.startswith("2")]
+            st.write(f"**Total de registros após filtro (começando com '2'):** {len(df_filtrado)}")
+            
+            # Identificar o prefixo mais comum que começa com 2
+            if len(prefixos_fornecedores) > 0:
+                prefixo_correto = prefixos_fornecedores.index[0]
+                st.write(f"**🔍 Prefixo mais comum encontrado:** {prefixo_correto}")
+                
+                # Mostrar quantos registros teria com este prefixo específico
+                df_com_prefixo_correto = df[df["Conta_10_caracteres"].astype(str).str.startswith(prefixo_correto)]
+                st.write(f"**Registros com o prefixo '{prefixo_correto}':** {len(df_com_prefixo_correto)}")
+            
+            st.divider()
             
             # Aplicar tratamento na coluna original
             df["Conta"] = df["Conta_10_caracteres"]
             
-            # Aplicar filtro
-            df_filtrado = df[df["Conta"].astype(str).str.startswith("2103001001")]
-            st.write(f"**Total de registros após o filtro:** {len(df_filtrado)}")
+            # USAR FILTRO COM PREFIXO "2" (todos fornecedores)
+            # Depois de identificar o prefixo correto, você pode substituir "2" pelo prefixo específico
+            prefixo_filtro = "2"  # Temporário: pega todos que começam com 2
+            # prefixo_filtro = "2103001001"  # Substitua pelo prefixo correto após análise
             
-            st.divider()
+            df_filtrado = df[df["Conta"].astype(str).str.startswith(prefixo_filtro)]
+            st.write(f"**Total de registros após filtro final:** {len(df_filtrado)}")
             
             # Usar o DataFrame filtrado
             df = df_filtrado
