@@ -251,6 +251,9 @@ if df_contabil is not None and df_financeiro is not None:
                 right_on="Conta"
             )
         
+        # ========== PASSO 7.1: Filtrar apenas contas que existem em contas_unicas ==========
+        df_comp = df_comp[df_comp["Conta"].isin(contas_unicas["Conta"])]
+        
         # ========== PASSO 8: Tratar valores nulos ==========
         df_comp["Saldo Contábil"] = df_comp["Saldo Contábil"].fillna(0)
         df_comp["Saldo Financeiro"] = df_comp["Saldo Financeiro"].fillna(0)
