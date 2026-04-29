@@ -116,6 +116,27 @@ if arquivo3:
         # Se não encontrou "Codigo", exibir dados crus
         df_arquivo3 = pd.read_excel(arquivo3, sheet_name=0, dtype=str)
 
+# Realizar LEFT JOIN entre Saldo Financeiro e Arquivo 3
+if df_financeiro is not None and df_arquivo3 is not None:
+    # Garantir que os campos sejam string
+    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str)
+    df_financeiro["Loja"] = df_financeiro["Loja"].astype(str)
+    
+    if "Codigo" in df_arquivo3.columns:
+        df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str)
+    
+    if "Loja" in df_arquivo3.columns:
+        df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str)
+    
+    # Realizar o LEFT JOIN
+    if "Codigo" in df_arquivo3.columns and "Loja" in df_arquivo3.columns and "C Contabil" in df_arquivo3.columns:
+        df_financeiro = df_financeiro.merge(
+            df_arquivo3[["Codigo", "Loja", "C Contabil"]],
+            how="left",
+            left_on=["Cod Fornecedor", "Loja"],
+            right_on=["Codigo", "Loja"]
+        )
+
 # Exibir abas
 if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
     tab1, tab2, tab3 = st.tabs(["Saldo Contabil", "Saldo Financeiro", "Arquivo 3"])
