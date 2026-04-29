@@ -13,6 +13,12 @@ if arquivo:
     excel = pd.ExcelFile(arquivo)
     aba = st.sidebar.selectbox("Aba", excel.sheet_names)
     
+    # Campo Conciliar
+    conciliar = st.sidebar.selectbox(
+        "Conciliar",
+        ["Adiantamento de fornecedor", "Fornecedor", "Cliente"]
+    )
+    
     # Ler todos os dados sem cabeçalho
     df_raw = pd.read_excel(arquivo, sheet_name=aba, header=None)
     
@@ -42,6 +48,10 @@ if arquivo:
         
         if colunas_existentes:
             df = df[colunas_existentes]
+        
+        # Aplicar filtro se selecionar "Fornecedor"
+        if conciliar == "Fornecedor" and "Conta" in df.columns:
+            df = df[df["Conta"].astype(str).str.startswith("2103001001")]
     else:
         # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba)
