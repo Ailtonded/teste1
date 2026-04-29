@@ -152,66 +152,105 @@ if df_financeiro is not None and df_arquivo3 is not None:
     
     df_financeiro = df_financeiro[[col for col in colunas_final if col in df_financeiro.columns]]
 
-# ========== NOVA ABA: COMPARATIVO ==========
+# ========== NOVA ABA: COMPARATIVO (MELHORADO) ==========
 df_comp = None
 if df_contabil is not None and df_financeiro is not None:
-    # Preparar dados do Saldo Contábil
-    df_comp_contabil = df_contabil.copy()
-    df_comp_contabil["Conta"] = df_comp_contabil["Conta"].astype(str).str.strip()
-    
-    # Converter Saldo atual para numérico (com tratamento de erros)
+    # Função segura para converter para float
     def converter_para_float(valor):
         try:
             if pd.isna(valor) or valor == "" or valor == "nan":
                 return 0.0
-            # Converter para string e limpar
             valor_str = str(valor).strip()
-            # Substituir ponto por nada (separador de milhar) e vírgula por ponto (decimal)
             valor_str = valor_str.replace(".", "").replace(",", ".")
             return float(valor_str)
         except:
             return 0.0
     
+    # ========== PASSO 1: Preparar Saldo Contábil ==========
+    df_comp_contabil = df_contabil.copy()
+    df_comp_contabil["Conta"] = df_comp_contabil["Conta"].astype(str).str.strip()
     df_comp_contabil["Saldo atual"] = df_comp_contabil["Saldo atual"].apply(converter_para_float)
     
-    # Agrupar por Conta
     df_contabil_group = df_comp_contabil.groupby("Conta", as_index=False)["Saldo atual"].sum()
     df_contabil_group.rename(columns={"Saldo atual": "Saldo Contábil"}, inplace=True)
     
-    # Preparar dados do Saldo Financeiro
+    # ========== PASSO 2: Preparar Saldo Financeiro ==========
     df_comp_financeiro = df_financeiro.copy()
     df_comp_financeiro["C Contabil"] = df_comp_financeiro["C Contabil"].astype(str).str.strip()
-    
-    # Converter Valor Original para numérico (com tratamento de erros)
     df_comp_financeiro["Valor Original"] = df_comp_financeiro["Valor Original"].apply(converter_para_float)
     
-    # Agrupar por C Contabil
     df_fin_group = df_comp_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
     df_fin_group.rename(columns={"Valor Original": "Saldo Financeiro"}, inplace=True)
     
-    # LEFT JOIN
-    df_comp = df_contabil_group.merge(
+    # ========== PASSO 3: Preparar Razão Social do Arquivo 3 ==========
+    df_razao = None
+    if df_arquivo3 is not None and "Razao Social" in df_arquivo3.columns:
+        df_temp = df_arquivo3.copy()
+        df_temp["C Contabil"] = df_temp["C Contabil"].astype(str).str.strip()
+        df_temp["Razao Social"] = df_temp["Razao Social"].astype(str).str.strip()
+        
+        # Agrupar e concatenar valores únicos da Razão Social
+        df_razao = df_temp.groupby("C Contabil")["Razao Social"].apply(
+            lambda x: ", ".join(x.unique())
+        ).reset_index()
+        df_razao.rename(columns={"C Contabil": "Conta"}, inplace=True)
+    
+    # ========== PASSO 4: Criar base única de contas ==========
+    contas_unicas = pd.concat([
+        df_contabil_group[["Conta"]],
+        df_fin_group[["C Contabil"]].rename(columns={"C Contabil": "Conta"})
+    ], ignore_index=True)
+    
+    contas_unicas = contas_unicas.drop_duplicates(subset=["Conta"]).copy()
+    contas_unicas["Conta"] = contas_unicas["Conta"].astype(str).str.strip()
+    contas_unicas = contas_unicas.sort_values(by="Conta").reset_index(drop=True)
+    
+    # ========== PASSO 5: LEFT JOIN com Saldo Contábil ==========
+    df_comp = contas_unicas.copy()
+    
+    df_comp = df_comp.merge(
+        df_contabil_group,
+        how="left",
+        left_on="Conta",
+        right_on="Conta"
+    )
+    
+    # ========== PASSO 6: LEFT JOIN com Saldo Financeiro ==========
+    df_comp = df_comp.merge(
         df_fin_group,
         how="left",
         left_on="Conta",
         right_on="C Contabil"
     )
     
-    # Remover coluna duplicada
     df_comp = df_comp.drop(columns=["C Contabil"], errors="ignore")
     
-    # Preencher NaN com 0
+    # ========== PASSO 7: LEFT JOIN com Razão Social ==========
+    if df_razao is not None:
+        df_comp = df_comp.merge(
+            df_razao,
+            how="left",
+            left_on="Conta",
+            right_on="Conta"
+        )
+    
+    # ========== PASSO 8: Tratar valores nulos ==========
+    df_comp["Saldo Contábil"] = df_comp["Saldo Contábil"].fillna(0)
     df_comp["Saldo Financeiro"] = df_comp["Saldo Financeiro"].fillna(0)
     
-    # Calcular diferença
+    if "Razao Social" in df_comp.columns:
+        df_comp["Razao Social"] = df_comp["Razao Social"].fillna("")
+    
+    # ========== PASSO 9: Calcular diferença ==========
     df_comp["Diferença"] = df_comp["Saldo Contábil"] - df_comp["Saldo Financeiro"]
     
-    # Ordenar pela maior diferença
-    df_comp = df_comp.sort_values(by="Diferença", ascending=False)
+    # ========== PASSO 10: Ordenar pela maior diferença ==========
+    df_comp = df_comp.sort_values(by="Diferença", ascending=False).reset_index(drop=True)
     
-    # Selecionar colunas finais
-    colunas_finais = ["Conta", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
-    df_comp = df_comp[colunas_finais]
+    # ========== PASSO 11: Selecionar colunas finais ==========
+    colunas_finais = ["Conta", "Razao Social", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
+    colunas_existentes = [col for col in colunas_finais if col in df_comp.columns]
+    df_comp = df_comp[colunas_existentes]
 
 # Exibir abas
 if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
@@ -241,7 +280,14 @@ if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not No
     with tab4:
         if df_comp is not None:
             st.subheader("📊 Comparativo Contábil vs Financeiro")
-            st.dataframe(df_comp, use_container_width=True)
+            
+            # Formatar valores monetários para exibição
+            df_comp_display = df_comp.copy()
+            for col in ["Saldo Contábil", "Saldo Financeiro", "Diferença"]:
+                if col in df_comp_display.columns:
+                    df_comp_display[col] = df_comp_display[col].apply(lambda x: f"R$ {x:,.2f}")
+            
+            st.dataframe(df_comp_display, use_container_width=True)
             
             # Exibir resumo
             col1, col2, col3 = st.columns(3)
@@ -251,6 +297,13 @@ if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not No
                 st.metric("Total Financeiro", f"R$ {df_comp['Saldo Financeiro'].sum():,.2f}")
             with col3:
                 st.metric("Diferença Total", f"R$ {df_comp['Diferença'].sum():,.2f}")
+            
+            # Estatísticas adicionais
+            with st.expander("📈 Estatísticas do Comparativo"):
+                st.write(f"**Total de Contas:** {len(df_comp)}")
+                st.write(f"**Contas com diferença:** {len(df_comp[df_comp['Diferença'] != 0])}")
+                st.write(f"**Maior diferença positiva:** R$ {df_comp['Diferença'].max():,.2f}")
+                st.write(f"**Maior diferença negativa:** R$ {df_comp['Diferença'].min():,.2f}")
         else:
             st.info("Carregue os arquivos de Saldo Contábil e Financeiro para visualizar o comparativo")
 else:
