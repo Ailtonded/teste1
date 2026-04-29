@@ -56,8 +56,11 @@ if arquivo:
         # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba)
     
-    # Exibir dados
-    st.dataframe(df.astype(str), use_container_width=True)
+    # Exibir dados - garantir que a coluna Conta seja mostrada como texto completo
+    if "Conta" in df.columns:
+        df["Conta"] = df["Conta"].astype(str)
+    
+    st.dataframe(df, use_container_width=True)
     
 else:
     st.info("Envie um arquivo Excel na sidebar")
