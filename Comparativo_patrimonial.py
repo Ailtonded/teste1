@@ -369,29 +369,113 @@ if df_contabil is not None or df_financeiro is not None or df_fornecedor is not 
         if df_comp is not None and len(df_comp) > 0:
             st.subheader("📊 Comparativo Contábil vs Financeiro")
             
+            # ========== FILTROS INTERATIVOS ==========
+            df_comp_filtrado = df_comp.copy()
+            
+            # Identificar colunas de texto e numéricas
+            colunas_texto = ["Conta", "Razao Social", "Tp"]
+            colunas_numericas = ["Saldo Contábil", "Saldo Financeiro", "Diferença"]
+            
+            # Filtros para colunas de texto
+            with st.expander("🔍 Filtros", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                
+                filtros_texto = {}
+                for idx, col in enumerate(colunas_texto):
+                    if col in df_comp.columns:
+                        with [col1, col2, col3][idx % 3]:
+                            st.markdown(f"**{col}**")
+                            tipo_filtro = st.selectbox(
+                                "Tipo",
+                                ["Contém", "Igual a"],
+                                key=f"tipo_{col}",
+                                label_visibility="collapsed"
+                            )
+                            valor_filtro = st.text_input(
+                                "Valor",
+                                key=f"valor_{col}",
+                                placeholder=f"Filtrar {col}...",
+                                label_visibility="collapsed"
+                            )
+                            if valor_filtro:
+                                filtros_texto[col] = {"tipo": tipo_filtro, "valor": valor_filtro}
+                
+                # Filtros para colunas numéricas
+                st.markdown("---")
+                st.markdown("**Filtros Numéricos (deixe em branco para ignorar)**")
+                
+                col_n1, col_n2, col_n3 = st.columns(3)
+                
+                for idx, col in enumerate(colunas_numericas):
+                    if col in df_comp.columns:
+                        with [col_n1, col_n2, col_n3][idx % 3]:
+                            st.markdown(f"**{col}**")
+                            min_val = st.number_input(
+                                f"Mínimo",
+                                key=f"min_{col}",
+                                value=None,
+                                placeholder="Mínimo",
+                                label_visibility="collapsed"
+                            )
+                            max_val = st.number_input(
+                                f"Máximo",
+                                key=f"max_{col}",
+                                value=None,
+                                placeholder="Máximo",
+                                label_visibility="collapsed"
+                            )
+                            if min_val is not None or max_val is not None:
+                                if col not in filtros_texto:
+                                    filtros_texto[col] = {}
+                                if min_val is not None:
+                                    filtros_texto[col]["min"] = min_val
+                                if max_val is not None:
+                                    filtros_texto[col]["max"] = max_val
+            
+            # Aplicar filtros de texto
+            for col, config in filtros_texto.items():
+                if col in colunas_texto and "tipo" in config:
+                    valor = config["valor"]
+                    if valor:
+                        if config["tipo"] == "Contém":
+                            df_comp_filtrado = df_comp_filtrado[df_comp_filtrado[col].astype(str).str.contains(valor, case=False, na=False)]
+                        elif config["tipo"] == "Igual a":
+                            df_comp_filtrado = df_comp_filtrado[df_comp_filtrado[col].astype(str).str.lower() == valor.lower()]
+            
+            # Aplicar filtros numéricos
+            for col, config in filtros_texto.items():
+                if col in colunas_numericas:
+                    if "min" in config:
+                        df_comp_filtrado = df_comp_filtrado[df_comp_filtrado[col] >= config["min"]]
+                    if "max" in config:
+                        df_comp_filtrado = df_comp_filtrado[df_comp_filtrado[col] <= config["max"]]
+            
+            # Exibir número de registros após filtro
+            st.caption(f"📊 Mostrando {len(df_comp_filtrado)} de {len(df_comp)} registros")
+            
             # Formatar valores monetários para exibição
-            df_comp_display = df_comp.copy()
+            df_comp_display = df_comp_filtrado.copy()
             for col in ["Saldo Contábil", "Saldo Financeiro", "Diferença"]:
                 if col in df_comp_display.columns:
                     df_comp_display[col] = df_comp_display[col].apply(lambda x: f"R$ {x:,.2f}")
             
             st.dataframe(df_comp_display, use_container_width=True)
             
-            # Exibir resumo
+            # Exibir resumo com base no filtrado
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Contábil", f"R$ {df_comp['Saldo Contábil'].sum():,.2f}")
+                st.metric("Total Contábil", f"R$ {df_comp_filtrado['Saldo Contábil'].sum():,.2f}")
             with col2:
-                st.metric("Total Financeiro", f"R$ {df_comp['Saldo Financeiro'].sum():,.2f}")
+                st.metric("Total Financeiro", f"R$ {df_comp_filtrado['Saldo Financeiro'].sum():,.2f}")
             with col3:
-                st.metric("Diferença Total", f"R$ {df_comp['Diferença'].sum():,.2f}")
+                st.metric("Diferença Total", f"R$ {df_comp_filtrado['Diferença'].sum():,.2f}")
             
             # Estatísticas adicionais
             with st.expander("📈 Estatísticas do Comparativo"):
-                st.write(f"**Total de Contas:** {len(df_comp)}")
-                st.write(f"**Contas com diferença:** {len(df_comp[df_comp['Diferença'] != 0])}")
-                st.write(f"**Maior diferença positiva:** R$ {df_comp['Diferença'].max():,.2f}")
-                st.write(f"**Maior diferença negativa:** R$ {df_comp['Diferença'].min():,.2f}")
+                st.write(f"**Total de Contas:** {len(df_comp_filtrado)}")
+                st.write(f"**Contas com diferença:** {len(df_comp_filtrado[df_comp_filtrado['Diferença'] != 0])}")
+                st.write(f"**Maior diferença positiva:** R$ {df_comp_filtrado['Diferença'].max():,.2f}")
+                st.write(f"**Maior diferença negativa:** R$ {df_comp_filtrado['Diferença'].min():,.2f}")
         else:
             st.info("Carregue os arquivos de Saldo Contábil e Financeiro para visualizar o comparativo")
 else:
