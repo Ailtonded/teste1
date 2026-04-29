@@ -113,24 +113,24 @@ if arquivo3:
         df_arquivo3 = df_raw3.iloc[linha_header3 + 1:].copy()
         df_arquivo3.columns = cabecalho3
         
-        # CORREÇÃO 1: Remover espaços dos nomes das colunas
+        # Remover espaços dos nomes das colunas
         df_arquivo3.columns = df_arquivo3.columns.str.strip()
     else:
         # Se não encontrou "Codigo", exibir dados crus
         df_arquivo3 = pd.read_excel(arquivo3, sheet_name=0, dtype=str)
-        # CORREÇÃO 1: Remover espaços dos nomes das colunas
+        # Remover espaços dos nomes das colunas
         df_arquivo3.columns = df_arquivo3.columns.str.strip()
 
 # Realizar LEFT JOIN entre Saldo Financeiro e Arquivo 3
 if df_financeiro is not None and df_arquivo3 is not None:
-    # CORREÇÃO 2: Garantir tipos como string e limpar espaços
+    # Garantir tipos como string e limpar espaços
     df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip()
     df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip()
     
     df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str).str.strip()
     df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str).str.strip()
     
-    # CORREÇÃO 3: LEFT JOIN com as colunas corretas
+    # LEFT JOIN com as colunas corretas
     df_financeiro = df_financeiro.merge(
         df_arquivo3[["Codigo", "Loja", "C Contabil"]],
         how="left",
@@ -138,10 +138,10 @@ if df_financeiro is not None and df_arquivo3 is not None:
         right_on=["Codigo", "Loja"]
     )
     
-    # CORREÇÃO 4: Remover coluna duplicada do merge
+    # Remover coluna duplicada do merge
     df_financeiro = df_financeiro.drop(columns=["Codigo"], errors="ignore")
     
-    # CORREÇÃO 5: Garantir as colunas finais na ordem correta
+    # Garantir as colunas finais na ordem correta
     colunas_final = [
         "Codigo-Nome do Fornecedor",
         "Cod Fornecedor",
@@ -152,9 +152,70 @@ if df_financeiro is not None and df_arquivo3 is not None:
     
     df_financeiro = df_financeiro[[col for col in colunas_final if col in df_financeiro.columns]]
 
+# ========== NOVA ABA: COMPARATIVO ==========
+df_comp = None
+if df_contabil is not None and df_financeiro is not None:
+    # Preparar dados do Saldo Contábil
+    df_comp_contabil = df_contabil.copy()
+    df_comp_contabil["Conta"] = df_comp_contabil["Conta"].astype(str).str.strip()
+    
+    # Converter Saldo atual para numérico
+    df_comp_contabil["Saldo atual"] = (
+        df_comp_contabil["Saldo atual"]
+        .astype(str)
+        .str.replace(".", "")
+        .str.replace(",", ".")
+        .astype(float)
+    )
+    
+    # Agrupar por Conta
+    df_contabil_group = df_comp_contabil.groupby("Conta", as_index=False)["Saldo atual"].sum()
+    df_contabil_group.rename(columns={"Saldo atual": "Saldo Contábil"}, inplace=True)
+    
+    # Preparar dados do Saldo Financeiro
+    df_comp_financeiro = df_financeiro.copy()
+    df_comp_financeiro["C Contabil"] = df_comp_financeiro["C Contabil"].astype(str).str.strip()
+    
+    # Converter Valor Original para numérico
+    df_comp_financeiro["Valor Original"] = (
+        df_comp_financeiro["Valor Original"]
+        .astype(str)
+        .str.replace(".", "")
+        .str.replace(",", ".")
+        .astype(float)
+    )
+    
+    # Agrupar por C Contabil
+    df_fin_group = df_comp_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
+    df_fin_group.rename(columns={"Valor Original": "Saldo Financeiro"}, inplace=True)
+    
+    # LEFT JOIN
+    df_comp = df_contabil_group.merge(
+        df_fin_group,
+        how="left",
+        left_on="Conta",
+        right_on="C Contabil"
+    )
+    
+    # Remover coluna duplicada
+    df_comp = df_comp.drop(columns=["C Contabil"], errors="ignore")
+    
+    # Preencher NaN com 0
+    df_comp["Saldo Financeiro"] = df_comp["Saldo Financeiro"].fillna(0)
+    
+    # Calcular diferença
+    df_comp["Diferença"] = df_comp["Saldo Contábil"] - df_comp["Saldo Financeiro"]
+    
+    # Ordenar pela maior diferença
+    df_comp = df_comp.sort_values(by="Diferença", ascending=False)
+    
+    # Selecionar colunas finais
+    colunas_finais = ["Conta", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
+    df_comp = df_comp[colunas_finais]
+
 # Exibir abas
 if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
-    tab1, tab2, tab3 = st.tabs(["Saldo Contabil", "Saldo Financeiro", "Arquivo 3"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Saldo Contabil", "Saldo Financeiro", "Arquivo 3", "Comparativo"])
     
     with tab1:
         if df_contabil is not None:
@@ -176,5 +237,21 @@ if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not No
             st.dataframe(df_arquivo3, use_container_width=True)
         else:
             st.info("Nenhum arquivo 3 carregado")
+    
+    with tab4:
+        if df_comp is not None:
+            st.subheader("📊 Comparativo Contábil vs Financeiro")
+            st.dataframe(df_comp, use_container_width=True)
+            
+            # Exibir resumo
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Contábil", f"R$ {df_comp['Saldo Contábil'].sum():,.2f}")
+            with col2:
+                st.metric("Total Financeiro", f"R$ {df_comp['Saldo Financeiro'].sum():,.2f}")
+            with col3:
+                st.metric("Diferença Total", f"R$ {df_comp['Diferença'].sum():,.2f}")
+        else:
+            st.info("Carregue os arquivos de Saldo Contábil e Financeiro para visualizar o comparativo")
 else:
     st.info("Envie os arquivos Excel na sidebar para visualizar os dados")
