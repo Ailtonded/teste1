@@ -7,6 +7,7 @@ with st.sidebar:
     st.header("Upload")
     arquivo1 = st.file_uploader("Arquivo Excel - Plano de Contas", type=["xlsx", "xls"])
     arquivo2 = st.file_uploader("Arquivo Excel - Posicao dos Titulos", type=["xlsx", "xls"])
+    arquivo3 = st.file_uploader("Arquivo 3", type=["xlsx", "xls"])
 
 st.title("Visualizador de Excel")
 
@@ -89,9 +90,35 @@ if arquivo2:
         df_financeiro.insert(0, "Cod Fornecedor", split_df[0])
         df_financeiro.insert(1, "Loja", split_df[1])
 
+# Processar terceiro arquivo
+df_arquivo3 = None
+if arquivo3:
+    # Ler a primeira aba sem cabeçalho
+    df_raw3 = pd.read_excel(arquivo3, sheet_name=0, header=None, dtype=str)
+    
+    # Procurar linha com "Codigo"
+    linha_header3 = None
+    for i in range(len(df_raw3)):
+        for col in range(len(df_raw3.columns)):
+            valor = str(df_raw3.iloc[i, col]) if pd.notna(df_raw3.iloc[i, col]) else ""
+            if "Codigo" in valor:
+                linha_header3 = i
+                break
+        if linha_header3 is not None:
+            break
+    
+    if linha_header3 is not None:
+        # Usar linha encontrada como cabeçalho
+        cabecalho3 = df_raw3.iloc[linha_header3]
+        df_arquivo3 = df_raw3.iloc[linha_header3 + 1:].copy()
+        df_arquivo3.columns = cabecalho3
+    else:
+        # Se não encontrou "Codigo", exibir dados crus
+        df_arquivo3 = pd.read_excel(arquivo3, sheet_name=0, dtype=str)
+
 # Exibir abas
-if df_contabil is not None or df_financeiro is not None:
-    tab1, tab2 = st.tabs(["Saldo Contabil", "Saldo Financeiro"])
+if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
+    tab1, tab2, tab3 = st.tabs(["Saldo Contabil", "Saldo Financeiro", "Arquivo 3"])
     
     with tab1:
         if df_contabil is not None:
@@ -106,5 +133,12 @@ if df_contabil is not None or df_financeiro is not None:
             st.dataframe(df_financeiro, use_container_width=True)
         else:
             st.info("Nenhum arquivo de posição dos títulos carregado")
+    
+    with tab3:
+        if df_arquivo3 is not None:
+            st.subheader("📋 Arquivo 3")
+            st.dataframe(df_arquivo3, use_container_width=True)
+        else:
+            st.info("Nenhum arquivo 3 carregado")
 else:
-    st.info("Envie os dois arquivos Excel na sidebar para visualizar os dados")
+    st.info("Envie os arquivos Excel na sidebar para visualizar os dados")
