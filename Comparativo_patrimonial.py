@@ -5,12 +5,15 @@ st.set_page_config(page_title="Excel Viewer", layout="wide")
 
 with st.sidebar:
     st.header("Upload")
-    arquivo = st.file_uploader("Arquivo Excel", type=["xlsx", "xls"])
+    arquivo1 = st.file_uploader("Arquivo Excel - Plano de Contas", type=["xlsx", "xls"])
+    arquivo2 = st.file_uploader("Arquivo Excel - Posicao dos Titulos", type=["xlsx", "xls"])
 
 st.title("Visualizador de Excel")
 
-if arquivo:
-    excel = pd.ExcelFile(arquivo)
+# Processar primeiro arquivo
+df_contabil = None
+if arquivo1:
+    excel = pd.ExcelFile(arquivo1)
     
     # Procurar aba "Plano de contas"
     aba_selecionada = None
@@ -23,7 +26,7 @@ if arquivo:
         aba_selecionada = excel.sheet_names[0]
     
     # Ler todos os dados sem cabeçalho
-    df_raw = pd.read_excel(arquivo, sheet_name=aba_selecionada, header=None, dtype=str)
+    df_raw = pd.read_excel(arquivo1, sheet_name=aba_selecionada, header=None, dtype=str)
     
     # Procurar linha com "Conta" e "Descricao"
     linha_header = None
@@ -54,14 +57,45 @@ if arquivo:
         
         # Aplicar filtro com prefixo correto
         if "Conta" in df.columns:
-            df = df[df["Conta"].astype(str).str.startswith("2103001")]
+            df_contabil = df[df["Conta"].astype(str).str.startswith("2103001")]
     else:
         # Se não encontrou, exibir normalmente
-        df = pd.read_excel(arquivo, sheet_name=aba_selecionada)
+        df_contabil = pd.read_excel(arquivo1, sheet_name=aba_selecionada)
+
+# Processar segundo arquivo
+df_financeiro = None
+if arquivo2:
+    excel2 = pd.ExcelFile(arquivo2)
     
-    # Exibir dados
-    st.subheader("📋 Dados Finais")
-    st.dataframe(df, use_container_width=True)
+    # Procurar aba com "Posicao dos Titulos"
+    aba_financeiro = None
+    for sheet in excel2.sheet_names:
+        if "Posicao" in sheet or "Titulos" in sheet:
+            aba_financeiro = sheet
+            break
     
+    if aba_financeiro is None:
+        aba_financeiro = excel2.sheet_names[0]
+    
+    # Ler dados crus
+    df_financeiro = pd.read_excel(arquivo2, sheet_name=aba_financeiro, dtype=str)
+
+# Exibir abas
+if df_contabil is not None or df_financeiro is not None:
+    tab1, tab2 = st.tabs(["Saldo Contabil", "Saldo Financeiro"])
+    
+    with tab1:
+        if df_contabil is not None:
+            st.subheader("📋 Saldo Contábil")
+            st.dataframe(df_contabil, use_container_width=True)
+        else:
+            st.info("Nenhum arquivo de plano de contas carregado")
+    
+    with tab2:
+        if df_financeiro is not None:
+            st.subheader("📋 Saldo Financeiro")
+            st.dataframe(df_financeiro, use_container_width=True)
+        else:
+            st.info("Nenhum arquivo de posição dos títulos carregado")
 else:
-    st.info("Envie um arquivo Excel na sidebar")
+    st.info("Envie os dois arquivos Excel na sidebar para visualizar os dados")
