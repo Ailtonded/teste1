@@ -19,8 +19,8 @@ if arquivo:
         ["Adiantamento de fornecedor", "Fornecedor", "Cliente"]
     )
     
-    # Ler todos os dados sem cabeçalho
-    df_raw = pd.read_excel(arquivo, sheet_name=aba, header=None)
+    # Ler todos os dados sem cabeçalho, garantindo que todas as colunas sejam texto
+    df_raw = pd.read_excel(arquivo, sheet_name=aba, header=None, dtype=str)
     
     # Procurar linha com "Conta" e "Descricao"
     linha_header = None
@@ -38,10 +38,8 @@ if arquivo:
         df = df_raw.iloc[linha_header + 1:].copy()
         df.columns = cabecalho
         
-        # Limpar pontos da coluna Conta
+        # Limpar pontos da coluna Conta (já está como string)
         if "Conta" in df.columns:
-            # Guardar versão original para debug se necessário
-            df["Conta_Original"] = df["Conta"]
             df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
         
         # Manter apenas as colunas desejadas
@@ -53,27 +51,13 @@ if arquivo:
         
         # Aplicar filtro se selecionar "Fornecedor"
         if conciliar == "Fornecedor" and "Conta" in df.columns:
-            # Filtro sem pontos: 2.1.0.30.01001 vira 2103001001
-            prefixo_filtro = "2103001001"
-            
-            # Aplicar filtro de forma mais abrangente
-            df = df[df["Conta"].astype(str).str.startswith(prefixo_filtro)]
-            
+            df = df[df["Conta"].astype(str).str.startswith("2103001001")]
     else:
         # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba)
-        # Aplicar filtro mesmo sem cabeçalho encontrado
-        if conciliar == "Fornecedor" and "Conta" in df.columns:
-            df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
-            prefixo_filtro = "2103001001"
-            df = df[df["Conta"].astype(str).str.startswith(prefixo_filtro)]
     
     # Exibir dados
-    if len(df) > 0:
-        st.dataframe(df.astype(str), use_container_width=True)
-        st.caption(f"Total de linhas exibidas: {len(df)}")
-    else:
-        st.warning("Nenhuma linha encontrada com o filtro aplicado.")
+    st.dataframe(df.astype(str), use_container_width=True)
     
 else:
     st.info("Envie um arquivo Excel na sidebar")
