@@ -13,10 +13,10 @@ if arquivo:
     excel = pd.ExcelFile(arquivo)
     aba = st.sidebar.selectbox("Aba", excel.sheet_names)
     
-    # Campo Conciliar
+    # Campo Conciliar - apenas Fornecedor
     conciliar = st.sidebar.selectbox(
         "Conciliar",
-        ["Adiantamento de fornecedor", "Fornecedor", "Cliente"]
+        ["Fornecedor"]
     )
     
     # Ler todos os dados sem cabeçalho, garantindo que todas as colunas sejam texto
@@ -38,9 +38,11 @@ if arquivo:
         df = df_raw.iloc[linha_header + 1:].copy()
         df.columns = cabecalho
         
-        # Limpar pontos da coluna Conta (já está como string)
+        # Tratamento da coluna Conta
         if "Conta" in df.columns:
+            # Remover pontos e manter apenas os 10 primeiros caracteres
             df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
+            df["Conta"] = df["Conta"].str[:10]
         
         # Manter apenas as colunas desejadas
         colunas_desejadas = ["Conta", "Descricao", "Saldo atual"]
@@ -49,14 +51,19 @@ if arquivo:
         if colunas_existentes:
             df = df[colunas_existentes]
         
-        # Aplicar filtro se selecionar "Fornecedor"
-        if conciliar == "Fornecedor" and "Conta" in df.columns:
+        # Aplicar filtro
+        if "Conta" in df.columns:
             df = df[df["Conta"].astype(str).str.startswith("2103001001")]
     else:
         # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba)
+        # Tratamento mesmo sem cabeçalho encontrado
+        if "Conta" in df.columns:
+            df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
+            df["Conta"] = df["Conta"].str[:10]
+            df = df[df["Conta"].astype(str).str.startswith("2103001001")]
     
-    # Exibir dados - garantir que a coluna Conta seja mostrada como texto completo
+    # Exibir dados
     if "Conta" in df.columns:
         df["Conta"] = df["Conta"].astype(str)
     
