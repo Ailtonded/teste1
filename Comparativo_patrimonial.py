@@ -159,14 +159,20 @@ if df_contabil is not None and df_financeiro is not None:
     df_comp_contabil = df_contabil.copy()
     df_comp_contabil["Conta"] = df_comp_contabil["Conta"].astype(str).str.strip()
     
-    # Converter Saldo atual para numérico
-    df_comp_contabil["Saldo atual"] = (
-        df_comp_contabil["Saldo atual"]
-        .astype(str)
-        .str.replace(".", "")
-        .str.replace(",", ".")
-        .astype(float)
-    )
+    # Converter Saldo atual para numérico (com tratamento de erros)
+    def converter_para_float(valor):
+        try:
+            if pd.isna(valor) or valor == "" or valor == "nan":
+                return 0.0
+            # Converter para string e limpar
+            valor_str = str(valor).strip()
+            # Substituir ponto por nada (separador de milhar) e vírgula por ponto (decimal)
+            valor_str = valor_str.replace(".", "").replace(",", ".")
+            return float(valor_str)
+        except:
+            return 0.0
+    
+    df_comp_contabil["Saldo atual"] = df_comp_contabil["Saldo atual"].apply(converter_para_float)
     
     # Agrupar por Conta
     df_contabil_group = df_comp_contabil.groupby("Conta", as_index=False)["Saldo atual"].sum()
@@ -176,14 +182,8 @@ if df_contabil is not None and df_financeiro is not None:
     df_comp_financeiro = df_financeiro.copy()
     df_comp_financeiro["C Contabil"] = df_comp_financeiro["C Contabil"].astype(str).str.strip()
     
-    # Converter Valor Original para numérico
-    df_comp_financeiro["Valor Original"] = (
-        df_comp_financeiro["Valor Original"]
-        .astype(str)
-        .str.replace(".", "")
-        .str.replace(",", ".")
-        .astype(float)
-    )
+    # Converter Valor Original para numérico (com tratamento de erros)
+    df_comp_financeiro["Valor Original"] = df_comp_financeiro["Valor Original"].apply(converter_para_float)
     
     # Agrupar por C Contabil
     df_fin_group = df_comp_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
