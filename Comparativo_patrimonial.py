@@ -41,9 +41,9 @@ if arquivo:
         df = df_raw.iloc[linha_header + 1:].copy()
         df.columns = cabecalho
         
-        # Tratamento da coluna Conta
+        # Tratamento da coluna Conta (apenas remover pontos)
         if "Conta" in df.columns:
-            df["Conta"] = df["Conta"].astype(str).str.replace(".", "").str[:10]
+            df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
         
         # Manter apenas as colunas desejadas
         colunas_desejadas = ["Conta", "Descricao", "Saldo atual"]
@@ -52,9 +52,9 @@ if arquivo:
         if colunas_existentes:
             df = df[colunas_existentes]
         
-        # Aplicar filtro
+        # Aplicar filtro com prefixo correto
         if "Conta" in df.columns:
-            df = df[df["Conta"].astype(str).str.startswith("2103001001")]
+            df = df[df["Conta"].astype(str).str.startswith("2103001")]
     else:
         # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba_selecionada)
