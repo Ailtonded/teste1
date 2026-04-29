@@ -16,7 +16,7 @@ if arquivo:
     # Ler todos os dados sem cabeçalho
     df_raw = pd.read_excel(arquivo, sheet_name=aba, header=None)
     
-    # Procurar linha com "Conta" na coluna A e "Descricao" na coluna B
+    # Procurar linha com "Conta" e "Descricao"
     linha_header = None
     for i in range(len(df_raw)):
         col_a = str(df_raw.iloc[i, 0]) if pd.notna(df_raw.iloc[i, 0]) else ""
@@ -26,13 +26,24 @@ if arquivo:
             linha_header = i
             break
     
-    # Se encontrou, usar como cabeçalho
     if linha_header is not None:
+        # Usar linha encontrada como cabeçalho
         cabecalho = df_raw.iloc[linha_header]
         df = df_raw.iloc[linha_header + 1:].copy()
         df.columns = cabecalho
+        
+        # Limpar pontos da coluna Conta
+        if "Conta" in df.columns:
+            df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
+        
+        # Manter apenas as colunas desejadas
+        colunas_desejadas = ["Conta", "Descricao", "Saldo atual"]
+        colunas_existentes = [col for col in colunas_desejadas if col in df.columns]
+        
+        if colunas_existentes:
+            df = df[colunas_existentes]
     else:
-        # Se não encontrou, usar primeira linha como cabeçalho
+        # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba)
     
     # Exibir dados
