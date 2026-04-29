@@ -40,6 +40,8 @@ if arquivo:
         
         # Limpar pontos da coluna Conta
         if "Conta" in df.columns:
+            # Guardar versão original para debug se necessário
+            df["Conta_Original"] = df["Conta"]
             df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
         
         # Manter apenas as colunas desejadas
@@ -51,13 +53,27 @@ if arquivo:
         
         # Aplicar filtro se selecionar "Fornecedor"
         if conciliar == "Fornecedor" and "Conta" in df.columns:
-            df = df[df["Conta"].astype(str).str.startswith("2103001001")]
+            # Filtro sem pontos: 2.1.0.30.01001 vira 2103001001
+            prefixo_filtro = "2103001001"
+            
+            # Aplicar filtro de forma mais abrangente
+            df = df[df["Conta"].astype(str).str.startswith(prefixo_filtro)]
+            
     else:
         # Se não encontrou, exibir normalmente
         df = pd.read_excel(arquivo, sheet_name=aba)
+        # Aplicar filtro mesmo sem cabeçalho encontrado
+        if conciliar == "Fornecedor" and "Conta" in df.columns:
+            df["Conta"] = df["Conta"].astype(str).str.replace(".", "")
+            prefixo_filtro = "2103001001"
+            df = df[df["Conta"].astype(str).str.startswith(prefixo_filtro)]
     
     # Exibir dados
-    st.dataframe(df.astype(str), use_container_width=True)
+    if len(df) > 0:
+        st.dataframe(df.astype(str), use_container_width=True)
+        st.caption(f"Total de linhas exibidas: {len(df)}")
+    else:
+        st.warning("Nenhuma linha encontrada com o filtro aplicado.")
     
 else:
     st.info("Envie um arquivo Excel na sidebar")
