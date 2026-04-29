@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import re
 
 st.set_page_config(page_title="Excel Viewer", layout="wide")
 
@@ -131,16 +132,20 @@ if df_financeiro is not None and df_fornecedor is not None:
     df_fornecedor["Codigo"] = df_fornecedor["Codigo"].astype(str).str.strip()
     df_fornecedor["Loja"] = df_fornecedor["Loja"].astype(str).str.strip()
     
-    # LEFT JOIN com as colunas corretas
-    df_financeiro = df_financeiro.merge(
-        df_fornecedor[["Codigo", "Loja", "C Contabil"]],
-        how="left",
-        left_on=["Cod Fornecedor", "Loja"],
-        right_on=["Codigo", "Loja"]
-    )
-    
-    # Remover coluna duplicada do merge
-    df_financeiro = df_financeiro.drop(columns=["Codigo"], errors="ignore")
+    # Verificar se a coluna "C Contabil" existe no df_fornecedor
+    if "C Contabil" in df_fornecedor.columns:
+        # LEFT JOIN com as colunas corretas
+        df_financeiro = df_financeiro.merge(
+            df_fornecedor[["Codigo", "Loja", "C Contabil"]],
+            how="left",
+            left_on=["Cod Fornecedor", "Loja"],
+            right_on=["Codigo", "Loja"]
+        )
+        
+        # Remover coluna duplicada do merge
+        df_financeiro = df_financeiro.drop(columns=["Codigo"], errors="ignore")
+    else:
+        st.warning("⚠️ Coluna 'C Contabil' não encontrada no Cadastro de Fornecedor")
     
     # Garantir as colunas finais na ordem correta
     colunas_final = [
@@ -151,7 +156,9 @@ if df_financeiro is not None and df_fornecedor is not None:
         "C Contabil"
     ]
     
-    df_financeiro = df_financeiro[[col for col in colunas_final if col in df_financeiro.columns]]
+    colunas_existentes = [col for col in colunas_final if col in df_financeiro.columns]
+    if colunas_existentes:
+        df_financeiro = df_financeiro[colunas_existentes]
 
 # ========== NOVA ABA: COMPARATIVO (MELHORADO) ==========
 df_comp = None
@@ -177,15 +184,21 @@ if df_contabil is not None and df_financeiro is not None:
     
     # ========== PASSO 2: Preparar Saldo Financeiro ==========
     df_comp_financeiro = df_financeiro.copy()
-    df_comp_financeiro["C Contabil"] = df_comp_financeiro["C Contabil"].astype(str).str.strip()
-    df_comp_financeiro["Valor Original"] = df_comp_financeiro["Valor Original"].apply(converter_para_float)
     
-    df_fin_group = df_comp_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
-    df_fin_group.rename(columns={"Valor Original": "Saldo Financeiro"}, inplace=True)
+    # Verificar se a coluna "C Contabil" existe
+    if "C Contabil" in df_comp_financeiro.columns:
+        df_comp_financeiro["C Contabil"] = df_comp_financeiro["C Contabil"].astype(str).str.strip()
+        df_comp_financeiro["Valor Original"] = df_comp_financeiro["Valor Original"].apply(converter_para_float)
+        
+        df_fin_group = df_comp_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
+        df_fin_group.rename(columns={"Valor Original": "Saldo Financeiro"}, inplace=True)
+    else:
+        st.warning("⚠️ Coluna 'C Contabil' não encontrada no Saldo Financeiro")
+        df_fin_group = pd.DataFrame(columns=["C Contabil", "Saldo Financeiro"])
     
     # ========== PASSO 3: Preparar Razão Social do Cadastro de Fornecedor ==========
     df_razao = None
-    if df_fornecedor is not None and "Razao Social" in df_fornecedor.columns:
+    if df_fornecedor is not None and "Razao Social" in df_fornecedor.columns and "C Contabil" in df_fornecedor.columns:
         df_temp = df_fornecedor.copy()
         df_temp["C Contabil"] = df_temp["C Contabil"].astype(str).str.strip()
         df_temp["Razao Social"] = df_temp["Razao Social"].astype(str).str.strip()
@@ -199,72 +212,84 @@ if df_contabil is not None and df_financeiro is not None:
     # ========== PASSO 4: Criar base única de contas ==========
     contas_unicas = pd.concat([
         df_contabil_group[["Conta"]],
-        df_fin_group[["C Contabil"]].rename(columns={"C Contabil": "Conta"})
+        df_fin_group[["C Contabil"]].rename(columns={"C Contabil": "Conta"}) if len(df_fin_group) > 0 else pd.DataFrame(columns=["Conta"])
     ], ignore_index=True)
     
-    contas_unicas = contas_unicas.drop_duplicates(subset=["Conta"]).copy()
-    contas_unicas["Conta"] = contas_unicas["Conta"].astype(str).str.strip()
-    contas_unicas = contas_unicas.sort_values(by="Conta").reset_index(drop=True)
-    
-    # ========== PASSO 5: LEFT JOIN com Saldo Contábil ==========
-    df_comp = contas_unicas.copy()
-    
-    df_comp = df_comp.merge(
-        df_contabil_group,
-        how="left",
-        left_on="Conta",
-        right_on="Conta"
-    )
-    
-    # ========== PASSO 6: LEFT JOIN com Saldo Financeiro ==========
-    df_comp = df_comp.merge(
-        df_fin_group,
-        how="left",
-        left_on="Conta",
-        right_on="C Contabil"
-    )
-    
-    df_comp = df_comp.drop(columns=["C Contabil"], errors="ignore")
-    
-    # ========== PASSO 7: LEFT JOIN com Razão Social ==========
-    if df_razao is not None:
+    if len(contas_unicas) > 0:
+        contas_unicas = contas_unicas.drop_duplicates(subset=["Conta"]).copy()
+        contas_unicas["Conta"] = contas_unicas["Conta"].astype(str).str.strip()
+        contas_unicas = contas_unicas.sort_values(by="Conta").reset_index(drop=True)
+        
+        # ========== PASSO 5: LEFT JOIN com Saldo Contábil ==========
+        df_comp = contas_unicas.copy()
+        
         df_comp = df_comp.merge(
-            df_razao,
+            df_contabil_group,
             how="left",
             left_on="Conta",
             right_on="Conta"
         )
-    
-    # ========== PASSO 8: Tratar valores nulos ==========
-    df_comp["Saldo Contábil"] = df_comp["Saldo Contábil"].fillna(0)
-    df_comp["Saldo Financeiro"] = df_comp["Saldo Financeiro"].fillna(0)
-    
-    if "Razao Social" in df_comp.columns:
-        df_comp["Razao Social"] = df_comp["Razao Social"].fillna("")
-    
-    # ========== PASSO 9: Calcular diferença ==========
-    df_comp["Diferença"] = df_comp["Saldo Contábil"] - df_comp["Saldo Financeiro"]
-    
-    # ========== PASSO 10: Ordenar pela maior diferença ==========
-    df_comp = df_comp.sort_values(by="Diferença", ascending=False).reset_index(drop=True)
-    
-    # ========== PASSO 11: Selecionar colunas finais ==========
-    colunas_finais = ["Conta", "Razao Social", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
-    colunas_existentes = [col for col in colunas_finais if col in df_comp.columns]
-    df_comp = df_comp[colunas_existentes]
+        
+        # ========== PASSO 6: LEFT JOIN com Saldo Financeiro ==========
+        if len(df_fin_group) > 0:
+            df_comp = df_comp.merge(
+                df_fin_group,
+                how="left",
+                left_on="Conta",
+                right_on="C Contabil"
+            )
+            df_comp = df_comp.drop(columns=["C Contabil"], errors="ignore")
+        else:
+            df_comp["Saldo Financeiro"] = 0
+        
+        # ========== PASSO 7: LEFT JOIN com Razão Social ==========
+        if df_razao is not None:
+            df_comp = df_comp.merge(
+                df_razao,
+                how="left",
+                left_on="Conta",
+                right_on="Conta"
+            )
+        
+        # ========== PASSO 8: Tratar valores nulos ==========
+        df_comp["Saldo Contábil"] = df_comp["Saldo Contábil"].fillna(0)
+        df_comp["Saldo Financeiro"] = df_comp["Saldo Financeiro"].fillna(0)
+        
+        if "Razao Social" in df_comp.columns:
+            df_comp["Razao Social"] = df_comp["Razao Social"].fillna("")
+        
+        # ========== PASSO 9: Calcular diferença ==========
+        df_comp["Diferença"] = df_comp["Saldo Contábil"] - df_comp["Saldo Financeiro"]
+        
+        # ========== PASSO 10: Ordenar pela maior diferença ==========
+        df_comp = df_comp.sort_values(by="Diferença", ascending=False).reset_index(drop=True)
+        
+        # ========== PASSO 11: Selecionar colunas finais ==========
+        colunas_finais = ["Conta", "Razao Social", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
+        colunas_existentes = [col for col in colunas_finais if col in df_comp.columns]
+        df_comp = df_comp[colunas_existentes]
 
-# ========== NOVA FUNCIONALIDADE: BOTÃO PARA EXPORTAR EXCEL ==========
+# ========== FUNÇÃO PARA SANITIZAR NOMES DE ABAS DO EXCEL ==========
+def sanitizar_nome_aba(nome):
+    # Remover emojis e caracteres especiais
+    nome = re.sub(r'[^\w\s\u00C0-\u00FF-]', '', nome)
+    # Remover espaços extras
+    nome = nome.strip()
+    # Limitar a 31 caracteres
+    return nome[:31]
+
+# ========== FUNÇÃO PARA EXPORTAR EXCEL ==========
 def exportar_para_excel():
     output = BytesIO()
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # Aba 1: Comparativo
-        if df_comp is not None:
-            df_comp.to_excel(writer, sheet_name="📊 Comparativo Contábil vs Financeiro", index=False)
+        if df_comp is not None and len(df_comp) > 0:
+            df_comp.to_excel(writer, sheet_name=sanitizar_nome_aba("Comparativo Contabil vs Financeiro"), index=False)
         
         # Aba 2: Saldo Contábil
         if df_contabil is not None:
-            df_contabil.to_excel(writer, sheet_name="📋 Saldo Contábil", index=False)
+            df_contabil.to_excel(writer, sheet_name=sanitizar_nome_aba("Saldo Contabil"), index=False)
         
         # Aba 3: Saldo Financeiro
         if df_financeiro is not None:
@@ -272,11 +297,11 @@ def exportar_para_excel():
             df_financeiro_export = df_financeiro.copy()
             if "C Contabil" not in df_financeiro_export.columns:
                 df_financeiro_export["C Contabil"] = ""
-            df_financeiro_export.to_excel(writer, sheet_name="📋 Saldo Financeiro", index=False)
+            df_financeiro_export.to_excel(writer, sheet_name=sanitizar_nome_aba("Saldo Financeiro"), index=False)
         
         # Aba 4: Cadastro de Fornecedor
         if df_fornecedor is not None:
-            df_fornecedor.to_excel(writer, sheet_name="Cadastro de Fornecedor", index=False)
+            df_fornecedor.to_excel(writer, sheet_name=sanitizar_nome_aba("Cadastro de Fornecedor"), index=False)
     
     output.seek(0)
     return output
@@ -322,7 +347,7 @@ if df_contabil is not None or df_financeiro is not None or df_fornecedor is not 
             st.info("Nenhum arquivo de cadastro de fornecedor carregado")
     
     with tab4:
-        if df_comp is not None:
+        if df_comp is not None and len(df_comp) > 0:
             st.subheader("📊 Comparativo Contábil vs Financeiro")
             
             # Formatar valores monetários para exibição
