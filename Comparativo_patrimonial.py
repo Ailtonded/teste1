@@ -261,11 +261,27 @@ if df_contabil is not None and df_financeiro is not None:
         # ========== PASSO 9: Calcular diferença ==========
         df_comp["Diferença"] = df_comp["Saldo Contábil"] - df_comp["Saldo Financeiro"]
         
+        # ========== PASSO 9.1: Calcular coluna Tp ==========
+        def definir_tp(row):
+            tem_contabil = row["Saldo Contábil"] != 0
+            tem_financeiro = row["Saldo Financeiro"] != 0
+            
+            if tem_contabil and tem_financeiro:
+                return "3-Ambos"
+            elif tem_financeiro and not tem_contabil:
+                return "1-Saldo Financeiro"
+            elif tem_contabil and not tem_financeiro:
+                return "2-Saldo Contábil"
+            else:
+                return ""
+        
+        df_comp["Tp"] = df_comp.apply(definir_tp, axis=1)
+        
         # ========== PASSO 10: Ordenar pela maior diferença ==========
         df_comp = df_comp.sort_values(by="Diferença", ascending=False).reset_index(drop=True)
         
         # ========== PASSO 11: Selecionar colunas finais ==========
-        colunas_finais = ["Conta", "Razao Social", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
+        colunas_finais = ["Conta", "Razao Social", "Tp", "Saldo Contábil", "Saldo Financeiro", "Diferença"]
         colunas_existentes = [col for col in colunas_finais if col in df_comp.columns]
         df_comp = df_comp[colunas_existentes]
 
