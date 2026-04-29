@@ -112,96 +112,45 @@ if arquivo3:
         cabecalho3 = df_raw3.iloc[linha_header3]
         df_arquivo3 = df_raw3.iloc[linha_header3 + 1:].copy()
         df_arquivo3.columns = cabecalho3
+        
+        # CORREÇÃO 1: Remover espaços dos nomes das colunas
+        df_arquivo3.columns = df_arquivo3.columns.str.strip()
     else:
         # Se não encontrou "Codigo", exibir dados crus
         df_arquivo3 = pd.read_excel(arquivo3, sheet_name=0, dtype=str)
+        # CORREÇÃO 1: Remover espaços dos nomes das colunas
+        df_arquivo3.columns = df_arquivo3.columns.str.strip()
 
 # Realizar LEFT JOIN entre Saldo Financeiro e Arquivo 3
 if df_financeiro is not None and df_arquivo3 is not None:
-    # Verificar nomes das colunas do arquivo3
-    st.subheader("🔍 Diagnóstico do JOIN")
-    st.write("**Colunas encontradas no Arquivo 3:**")
-    st.write(list(df_arquivo3.columns))
+    # CORREÇÃO 2: Garantir tipos como string e limpar espaços
+    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip()
+    df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip()
     
-    # Identificar a coluna de conta contábil
-    coluna_contabil = None
-    for col in df_arquivo3.columns:
-        if "Contabil" in col or "Contábil" in col:
-            coluna_contabil = col
-            break
+    df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str).str.strip()
+    df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str).str.strip()
     
-    if coluna_contabil:
-        st.write(f"**Coluna de conta contábil identificada:** '{coluna_contabil}'")
-    else:
-        st.warning("Coluna 'C Contabil' ou similar não encontrada no Arquivo 3")
-    
-    # Padronização TOTAL das chaves
-    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip().str.zfill(8)
-    df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip().str.zfill(4)
-    
-    if "Codigo" in df_arquivo3.columns:
-        df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str).str.strip().str.zfill(8)
-    
-    if "Loja" in df_arquivo3.columns:
-        df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str).str.strip().str.zfill(4)
-    
-    # Validar se o JOIN está funcionando (INNER JOIN para teste)
-    st.write("**Teste de JOIN (primeiras 5 correspondências):**")
-    teste_join = df_financeiro.merge(
-        df_arquivo3,
-        how="inner",
+    # CORREÇÃO 3: LEFT JOIN com as colunas corretas
+    df_financeiro = df_financeiro.merge(
+        df_arquivo3[["Codigo", "Loja", "C Contabil"]],
+        how="left",
         left_on=["Cod Fornecedor", "Loja"],
         right_on=["Codigo", "Loja"]
     )
     
-    if len(teste_join) > 0:
-        st.write(f"✅ Encontradas {len(teste_join)} correspondências")
-        st.write(teste_join[["Cod Fornecedor", "Loja", "Codigo"]].head(5))
-        
-        # Realizar LEFT JOIN com a coluna correta
-        if coluna_contabil:
-            # Verificar se as colunas existem no dataframe auxiliar
-            colunas_merge = ["Codigo", "Loja", coluna_contabil]
-            colunas_existentes_merge = [col for col in colunas_merge if col in df_arquivo3.columns]
-            
-            if len(colunas_existentes_merge) == 3:
-                df_financeiro = df_financeiro.merge(
-                    df_arquivo3[colunas_existentes_merge],
-                    how="left",
-                    left_on=["Cod Fornecedor", "Loja"],
-                    right_on=["Codigo", "Loja"]
-                )
-                st.write(f"✅ JOIN realizado com sucesso usando coluna '{coluna_contabil}'")
-            else:
-                st.error(f"Colunas necessárias não encontradas no Arquivo 3. Encontradas: {list(df_arquivo3.columns)}")
-        else:
-            st.error("Não foi possível identificar a coluna de conta contábil")
-    else:
-        st.warning("❌ Nenhuma correspondência encontrada entre os arquivos. Verifique os dados:")
-        st.write("**Exemplos do Financeiro:**")
-        st.write(df_financeiro[["Cod Fornecedor", "Loja"]].head(10))
-        st.write("**Exemplos do Arquivo 3:**")
-        if "Codigo" in df_arquivo3.columns and "Loja" in df_arquivo3.columns:
-            st.write(df_arquivo3[["Codigo", "Loja"]].head(10))
+    # CORREÇÃO 4: Remover coluna duplicada do merge
+    df_financeiro = df_financeiro.drop(columns=["Codigo"], errors="ignore")
     
-    st.divider()
-    
-    # Ajustar exibição da aba "Saldo Financeiro"
-    colunas_exibir = [
-        coluna_contabil if coluna_contabil else "C Contabil",
+    # CORREÇÃO 5: Garantir as colunas finais na ordem correta
+    colunas_final = [
         "Codigo-Nome do Fornecedor",
         "Cod Fornecedor",
         "Loja",
-        "Valor Original"
+        "Valor Original",
+        "C Contabil"
     ]
     
-    colunas_existentes = [col for col in colunas_exibir if col in df_financeiro.columns]
-    if colunas_existentes:
-        df_financeiro = df_financeiro[colunas_existentes]
-    
-    # Mostrar colunas após merge
-    st.write("**Colunas após o merge:**")
-    st.write(list(df_financeiro.columns))
+    df_financeiro = df_financeiro[[col for col in colunas_final if col in df_financeiro.columns]]
 
 # Exibir abas
 if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
