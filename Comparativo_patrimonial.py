@@ -118,24 +118,43 @@ if arquivo3:
 
 # Realizar LEFT JOIN entre Saldo Financeiro e Arquivo 3
 if df_financeiro is not None and df_arquivo3 is not None:
-    # Garantir que os campos sejam string
-    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str)
-    df_financeiro["Loja"] = df_financeiro["Loja"].astype(str)
+    # Padronizar campos do df_financeiro
+    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip()
+    df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip()
+    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].str.zfill(8)
+    df_financeiro["Loja"] = df_financeiro["Loja"].str.zfill(4)
     
+    # Padronizar campos do df_arquivo3
     if "Codigo" in df_arquivo3.columns:
-        df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str)
+        df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str).str.strip()
+        df_arquivo3["Codigo"] = df_arquivo3["Codigo"].str.zfill(8)
     
     if "Loja" in df_arquivo3.columns:
-        df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str)
+        df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str).str.strip()
+        df_arquivo3["Loja"] = df_arquivo3["Loja"].str.zfill(4)
     
-    # Realizar o LEFT JOIN
-    if "Codigo" in df_arquivo3.columns and "Loja" in df_arquivo3.columns and "C Contabil" in df_arquivo3.columns:
+    # Realizar o LEFT JOIN se as colunas existirem
+    if ("Codigo" in df_arquivo3.columns and "Loja" in df_arquivo3.columns and 
+        "C Contabil" in df_arquivo3.columns):
         df_financeiro = df_financeiro.merge(
             df_arquivo3[["Codigo", "Loja", "C Contabil"]],
             how="left",
             left_on=["Cod Fornecedor", "Loja"],
             right_on=["Codigo", "Loja"]
         )
+    
+    # Ajustar exibição da aba "Saldo Financeiro"
+    colunas_exibir = [
+        "C Contabil",
+        "Codigo-Nome do Fornecedor",
+        "Cod Fornecedor",
+        "Loja",
+        "Valor Original"
+    ]
+    
+    colunas_existentes = [col for col in colunas_exibir if col in df_financeiro.columns]
+    if colunas_existentes:
+        df_financeiro = df_financeiro[colunas_existentes]
 
 # Exibir abas
 if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
