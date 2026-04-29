@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
 
 st.set_page_config(page_title="Excel Viewer", layout="wide")
 
@@ -7,7 +8,7 @@ with st.sidebar:
     st.header("Upload")
     arquivo1 = st.file_uploader("Arquivo Excel - Plano de Contas", type=["xlsx", "xls"])
     arquivo2 = st.file_uploader("Arquivo Excel - Posicao dos Titulos", type=["xlsx", "xls"])
-    arquivo3 = st.file_uploader("Arquivo 3", type=["xlsx", "xls"])
+    arquivo3 = st.file_uploader("Cadastro de Fornecedor", type=["xlsx", "xls"])
 
 st.title("Visualizador de Excel")
 
@@ -90,8 +91,8 @@ if arquivo2:
         df_financeiro.insert(0, "Cod Fornecedor", split_df[0])
         df_financeiro.insert(1, "Loja", split_df[1])
 
-# Processar terceiro arquivo
-df_arquivo3 = None
+# Processar terceiro arquivo (Cadastro de Fornecedor)
+df_fornecedor = None
 if arquivo3:
     # Ler a primeira aba sem cabeçalho
     df_raw3 = pd.read_excel(arquivo3, sheet_name=0, header=None, dtype=str)
@@ -110,29 +111,29 @@ if arquivo3:
     if linha_header3 is not None:
         # Usar linha encontrada como cabeçalho
         cabecalho3 = df_raw3.iloc[linha_header3]
-        df_arquivo3 = df_raw3.iloc[linha_header3 + 1:].copy()
-        df_arquivo3.columns = cabecalho3
+        df_fornecedor = df_raw3.iloc[linha_header3 + 1:].copy()
+        df_fornecedor.columns = cabecalho3
         
         # Remover espaços dos nomes das colunas
-        df_arquivo3.columns = df_arquivo3.columns.str.strip()
+        df_fornecedor.columns = df_fornecedor.columns.str.strip()
     else:
         # Se não encontrou "Codigo", exibir dados crus
-        df_arquivo3 = pd.read_excel(arquivo3, sheet_name=0, dtype=str)
+        df_fornecedor = pd.read_excel(arquivo3, sheet_name=0, dtype=str)
         # Remover espaços dos nomes das colunas
-        df_arquivo3.columns = df_arquivo3.columns.str.strip()
+        df_fornecedor.columns = df_fornecedor.columns.str.strip()
 
-# Realizar LEFT JOIN entre Saldo Financeiro e Arquivo 3
-if df_financeiro is not None and df_arquivo3 is not None:
+# Realizar LEFT JOIN entre Saldo Financeiro e Cadastro de Fornecedor
+if df_financeiro is not None and df_fornecedor is not None:
     # Garantir tipos como string e limpar espaços
     df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip()
     df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip()
     
-    df_arquivo3["Codigo"] = df_arquivo3["Codigo"].astype(str).str.strip()
-    df_arquivo3["Loja"] = df_arquivo3["Loja"].astype(str).str.strip()
+    df_fornecedor["Codigo"] = df_fornecedor["Codigo"].astype(str).str.strip()
+    df_fornecedor["Loja"] = df_fornecedor["Loja"].astype(str).str.strip()
     
     # LEFT JOIN com as colunas corretas
     df_financeiro = df_financeiro.merge(
-        df_arquivo3[["Codigo", "Loja", "C Contabil"]],
+        df_fornecedor[["Codigo", "Loja", "C Contabil"]],
         how="left",
         left_on=["Cod Fornecedor", "Loja"],
         right_on=["Codigo", "Loja"]
@@ -182,10 +183,10 @@ if df_contabil is not None and df_financeiro is not None:
     df_fin_group = df_comp_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
     df_fin_group.rename(columns={"Valor Original": "Saldo Financeiro"}, inplace=True)
     
-    # ========== PASSO 3: Preparar Razão Social do Arquivo 3 ==========
+    # ========== PASSO 3: Preparar Razão Social do Cadastro de Fornecedor ==========
     df_razao = None
-    if df_arquivo3 is not None and "Razao Social" in df_arquivo3.columns:
-        df_temp = df_arquivo3.copy()
+    if df_fornecedor is not None and "Razao Social" in df_fornecedor.columns:
+        df_temp = df_fornecedor.copy()
         df_temp["C Contabil"] = df_temp["C Contabil"].astype(str).str.strip()
         df_temp["Razao Social"] = df_temp["Razao Social"].astype(str).str.strip()
         
@@ -252,9 +253,52 @@ if df_contabil is not None and df_financeiro is not None:
     colunas_existentes = [col for col in colunas_finais if col in df_comp.columns]
     df_comp = df_comp[colunas_existentes]
 
-# Exibir abas
-if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not None:
-    tab1, tab2, tab3, tab4 = st.tabs(["Saldo Contabil", "Saldo Financeiro", "Arquivo 3", "Comparativo"])
+# ========== NOVA FUNCIONALIDADE: BOTÃO PARA EXPORTAR EXCEL ==========
+def exportar_para_excel():
+    output = BytesIO()
+    
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Aba 1: Comparativo
+        if df_comp is not None:
+            df_comp.to_excel(writer, sheet_name="📊 Comparativo Contábil vs Financeiro", index=False)
+        
+        # Aba 2: Saldo Contábil
+        if df_contabil is not None:
+            df_contabil.to_excel(writer, sheet_name="📋 Saldo Contábil", index=False)
+        
+        # Aba 3: Saldo Financeiro
+        if df_financeiro is not None:
+            # Garantir que a coluna "C Contabil" exista
+            df_financeiro_export = df_financeiro.copy()
+            if "C Contabil" not in df_financeiro_export.columns:
+                df_financeiro_export["C Contabil"] = ""
+            df_financeiro_export.to_excel(writer, sheet_name="📋 Saldo Financeiro", index=False)
+        
+        # Aba 4: Cadastro de Fornecedor
+        if df_fornecedor is not None:
+            df_fornecedor.to_excel(writer, sheet_name="Cadastro de Fornecedor", index=False)
+    
+    output.seek(0)
+    return output
+
+# ========== EXIBIÇÃO DAS ABAS NO STREAMLIT ==========
+if df_contabil is not None or df_financeiro is not None or df_fornecedor is not None:
+    # Botão de exportação na sidebar
+    with st.sidebar:
+        st.divider()
+        if st.button("📥 Exportar para Excel", type="primary", use_container_width=True):
+            with st.spinner("Gerando arquivo Excel..."):
+                excel_data = exportar_para_excel()
+                st.download_button(
+                    label="✅ Clique aqui para baixar o arquivo",
+                    data=excel_data,
+                    file_name="relatorio_concilicacao.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+    
+    # Tabs de visualização
+    tab1, tab2, tab3, tab4 = st.tabs(["Saldo Contabil", "Saldo Financeiro", "Cadastro de Fornecedor", "Comparativo"])
     
     with tab1:
         if df_contabil is not None:
@@ -271,11 +315,11 @@ if df_contabil is not None or df_financeiro is not None or df_arquivo3 is not No
             st.info("Nenhum arquivo de posição dos títulos carregado")
     
     with tab3:
-        if df_arquivo3 is not None:
-            st.subheader("📋 Arquivo 3")
-            st.dataframe(df_arquivo3, use_container_width=True)
+        if df_fornecedor is not None:
+            st.subheader("📋 Cadastro de Fornecedor")
+            st.dataframe(df_fornecedor, use_container_width=True)
         else:
-            st.info("Nenhum arquivo 3 carregado")
+            st.info("Nenhum arquivo de cadastro de fornecedor carregado")
     
     with tab4:
         if df_comp is not None:
