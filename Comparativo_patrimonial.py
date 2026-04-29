@@ -79,6 +79,15 @@ if arquivo2:
     
     # Ler dados crus
     df_financeiro = pd.read_excel(arquivo2, sheet_name=aba_financeiro, dtype=str)
+    
+    # Tratamento da coluna "Codigo-Nome do Fornecedor"
+    if "Codigo-Nome do Fornecedor" in df_financeiro.columns:
+        # Fazer split pelo hífen
+        split_df = df_financeiro["Codigo-Nome do Fornecedor"].astype(str).str.split("-", expand=True)
+        
+        # Criar as novas colunas
+        df_financeiro.insert(0, "Cod Fornecedor", split_df[0])
+        df_financeiro.insert(1, "Loja", split_df[1])
 
 # Exibir abas
 if df_contabil is not None or df_financeiro is not None:
