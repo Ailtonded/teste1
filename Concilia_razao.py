@@ -79,6 +79,25 @@ def formatar_data(valor):
     except:
         return str(valor)
 
+def extrair_primeiros_digitos(valor, num_digitos=6):
+    """
+    Extrai os primeiros N dígitos de um valor, ignorando caracteres não numéricos
+    """
+    try:
+        # Converter para string
+        valor_str = str(valor)
+        
+        # Remover caracteres não numéricos e pegar apenas números
+        numeros = ''.join(filter(str.isdigit, valor_str))
+        
+        # Pegar os primeiros N dígitos
+        if len(numeros) >= num_digitos:
+            return numeros[:num_digitos]
+        else:
+            return numeros  # Retorna o que tem se for menor
+    except:
+        return ''
+
 def calcular_movimento(row, col_credito, col_debito):
     """
     Calcula o movimento: Crédito - Débito
@@ -90,11 +109,17 @@ def calcular_movimento(row, col_credito, col_debito):
         
         if pd.notna(row[col_credito]) and row[col_credito] != '':
             valor_credito = str(row[col_credito]).replace(',', '.')
-            credito = float(valor_credito) if valor_credito.replace('.', '').replace('-', '').isdigit() else 0
+            try:
+                credito = float(valor_credito)
+            except:
+                credito = 0
         
         if pd.notna(row[col_debito]) and row[col_debito] != '':
             valor_debito = str(row[col_debito]).replace(',', '.')
-            debito = float(valor_debito) if valor_debito.replace('.', '').replace('-', '').isdigit() else 0
+            try:
+                debito = float(valor_debito)
+            except:
+                debito = 0
         
         return credito - debito
     except:
@@ -148,6 +173,34 @@ def carregar_e_tratar_dados(arquivo, nome_aba):
             df_dados[col] = df_dados[col].astype(str)
             # Substituir 'nan' por string vazia
             df_dados[col] = df_dados[col].replace('nan', '')
+        
+        # REMOVER COLUNAS ESPECÍFICAS
+        colunas_para_remover = ['C CUSTO', 'ITEM CONTA', 'COD CL VAL']
+        for col in colunas_para_remover:
+            if col in df_dados.columns:
+                df_dados = df_dados.drop(columns=[col])
+        
+        # EXTRAIR PRIMEIROS 6 DÍGITOS DA COLUNA 'LOTE/SUB/DOC/LINHA'
+        col_lote = None
+        for col in df_dados.columns:
+            if 'LOTE/SUB/DOC/LINHA' in col or 'LOTE' in col:
+                col_lote = col
+                break
+        
+        if col_lote:
+            df_dados[col_lote] = df_dados[col_lote].apply(lambda x: extrair_primeiros_digitos(x, 6))
+        
+        # FILTRAR COLUNA 'FILIAL DE ORIGEM' (remover linhas vazias)
+        col_filial = None
+        for col in df_dados.columns:
+            if 'FILIAL DE ORIGEM' in col or 'FILIAL' in col:
+                col_filial = col
+                break
+        
+        if col_filial:
+            # Remover linhas onde a coluna FILIAL está vazia
+            df_dados = df_dados[df_dados[col_filial].str.strip() != '']
+            df_dados = df_dados.reset_index(drop=True)
         
         # Identificar colunas de Crédito e Débito (case-insensitive)
         col_credito = None
@@ -209,6 +262,9 @@ def main():
         if df is not None and not df.empty:
             # Exibir DataFrame completo
             st.dataframe(df, use_container_width=True, height=500)
+            
+            # Mostrar quantidade de registros após filtros
+            st.markdown(f"**Total de registros:** {len(df)}")
         
         elif df is not None and df.empty:
             st.warning("⚠️ Nenhum dado encontrado após o processamento")
