@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import re
 
 # Configuração da página
 st.set_page_config(
@@ -97,6 +98,48 @@ def extrair_primeiros_digitos(valor, num_digitos=6):
             return numeros  # Retorna o que tem se for menor
     except:
         return ''
+
+def extrair_nf(texto):
+    """
+    Extrai o número da Nota Fiscal a partir do texto do histórico.
+    
+    Regras:
+    - Busca por padrões "NF." ou "TIT." seguido de números
+    - Remove quebras de linha
+    - Retorna apenas os dígitos encontrados
+    
+    Args:
+        texto (str): Texto do histórico
+        
+    Returns:
+        str: Número da NF extraído ou string vazia se não encontrar
+    """
+    # Verificar se o valor é nulo ou não é string
+    if pd.isna(texto) or not isinstance(texto, str):
+        return ""
+    
+    try:
+        # Remover quebras de linha e espaços extras
+        texto_limpo = texto.replace('\n', ' ').replace('\r', ' ').strip()
+        
+        # REGEX OTIMIZADA: busca por NF. ou TIT. seguido de opcional espaço e números
+        # - (?:NF\.|TIT\.) : grupo não capturador para NF. ou TIT.
+        # - \s* : zero ou mais espaços
+        # - (\d+) : grupo capturador com um ou mais dígitos
+        padrao = r'(?:NF\.|TIT\.)\s*(\d+)'
+        
+        # Procurar o padrão no texto
+        match = re.search(padrao, texto_limpo, re.IGNORECASE)
+        
+        if match:
+            # Retornar apenas os dígitos encontrados
+            return match.group(1)
+        else:
+            return ""
+            
+    except Exception as e:
+        # Em caso de erro, retornar vazio sem quebrar o sistema
+        return ""
 
 def calcular_movimento(row, col_credito, col_debito):
     """
@@ -202,6 +245,24 @@ def carregar_e_tratar_dados(arquivo, nome_aba):
             df_dados = df_dados[df_dados[col_filial].str.strip() != '']
             df_dados = df_dados.reset_index(drop=True)
         
+        # ========== NOVA FUNCIONALIDADE: EXTRAIR NF DO HISTORICO ==========
+        # Detectar automaticamente a coluna "HISTORICO" (case insensitive)
+        col_historico = None
+        for col in df_dados.columns:
+            if 'historico' in col.lower():
+                col_historico = col
+                break
+        
+        # Criar a coluna NF_EXTRAIDA se a coluna HISTORICO existir
+        if col_historico:
+            # Aplicar a função extrair_nf em todos os registros de forma vetorizada
+            df_dados['NF_EXTRAIDA'] = df_dados[col_historico].apply(extrair_nf)
+        else:
+            # Se não encontrar a coluna HISTORICO, criar a coluna vazia como fallback
+            df_dados['NF_EXTRAIDA'] = ""
+            st.info("ℹ️ Coluna 'HISTORICO' não encontrada. Coluna NF_EXTRAIDA criada vazia.")
+        # ========== FIM DA NOVA FUNCIONALIDADE ==========
+        
         # Identificar colunas de Crédito e Débito (case-insensitive)
         col_credito = None
         col_debito = None
@@ -263,8 +324,16 @@ def main():
             # Exibir DataFrame completo
             st.dataframe(df, use_container_width=True, height=500)
             
-            # Mostrar quantidade de registros após filtros
-            st.markdown(f"**Total de registros:** {len(df)}")
+            # Mostrar estatísticas após processamento
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📊 Total de Registros", len(df))
+            with col2:
+                # Contar quantas NFs foram extraídas com sucesso
+                nfs_encontradas = df[df['NF_EXTRAIDA'] != ""].shape[0]
+                st.metric("🏷️ NFs Extraídas", nfs_encontradas)
+            with col3:
+                st.metric("📋 Total de Colunas", len(df.columns))
         
         elif df is not None and df.empty:
             st.warning("⚠️ Nenhum dado encontrado após o processamento")
