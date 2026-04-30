@@ -1,114 +1,110 @@
 import streamlit as st
 import pandas as pd
-import re
-from io import BytesIO
+import json
+from datetime import datetime
 
-st.title("Conversor TXT → Excel (colar texto)")
+st.set_page_config(page_title="Sistema Contábil", layout="wide")
 
-# 👇 Caixa para colar conteúdo
-conteudo = st.text_area("Cole aqui o conteúdo do TXT", height=300)
+# -------------------------
+# Estado inicial
+# -------------------------
+if "lancamentos" not in st.session_state:
+    st.session_state.lancamentos = []
 
+if "contas" not in st.session_state:
+    st.session_state.contas = ["Caixa", "Banco", "Receita", "Despesa"]
 
-def corrigir_encoding(texto):
-    try:
-        return texto.encode('latin-1').decode('utf-8')
-    except:
-        return texto
+# -------------------------
+# Cadastro de contas
+# -------------------------
+st.sidebar.header("📘 Plano de Contas")
 
+nova_conta = st.sidebar.text_input("Nova conta")
 
-def processar_txt(conteudo):
-    conteudo = corrigir_encoding(conteudo)
+if st.sidebar.button("Adicionar Conta"):
+    if nova_conta:
+        st.session_state.contas.append(nova_conta)
+        st.sidebar.success("Conta adicionada!")
 
-    linhas = conteudo.splitlines()
+# -------------------------
+# Lançamentos
+# -------------------------
+st.sidebar.header("🧾 Novo Lançamento")
 
-    registros = []
-    atual = []
+data = st.sidebar.date_input("Data", datetime.today())
+debito = st.sidebar.selectbox("Conta Débito", st.session_state.contas)
+credito = st.sidebar.selectbox("Conta Crédito", st.session_state.contas)
+historico = st.sidebar.text_input("Histórico")
+valor = st.sidebar.number_input("Valor", min_value=0.0)
 
-    for linha in linhas:
-        linha = linha.strip()
-
-        if not linha:
-            continue
-
-        if "F2B_REGRA" in linha:
-            continue
-
-        if re.match(r'^\d+\s', linha):
-            if atual:
-                registros.append(atual)
-            atual = [linha]
-        else:
-            atual.append(linha)
-
-    if atual:
-        registros.append(atual)
-
-    dados = []
-
-    for bloco in registros:
-        try:
-            texto = " ".join(bloco)
-
-            # ID
-            numero = re.match(r'^(\d+)', texto)
-            numero = numero.group(1) if numero else ""
-
-            # REGRA
-            regra_match = re.search(r'\b([A-Z]{4}\d{2})\b', texto)
-            regra = regra_match.group(1) if regra_match else ""
-
-            # TRIB + CODESC
-            trib_codesc_match = re.search(
-                r'\b(COFRET|COF|ICMS|IPI|PIS|ISS|INSS|IRF|CSL|DIFAL|CRDPRE)\s+([A-Z0-9]+)',
-                texto
-            )
-
-            if trib_codesc_match:
-                trib = trib_codesc_match.group(1)
-                codesc = trib_codesc_match.group(2)
-            else:
-                trib = ""
-                codesc = ""
-
-            # descrição limpa
-            desc = texto
-            desc = re.sub(r'^\d+', '', desc)
-            desc = desc.replace(regra, "")
-            desc = desc.replace(trib, "")
-            desc = desc.replace(codesc, "")
-            desc = re.sub(r'Editar', '', desc, flags=re.IGNORECASE)
-            desc = re.sub(r'—', '', desc)
-            desc = re.sub(r'\s+', ' ', desc).strip()
-
-            dados.append({
-                "ID": numero,
-                "REGRA": regra,
-                "DESCRICAO": desc,
-                "TRIB": trib,
-                "CODESC": codesc
-            })
-
-        except:
-            continue
-
-    return pd.DataFrame(dados)
-
-
-# 👇 botão de processar
-if st.button("Processar"):
-    if conteudo.strip():
-        df = processar_txt(conteudo)
-
-        st.dataframe(df, use_container_width=True)
-
-        output = BytesIO()
-        df.to_excel(output, index=False, engine='openpyxl')
-
-        st.download_button(
-            label="📥 Baixar Excel",
-            data=output.getvalue(),
-            file_name="resultado.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+if st.sidebar.button("Lançar"):
+    if debito == credito:
+        st.sidebar.error("Débito e Crédito não podem ser iguais!")
     else:
-        st.warning("Cole algum conteúdo primeiro.")
+        st.session_state.lancamentos.append({
+            "data": str(data),
+            "debito": debito,
+            "credito": credito,
+            "historico": historico,
+            "valor": valor
+        })
+        st.sidebar.success("Lançamento registrado!")
+
+# -------------------------
+# Tabela de lançamentos
+# -------------------------
+st.title("📊 Lançamentos")
+
+df = pd.DataFrame(st.session_state.lancamentos)
+
+if not df.empty:
+    st.dataframe(df, use_container_width=True)
+
+# -------------------------
+# Balancete (SOMASE)
+# -------------------------
+st.title("📈 Balancete")
+
+if not df.empty:
+    contas = st.session_state.contas
+
+    resultado = []
+
+    for conta in contas:
+        total_debito = df[df["debito"] == conta]["valor"].sum()
+        total_credito = df[df["credito"] == conta]["valor"].sum()
+        saldo = total_debito - total_credito
+
+        resultado.append({
+            "Conta": conta,
+            "Débitos": total_debito,
+            "Créditos": total_credito,
+            "Saldo": saldo
+        })
+
+    balancete = pd.DataFrame(resultado)
+
+    st.dataframe(balancete, use_container_width=True)
+
+# -------------------------
+# Exportar JSON
+# -------------------------
+st.sidebar.header("💾 Backup")
+
+if st.sidebar.button("Exportar JSON"):
+    json_data = json.dumps({
+        "contas": st.session_state.contas,
+        "lancamentos": st.session_state.lancamentos
+    })
+    st.download_button("Download", json_data, "dados.json")
+
+# -------------------------
+# Importar JSON
+# -------------------------
+arquivo = st.sidebar.file_uploader("Importar JSON", type="json")
+
+if arquivo:
+    dados = json.load(arquivo)
+    st.session_state.contas = dados["contas"]
+    st.session_state.lancamentos = dados["lancamentos"]
+    st.sidebar.success("Dados carregados!")
