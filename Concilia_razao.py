@@ -12,90 +12,106 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS PERSONALIZADO PARA MELHORAR VISUAL
+# CSS PERSONALIZADO
 st.markdown("""
 <style>
-    /* Remover espaços em branco */
-    .main > div {
-        padding-top: 0rem;
-        padding-bottom: 0rem;
-    }
-    
-    /* Ajustar containers */
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 0rem;
-        max-width: 100%;
-    }
-    
-    /* Estilo para diferença positiva (pendência de débito) */
-    .diferenca-positiva {
-        color: #dc3545;
-        font-weight: bold;
-    }
-    
-    /* Estilo para diferença negativa (pendência de crédito) */
-    .diferenca-negativa {
-        color: #ffc107;
-        font-weight: bold;
-    }
-    
-    /* Cards de métricas */
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    
-    /* Título dos filtros */
-    .filters-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        margin-bottom: 1rem;
-        color: #2c3e50;
-    }
-    
-    /* DataFrame com altura maior */
-    .stDataFrame {
-        height: auto !important;
-    }
-    
-    /* Customização das tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
-        background-color: #f8f9fa;
-        padding: 0.5rem;
-        border-radius: 10px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        font-size: 1rem;
-        font-weight: bold;
-        padding: 0.5rem 1rem;
-    }
-    
-    /* Highlight para linhas da tabela de pendências */
-    .dataframe tbody tr:hover {
-        background-color: #f0f2f6;
-        cursor: pointer;
-    }
-    
-    /* Estilo do expander de filtros */
-    .streamlit-expanderHeader {
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        font-weight: bold;
-    }
+    .main > div { padding-top: 0rem; padding-bottom: 0rem; }
+    .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 100%; }
+    .stTabs [data-baseweb="tab-list"] { gap: 2rem; background-color: #f8f9fa; padding: 0.5rem; border-radius: 10px; }
+    .stTabs [data-baseweb="tab"] { font-size: 1rem; font-weight: bold; padding: 0.5rem 1rem; }
+    .footer-stats { font-size: 0.75rem; color: #666; text-align: center; padding: 1rem; margin-top: 2rem; border-top: 1px solid #ddd; background-color: #f8f9fa; border-radius: 5px; }
+    .footer-stats span { margin: 0 1rem; }
+    .streamlit-expanderHeader { background-color: #f0f2f6; border-radius: 5px; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
+# ==================================================
+# FUNÇÃO CRÍTICA: CONVERSÃO MONETÁRIA ROBUSTA
+# ==================================================
+def converter_para_float(valor):
+    """
+    Converte string monetária para float de forma robusta.
+    
+    Trata:
+    - Separaadores de milhar (1.234,56 -> 1234.56)
+    - Vírgula decimal (87,80 -> 87.80)
+    - Valores vazios, nulos ou inválidos
+    - Diferentes formatos de entrada
+    
+    Args:
+        valor: Valor a ser convertido (string, int, float, None)
+    
+    Returns:
+        float: Valor convertido ou 0.0 em caso de erro
+    """
+    if pd.isna(valor) or valor == '' or valor is None:
+        return 0.0
+    
+    try:
+        # Se já for número, retorna como float
+        if isinstance(valor, (int, float)):
+            return float(valor)
+        
+        # Converte para string e remove espaços
+        valor_str = str(valor).strip()
+        
+        if not valor_str or valor_str == 'nan':
+            return 0.0
+        
+        # REGRA CRÍTICA: Remover separadores de milhar (pontos)
+        # Mas preservar a última vírgula que é o separador decimal
+        # Estratégia: Remove todos os pontos, depois troca vírgula por ponto
+        valor_limpo = valor_str.replace('.', '')  # Remove separadores de milhar
+        valor_limpo = valor_limpo.replace(',', '.')  # Converte vírgula decimal para ponto
+        
+        # Converte para float
+        return float(valor_limpo)
+    
+    except (ValueError, TypeError, AttributeError):
+        # Fallback seguro - nunca quebra o sistema
+        return 0.0
+
+# ==================================================
+# FUNÇÕES AUXILIARES DE CONVERSÃO SEGURA
+# ==================================================
+def converter_coluna_para_numerico(df, coluna):
+    """
+    Converte uma coluna para numérico de forma segura usando pandas.
+    
+    Args:
+        df: DataFrame
+        coluna: Nome da coluna
+    
+    Returns:
+        Series com valores numéricos (NaN para inválidos)
+    """
+    if coluna not in df.columns:
+        return pd.Series([0.0] * len(df), index=df.index)
+    
+    # Usando pandas to_numeric com coerce para evitar erros
+    return pd.to_numeric(df[coluna], errors='coerce').fillna(0.0)
+
+def formatar_valor_brasileiro(valor):
+    """
+    Formata um valor float para o padrão brasileiro (R$ 1.234,56)
+    
+    Args:
+        valor: float
+    
+    Returns:
+        str: Valor formatado
+    """
+    if pd.isna(valor):
+        return "R$ 0,00"
+    
+    # Formata com 2 casas decimais e separadores
+    return f"R$ {valor:,.2f}".replace(",", "v").replace(".", ",").replace("v", ".")
+
+# ==================================================
+# FUNÇÕES ORIGINAIS CORRIGIDAS
+# ==================================================
 def encontrar_aba_correta(excel_file):
-    """
-    Encontra a aba que contém "3-Lançamentos Contábeis" no nome.
-    Se não encontrar, retorna a primeira aba.
-    """
+    """Encontra a aba correta no arquivo Excel"""
     try:
         abas = pd.ExcelFile(excel_file).sheet_names
         for aba in abas:
@@ -107,9 +123,7 @@ def encontrar_aba_correta(excel_file):
         return None
 
 def encontrar_linha_cabecalho(df):
-    """
-    Procura na coluna A (primeira coluna) uma célula que contenha a palavra "Conta".
-    """
+    """Procura a linha do cabeçalho pela palavra 'Conta'"""
     if df.empty:
         return None
     
@@ -121,49 +135,45 @@ def encontrar_linha_cabecalho(df):
     
     return None
 
-def formatar_data(valor):
+def formatar_data_seguro(valor):
     """
-    Tenta converter um valor para o formato de data brasileiro (DD/MM/YYYY)
+    Converte valores para data de forma segura (dayfirst=True)
+    
+    FIX: Substituído o loop de formatos por dayfirst=True, que é mais robusto
     """
+    if pd.isna(valor) or valor == '':
+        return ''
+    
     try:
-        if isinstance(valor, str):
-            for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y']:
-                try:
-                    data = datetime.strptime(valor.strip(), fmt)
-                    return data.strftime('%d/%m/%Y')
-                except:
-                    continue
-            return valor
-        elif isinstance(valor, (datetime, pd.Timestamp)):
+        # Se for datetime, formata direto
+        if isinstance(valor, (datetime, pd.Timestamp)):
             return valor.strftime('%d/%m/%Y')
-        elif isinstance(valor, (int, float)):
-            try:
-                data = pd.Timestamp.fromordinal(int(valor) - 693594)
-                return data.strftime('%d/%m/%Y')
-            except:
-                return str(valor)
+        
+        # Se for string ou número, usa dayfirst=True
+        data_convertida = pd.to_datetime(valor, dayfirst=True, errors='coerce')
+        
+        if pd.notna(data_convertida):
+            return data_convertida.strftime('%d/%m/%Y')
         else:
             return str(valor)
-    except:
+    
+    except Exception:
         return str(valor)
 
 def extrair_primeiros_digitos(valor, num_digitos=6):
-    """
-    Extrai os primeiros N dígitos de um valor, ignorando caracteres não numéricos
-    """
+    """Extrai os primeiros N dígitos de um valor"""
     try:
         valor_str = str(valor)
         numeros = ''.join(filter(str.isdigit, valor_str))
-        if len(numeros) >= num_digitos:
-            return numeros[:num_digitos]
-        else:
-            return numeros
+        return numeros[:num_digitos] if len(numeros) >= num_digitos else numeros
     except:
         return ''
 
 def extrair_nf(texto):
     """
-    Extrai o número da Nota Fiscal a partir do texto do histórico.
+    Extrai número da NF do histórico usando regex otimizada.
+    
+    Busca padrões: NF.XXXXX ou TIT.XXXXX
     """
     if pd.isna(texto) or not isinstance(texto, str):
         return ""
@@ -172,84 +182,73 @@ def extrair_nf(texto):
         texto_limpo = texto.replace('\n', ' ').replace('\r', ' ').strip()
         padrao = r'(?:NF\.|TIT\.)\s*(\d+)'
         match = re.search(padrao, texto_limpo, re.IGNORECASE)
-        if match:
-            return match.group(1)
-        else:
-            return ""
+        return match.group(1) if match else ""
     except Exception:
         return ""
 
-def calcular_movimento(row, col_credito, col_debito):
+# ==================================================
+# CÁLCULO DO MOVIMENTO - OPERAÇÃO VETORIZADA
+# ==================================================
+def calcular_movimento_vetorizado(df, col_credito, col_debito):
     """
-    Calcula o movimento: Crédito - Débito
+    Calcula o movimento de forma VETORIZADA (sem apply).
+    
+    REGRA CONTÁBIL CORRETA: Movimento = Débito - Crédito
+    - Positivo: Saldo devedor (must pay)
+    - Negativo: Saldo credor (overpaid)
+    - Zero: Conciliado
+    
+    Args:
+        df: DataFrame
+        col_credito: Nome da coluna de crédito
+        col_debito: Nome da coluna de débito
+    
+    Returns:
+        Series com os valores do movimento
     """
-    try:
-        credito = 0
-        debito = 0
-        
-        if pd.notna(row[col_credito]) and row[col_credito] != '':
-            valor_credito = str(row[col_credito]).replace(',', '.')
-            try:
-                credito = float(valor_credito)
-            except:
-                credito = 0
-        
-        if pd.notna(row[col_debito]) and row[col_debito] != '':
-            valor_debito = str(row[col_debito]).replace(',', '.')
-            try:
-                debito = float(valor_debito)
-            except:
-                debito = 0
-        
-        return credito - debito
-    except:
-        return 0
+    # Converte as colunas para numérico de forma segura
+    debito_num = converter_coluna_para_numerico(df, col_debito)
+    credito_num = converter_coluna_para_numerico(df, col_credito)
+    
+    # Operação vetorizada (muito mais rápida que apply)
+    movimento = debito_num - credito_num
+    
+    return movimento
 
-def converter_para_float(valor):
+# ==================================================
+# FILTROS CORRIGIDOS COM CONVERSÃO SEGURA
+# ==================================================
+def aplicar_filtros(df, filtros, col_debito, col_credito):
     """
-    Converte string com vírgula para float
-    """
-    try:
-        if isinstance(valor, str):
-            valor = valor.replace(',', '.')
-            return float(valor)
-        elif isinstance(valor, (int, float)):
-            return float(valor)
-        else:
-            return 0.0
-    except:
-        return 0.0
-
-def aplicar_filtros(df, filtros):
-    """
-    Aplica os filtros dinâmicos no DataFrame
+    Aplica filtros de forma segura, tratando valores vazios e colunas inexistentes
+    
+    Args:
+        df: DataFrame original
+        filtros: Dicionário com valores dos filtros
+        col_debito: Nome da coluna de débito
+        col_credito: Nome da coluna de crédito
+    
+    Returns:
+        DataFrame filtrado
     """
     df_filtrado = df.copy()
     
-    # Filtro Conta (contains)
+    # Filtro Conta
     if filtros.get('conta') and filtros['conta'] != '':
         if 'Conta' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['Conta'].str.contains(filtros['conta'], case=False, na=False)]
     
     # Filtro Lote
     if filtros.get('lote') and filtros['lote'] != '':
-        col_lote = None
-        for col in df_filtrado.columns:
-            if 'lote' in col.lower():
-                col_lote = col
-                break
+        col_lote = next((col for col in df_filtrado.columns if 'lote' in col.lower()), None)
         if col_lote:
             df_filtrado = df_filtrado[df_filtrado[col_lote].astype(str).str.contains(filtros['lote'], case=False, na=False)]
     
-    # Filtro Data (intervalo)
+    # Filtro Data (usando dayfirst=True)
     if filtros.get('data_inicio') and filtros.get('data_fim'):
-        col_data = None
-        for col in df_filtrado.columns:
-            if 'data' in col.lower():
-                col_data = col
-                break
+        col_data = next((col for col in df_filtrado.columns if 'data' in col.lower()), None)
         if col_data:
-            df_filtrado['data_temp'] = pd.to_datetime(df_filtrado[col_data], format='%d/%m/%Y', errors='coerce')
+            df_filtrado['data_temp'] = pd.to_datetime(df_filtrado[col_data], dayfirst=True, errors='coerce')
             data_inicio = pd.to_datetime(filtros['data_inicio'])
             data_fim = pd.to_datetime(filtros['data_fim'])
             df_filtrado = df_filtrado[(df_filtrado['data_temp'] >= data_inicio) & (df_filtrado['data_temp'] <= data_fim)]
@@ -260,243 +259,222 @@ def aplicar_filtros(df, filtros):
         if 'NF_EXTRAIDA' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['NF_EXTRAIDA'].astype(str).str.contains(filtros['nf_extraida'], case=False, na=False)]
     
-    # Filtro Movimento (faixa)
-    if 'Movimento' in df_filtrado.columns:
-        if filtros.get('movimento_min') is not None and filtros['movimento_min'] != '':
-            try:
-                df_filtrado['movimento_num'] = df_filtrado['Movimento'].str.replace(',', '.').astype(float)
-                df_filtrado = df_filtrado[df_filtrado['movimento_num'] >= float(filtros['movimento_min'])]
-            except:
-                pass
-        if filtros.get('movimento_max') is not None and filtros['movimento_max'] != '':
-            try:
-                if 'movimento_num' not in df_filtrado.columns:
-                    df_filtrado['movimento_num'] = df_filtrado['Movimento'].str.replace(',', '.').astype(float)
-                df_filtrado = df_filtrado[df_filtrado['movimento_num'] <= float(filtros['movimento_max'])]
-            except:
-                pass
-        if 'movimento_num' in df_filtrado.columns:
-            df_filtrado = df_filtrado.drop(columns=['movimento_num'])
+    # Filtro Movimento (usando valores numéricos)
+    if 'Movimento' in df_filtrado.columns and filtros.get('movimento_min') and filtros['movimento_min'] != '':
+        movimento_num = converter_coluna_para_numerico(df_filtrado, 'Movimento')
+        df_filtrado = df_filtrado[movimento_num >= converter_para_float(filtros['movimento_min'])]
+    
+    if 'Movimento' in df_filtrado.columns and filtros.get('movimento_max') and filtros['movimento_max'] != '':
+        movimento_num = converter_coluna_para_numerico(df_filtrado, 'Movimento')
+        df_filtrado = df_filtrado[movimento_num <= converter_para_float(filtros['movimento_max'])]
     
     # Filtro Débito
-    col_debito = None
-    for col in df_filtrado.columns:
-        if 'debito' in col.lower():
-            col_debito = col
-            break
-    
     if col_debito:
-        if filtros.get('debito_min') is not None and filtros['debito_min'] != '':
-            try:
-                df_filtrado['debito_num'] = df_filtrado[col_debito].astype(str).str.replace(',', '.').astype(float)
-                df_filtrado = df_filtrado[df_filtrado['debito_num'] >= float(filtros['debito_min'])]
-            except:
-                pass
-        if filtros.get('debito_max') is not None and filtros['debito_max'] != '':
-            try:
-                if 'debito_num' not in df_filtrado.columns:
-                    df_filtrado['debito_num'] = df_filtrado[col_debito].astype(str).str.replace(',', '.').astype(float)
-                df_filtrado = df_filtrado[df_filtrado['debito_num'] <= float(filtros['debito_max'])]
-            except:
-                pass
-        if 'debito_num' in df_filtrado.columns:
-            df_filtrado = df_filtrado.drop(columns=['debito_num'])
+        debito_num = converter_coluna_para_numerico(df_filtrado, col_debito)
+        
+        if filtros.get('debito_min') and filtros['debito_min'] != '':
+            df_filtrado = df_filtrado[debito_num >= converter_para_float(filtros['debito_min'])]
+        
+        if filtros.get('debito_max') and filtros['debito_max'] != '':
+            df_filtrado = df_filtrado[debito_num <= converter_para_float(filtros['debito_max'])]
     
     # Filtro Crédito
-    col_credito = None
-    for col in df_filtrado.columns:
-        if 'credito' in col.lower():
-            col_credito = col
-            break
-    
     if col_credito:
-        if filtros.get('credito_min') is not None and filtros['credito_min'] != '':
-            try:
-                df_filtrado['credito_num'] = df_filtrado[col_credito].astype(str).str.replace(',', '.').astype(float)
-                df_filtrado = df_filtrado[df_filtrado['credito_num'] >= float(filtros['credito_min'])]
-            except:
-                pass
-        if filtros.get('credito_max') is not None and filtros['credito_max'] != '':
-            try:
-                if 'credito_num' not in df_filtrado.columns:
-                    df_filtrado['credito_num'] = df_filtrado[col_credito].astype(str).str.replace(',', '.').astype(float)
-                df_filtrado = df_filtrado[df_filtrado['credito_num'] <= float(filtros['credito_max'])]
-            except:
-                pass
-        if 'credito_num' in df_filtrado.columns:
-            df_filtrado = df_filtrado.drop(columns=['credito_num'])
+        credito_num = converter_coluna_para_numerico(df_filtrado, col_credito)
+        
+        if filtros.get('credito_min') and filtros['credito_min'] != '':
+            df_filtrado = df_filtrado[credito_num >= converter_para_float(filtros['credito_min'])]
+        
+        if filtros.get('credito_max') and filtros['credito_max'] != '':
+            df_filtrado = df_filtrado[credito_num <= converter_para_float(filtros['credito_max'])]
     
     return df_filtrado
 
-def analisar_pendencias(df):
+# ==================================================
+# ANÁLISE DE PENDÊNCIAS - CORRIGIDA E ROBUSTA
+# ==================================================
+def analisar_pendencias(df, col_debito, col_credito):
     """
-    Analisa pendências por Nota Fiscal
-    Retorna DataFrame com NFs que não fecham (débito - crédito ≠ 0)
+    Analisa pendências por Nota Fiscal.
+    
+    REGRA: SOMA(DÉBITO) - SOMA(CRÉDITO) ≠ 0
+    
+    Args:
+        df: DataFrame
+        col_debito: Nome da coluna débito
+        col_credito: Nome da coluna crédito
+    
+    Returns:
+        Tuple (df_pendencias, col_debito, col_credito) ou None
     """
-    # Identificar colunas de Débito e Crédito
-    col_debito = None
-    col_credito = None
-    
-    for col in df.columns:
-        if 'debito' in col.lower():
-            col_debito = col
-        elif 'credito' in col.lower():
-            col_credito = col
-    
     if not col_debito or not col_credito:
-        st.warning("Colunas de Débito ou Crédito não encontradas para análise de pendências")
+        st.warning("Colunas de Débito ou Crédito não encontradas")
         return None
     
-    # Criar uma cópia para análise
+    # Filtra apenas NFs válidas
     df_analise = df[df['NF_EXTRAIDA'] != ""].copy()
     
     if df_analise.empty:
         st.info("Nenhuma Nota Fiscal encontrada para análise")
         return None
     
-    # Converter valores para float de forma otimizada
-    df_analise['DEBITO_NUM'] = df_analise[col_debito].astype(str).str.replace(',', '.').astype(float)
-    df_analise['CREDITO_NUM'] = df_analise[col_credito].astype(str).str.replace(',', '.').astype(float)
+    # CONVERSÃO SEGURA usando a função robusta
+    df_analise['DEBITO_NUM'] = df_analise[col_debito].apply(converter_para_float)
+    df_analise['CREDITO_NUM'] = df_analise[col_credito].apply(converter_para_float)
     
-    # Agrupar por NF_EXTRAIDA
+    # Agrupamento otimizado com agg
     df_group = df_analise.groupby('NF_EXTRAIDA').agg({
         'DEBITO_NUM': 'sum',
         'CREDITO_NUM': 'sum'
     }).reset_index()
     
-    # Calcular diferença
+    # Cálculo da diferença
     df_group['DIFERENCA'] = df_group['DEBITO_NUM'] - df_group['CREDITO_NUM']
     
-    # Arredondar para evitar problemas de precisão
+    # Arredondamento para evitar erros de precisão (2 casas decimais)
     df_group['DIFERENCA'] = df_group['DIFERENCA'].round(2)
     
-    # Filtrar apenas onde diferença ≠ 0
-    df_pendencias = df_group[df_group['DIFERENCA'] != 0].copy()
+    # Filtra apenas pendências (diferença ≠ 0)
+    # Usar tolerância para evitar erros de ponto flutuante
+    df_pendencias = df_group[np.abs(df_group['DIFERENCA']) > 0.01].copy()
     
-    # Ordenar pelo maior valor absoluto da diferença
+    # Ordena por maior diferença absoluta
     df_pendencias['ABS_DIF'] = df_pendencias['DIFERENCA'].abs()
     df_pendencias = df_pendencias.sort_values('ABS_DIF', ascending=False)
     df_pendencias = df_pendencias.drop(columns=['ABS_DIF'])
-    
-    # Resetar índice
     df_pendencias = df_pendencias.reset_index(drop=True)
     
-    return df_pendencias, col_debito, col_credito
+    return df_pendencias
 
+# ==================================================
+# EXIBIÇÃO DE ESTATÍSTICAS
+# ==================================================
+def exibir_estatisticas_rodape(df, col_debito, col_credito):
+    """Exibe estatísticas no rodapé"""
+    total_registros = len(df)
+    
+    soma_debito = df[col_debito].apply(converter_para_float).sum() if col_debito in df.columns else 0
+    soma_credito = df[col_credito].apply(converter_para_float).sum() if col_credito in df.columns else 0
+    
+    soma_movimento = 0
+    if 'Movimento' in df.columns:
+        soma_movimento = df['Movimento'].apply(converter_para_float).sum()
+    
+    stats_html = f"""
+    <div class="footer-stats">
+        <span>📊 <strong>Estatísticas</strong></span>
+        <span>📄 Total de Registros: <strong>{total_registros:,}</strong></span>
+        <span>💸 Total Débito: <strong>{formatar_valor_brasileiro(soma_debito)}</strong></span>
+        <span>💳 Total Crédito: <strong>{formatar_valor_brasileiro(soma_credito)}</strong></span>
+        <span>💰 Total Movimento: <strong>{formatar_valor_brasileiro(soma_movimento)}</strong></span>
+    </div>
+    """
+    st.markdown(stats_html, unsafe_allow_html=True)
+
+# ==================================================
+# PROCESSAMENTO PRINCIPAL - CORRIGIDO
+# ==================================================
 def carregar_e_tratar_dados(arquivo, nome_aba):
     """
-    Carrega a planilha, identifica o cabeçalho e trata os dados.
+    Carrega e processa o arquivo Excel.
+    
+    Fluxo:
+    1. Lê a planilha sem cabeçalho
+    2. Identifica linha do cabeçalho pela palavra "Conta"
+    3. Aplica transformações
+    4. Calcula movimento (vetorizado)
+    5. Retorna DataFrame processado
     """
     try:
         df_raw = pd.read_excel(arquivo, sheet_name=nome_aba, header=None)
         
         if df_raw.empty:
             st.warning("A planilha está vazia")
-            return None
+            return None, None, None
         
         linha_cabecalho = encontrar_linha_cabecalho(df_raw)
         
         if linha_cabecalho is None:
             st.warning("Coluna 'Conta' não encontrada na planilha")
-            return None
+            return None, None, None
         
+        # Define cabeçalho
         cabecalho = df_raw.iloc[linha_cabecalho].astype(str).tolist()
         cabecalho = [str(col).strip() if pd.notna(col) else f"Coluna_{i}" 
                     for i, col in enumerate(cabecalho)]
         
+        # Remove duplicatas nos cabeçalhos
         for i, col in enumerate(cabecalho):
             if cabecalho.count(col) > 1:
                 cabecalho[i] = f"{col}_{i}"
         
+        # Cria DataFrame com dados
         df_dados = df_raw.iloc[linha_cabecalho + 1:].copy()
         df_dados.columns = cabecalho
         df_dados = df_dados.dropna(how='all')
         df_dados = df_dados.reset_index(drop=True)
         
+        # Converte tudo para string e remove 'nan'
         for col in df_dados.columns:
-            df_dados[col] = df_dados[col].astype(str)
-            df_dados[col] = df_dados[col].replace('nan', '')
+            df_dados[col] = df_dados[col].astype(str).replace('nan', '')
         
-        # Remover colunas específicas
+        # Remove colunas específicas
         colunas_para_remover = ['C CUSTO', 'ITEM CONTA', 'COD CL VAL']
         for col in colunas_para_remover:
             if col in df_dados.columns:
                 df_dados = df_dados.drop(columns=[col])
         
-        # Extrair primeiros 6 dígitos do LOTE
-        col_lote = None
-        for col in df_dados.columns:
-            if 'LOTE/SUB/DOC/LINHA' in col or 'LOTE' in col:
-                col_lote = col
-                break
-        
+        # Extrai primeiros 6 dígitos do LOTE
+        col_lote = next((col for col in df_dados.columns if 'LOTE/SUB/DOC/LINHA' in col or 'LOTE' in col), None)
         if col_lote:
             df_dados[col_lote] = df_dados[col_lote].apply(lambda x: extrair_primeiros_digitos(x, 6))
         
-        # Filtrar FILIAL DE ORIGEM
-        col_filial = None
-        for col in df_dados.columns:
-            if 'FILIAL DE ORIGEM' in col or 'FILIAL' in col:
-                col_filial = col
-                break
-        
+        # Filtra FILIAL DE ORIGEM
+        col_filial = next((col for col in df_dados.columns if 'FILIAL DE ORIGEM' in col or 'FILIAL' in col), None)
         if col_filial:
             df_dados = df_dados[df_dados[col_filial].str.strip() != '']
             df_dados = df_dados.reset_index(drop=True)
         
-        # Extrair NF do HISTORICO
-        col_historico = None
-        for col in df_dados.columns:
-            if 'historico' in col.lower():
-                col_historico = col
-                break
-        
+        # Extrai NF do HISTORICO
+        col_historico = next((col for col in df_dados.columns if 'historico' in col.lower()), None)
         if col_historico:
             df_dados['NF_EXTRAIDA'] = df_dados[col_historico].apply(extrair_nf)
         else:
             df_dados['NF_EXTRAIDA'] = ""
         
-        # Identificar colunas de Crédito e Débito
-        col_credito = None
-        col_debito = None
+        # Identifica colunas de Crédito e Débito
+        col_credito = next((col for col in df_dados.columns if 'credito' in col.lower()), None)
+        col_debito = next((col for col in df_dados.columns if 'debito' in col.lower()), None)
         
-        for col in df_dados.columns:
-            if 'credito' in col.lower():
-                col_credito = col
-            elif 'debito' in col.lower():
-                col_debito = col
+        # Formata DATA (usando dayfirst=True)
+        col_data = next((col for col in df_dados.columns if 'data' in col.lower()), None)
+        if col_data:
+            df_dados[col_data] = df_dados[col_data].apply(formatar_data_seguro)
         
-        # Formatar DATA
-        col_data = None
-        for col in df_dados.columns:
-            if 'data' in col.lower():
-                col_data = col
-                df_dados[col_data] = df_dados[col_data].apply(formatar_data)
-                break
-        
-        # Calcular Movimento
+        # CALCULA MOVIMENTO (VETORIZADO - SEM APPLY!)
         if col_credito and col_debito:
-            df_dados['Movimento'] = df_dados.apply(
-                lambda row: calcular_movimento(row, col_credito, col_debito), 
-                axis=1
-            )
-            df_dados['Movimento'] = df_dados['Movimento'].apply(lambda x: f"{x:.2f}".replace('.', ','))
+            movimento_num = calcular_movimento_vetorizado(df_dados, col_credito, col_debito)
+            # Formata para exibição (com 2 casas decimais)
+            df_dados['Movimento'] = movimento_num.apply(lambda x: f"{x:.2f}".replace('.', ','))
+            # Cria versão numérica para cálculos futuros
+            df_dados['Movimento_Num'] = movimento_num
         
-        return df_dados
+        return df_dados, col_debito, col_credito
     
     except Exception as e:
         st.error(f"Erro ao processar os dados: {str(e)}")
-        return None
+        return None, None, None
 
+# ==================================================
+# MAIN - APLICAÇÃO STREAMLIT
+# ==================================================
 def main():
-    """
-    Função principal do aplicativo Streamlit
-    """
-    # Título principal
+    """Função principal do aplicativo"""
+    
     st.title("📊 Visualizador - Lançamentos Contábeis")
     st.markdown("---")
     
-    # Sidebar para upload do arquivo
+    # Sidebar para upload
     with st.sidebar:
         st.header("📂 Carregar Arquivo")
         uploaded_file = st.file_uploader(
@@ -505,150 +483,86 @@ def main():
             help="Upload de arquivos Excel com extensão .xlsx ou .xls"
         )
     
-    # Área principal
     if uploaded_file is not None:
         with st.spinner("Processando arquivo..."):
-            df_original = carregar_e_tratar_dados(uploaded_file, encontrar_aba_correta(uploaded_file))
+            df_original, col_debito, col_credito = carregar_e_tratar_dados(
+                uploaded_file, 
+                encontrar_aba_correta(uploaded_file)
+            )
         
         if df_original is not None and not df_original.empty:
             
-            # Criar TABS
+            # Cria TABS
             tab1, tab2 = st.tabs(["📋 Lançamentos", "⚠️ Pendências por NF"])
             
-            # ========== TAB 1: LANÇAMENTOS (ORIGINAL) ==========
+            # ========== TAB 1: LANÇAMENTOS ==========
             with tab1:
-                # Inicializar valores padrão de datas
-                col_data_atual = None
-                for col in df_original.columns:
-                    if 'data' in col.lower():
-                        col_data_atual = col
-                        break
-                
-                min_data = None
-                max_data = None
-                
-                if col_data_atual:
-                    datas_validas = pd.to_datetime(df_original[col_data_atual], format='%d/%m/%Y', errors='coerce').dropna()
-                    if not datas_validas.empty:
-                        min_data = datas_validas.min().date()
-                        max_data = datas_validas.max().date()
-                
-                # MENU DE FILTROS RECOLHÍVEL (EXPANDER)
-                with st.expander("🔍 **Filtros Dinâmicos** (Clique para expandir/recolher)", expanded=False):
-                    # Organizar filtros em colunas
+                # Filtros expansíveis
+                with st.expander("🔍 Filtrar Dados", expanded=False):
+                    st.markdown("### Aplicar Filtros")
+                    
                     col1, col2, col3 = st.columns(3)
                     col4, col5, col6 = st.columns(3)
                     
-                    # Dicionário para armazenar valores dos filtros
                     filtros = {}
                     
                     with col1:
-                        st.markdown("**📋 Conta**")
-                        filtros['conta'] = st.text_input("Conta (contém)", value="", key="filtro_conta", placeholder="Digite parte da conta...")
-                        
-                        st.markdown("**🔢 Lote**")
-                        filtros['lote'] = st.text_input("Lote", value="", key="filtro_lote", placeholder="Número do lote...")
+                        filtros['conta'] = st.text_input("📋 Conta (contém)", key="filtro_conta", placeholder="Digite parte da conta...")
+                        filtros['lote'] = st.text_input("🔢 Lote", key="filtro_lote", placeholder="Número do lote...")
                     
                     with col2:
-                        st.markdown("**📅 Data**")
-                        if min_data and max_data:
-                            filtros['data_inicio'] = st.date_input("Data inicial", value=min_data, key="filtro_data_ini")
-                            filtros['data_fim'] = st.date_input("Data final", value=max_data, key="filtro_data_fim")
+                        col_data = next((col for col in df_original.columns if 'data' in col.lower()), None)
+                        if col_data:
+                            datas_validas = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce').dropna()
+                            if not datas_validas.empty:
+                                filtros['data_inicio'] = st.date_input("📅 Data inicial", value=datas_validas.min().date())
+                                filtros['data_fim'] = st.date_input("📅 Data final", value=datas_validas.max().date())
+                            else:
+                                filtros['data_inicio'] = st.date_input("📅 Data inicial")
+                                filtros['data_fim'] = st.date_input("📅 Data final")
                         else:
-                            filtros['data_inicio'] = st.date_input("Data inicial", key="filtro_data_ini")
-                            filtros['data_fim'] = st.date_input("Data final", key="filtro_data_fim")
+                            filtros['data_inicio'] = st.date_input("📅 Data inicial")
+                            filtros['data_fim'] = st.date_input("📅 Data final")
                     
                     with col3:
-                        st.markdown("**🏷️ NF Extraída**")
-                        filtros['nf_extraida'] = st.text_input("Número da NF", value="", key="filtro_nf", placeholder="Digite o número da NF...")
+                        filtros['nf_extraida'] = st.text_input("🏷️ NF Extraída", key="filtro_nf", placeholder="Número da NF...")
                     
                     with col4:
                         st.markdown("**💰 Movimento**")
-                        col1_min, col1_max = st.columns(2)
-                        with col1_min:
-                            filtros['movimento_min'] = st.text_input("Mínimo", value="", key="filtro_mov_min", placeholder="0,00")
-                        with col1_max:
-                            filtros['movimento_max'] = st.text_input("Máximo", value="", key="filtro_mov_max", placeholder="999.999,99")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            filtros['movimento_min'] = st.text_input("Mínimo", placeholder="0,00")
+                        with c2:
+                            filtros['movimento_max'] = st.text_input("Máximo", placeholder="999.999,99")
                     
                     with col5:
                         st.markdown("**💸 Débito**")
-                        col2_min, col2_max = st.columns(2)
-                        with col2_min:
-                            filtros['debito_min'] = st.text_input("Mínimo", value="", key="filtro_deb_min", placeholder="0,00")
-                        with col2_max:
-                            filtros['debito_max'] = st.text_input("Máximo", value="", key="filtro_deb_max", placeholder="999.999,99")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            filtros['debito_min'] = st.text_input("Mínimo", key="deb_min", placeholder="0,00")
+                        with c2:
+                            filtros['debito_max'] = st.text_input("Máximo", key="deb_max", placeholder="999.999,99")
                     
                     with col6:
                         st.markdown("**💳 Crédito**")
-                        col3_min, col3_max = st.columns(2)
-                        with col3_min:
-                            filtros['credito_min'] = st.text_input("Mínimo", value="", key="filtro_cred_min", placeholder="0,00")
-                        with col3_max:
-                            filtros['credito_max'] = st.text_input("Máximo", value="", key="filtro_cred_max", placeholder="999.999,99")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            filtros['credito_min'] = st.text_input("Mínimo", key="cred_min", placeholder="0,00")
+                        with c2:
+                            filtros['credito_max'] = st.text_input("Máximo", key="cred_max", placeholder="999.999,99")
                     
-                    # Botão para limpar filtros
-                    if st.button("🧹 Limpar todos os filtros", key="limpar_filtros", use_container_width=True):
-                        st.rerun()
+                    _, col_btn, _ = st.columns([1, 2, 1])
+                    with col_btn:
+                        if st.button("🧹 Limpar todos os filtros", use_container_width=True):
+                            st.rerun()
                 
-                st.markdown("---")
+                # Aplica filtros
+                df_filtrado = aplicar_filtros(df_original, filtros, col_debito, col_credito)
                 
-                # Aplicar filtros
-                df_filtrado = aplicar_filtros(df_original, filtros)
-                
-                # Bloco de Métricas
-                st.subheader("📊 Estatísticas")
-                
-                # Calcular métricas
-                total_registros = len(df_filtrado)
-                
-                # Somar Débito
-                col_debito = None
-                for col in df_filtrado.columns:
-                    if 'debito' in col.lower():
-                        col_debito = col
-                        break
-                
-                soma_debito = 0
-                if col_debito:
-                    soma_debito = df_filtrado[col_debito].astype(str).str.replace(',', '.').astype(float).sum()
-                
-                # Somar Crédito
-                col_credito = None
-                for col in df_filtrado.columns:
-                    if 'credito' in col.lower():
-                        col_credito = col
-                        break
-                
-                soma_credito = 0
-                if col_credito:
-                    soma_credito = df_filtrado[col_credito].astype(str).str.replace(',', '.').astype(float).sum()
-                
-                # Somar Movimento
-                soma_movimento = 0
-                if 'Movimento' in df_filtrado.columns:
-                    soma_movimento = df_filtrado['Movimento'].str.replace(',', '.').astype(float).sum()
-                
-                # Exibir métricas em 4 colunas
-                m1, m2, m3, m4 = st.columns(4)
-                with m1:
-                    st.metric("📄 Total de Registros", f"{total_registros:,}".replace(",", "."))
-                with m2:
-                    st.metric("💸 Total Débito", f"R$ {soma_debito:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                with m3:
-                    st.metric("💳 Total Crédito", f"R$ {soma_credito:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                with m4:
-                    st.metric("💰 Total Movimento", f"R$ {soma_movimento:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                
-                st.markdown("---")
-                
-                # Bloco do Grid
+                # Exibe DataFrame
                 st.subheader("📋 Dados Detalhados")
+                altura_grid = min(800, max(400, 200 + (len(df_filtrado) * 35)))
                 
-                # Configurar altura dinâmica do DataFrame
-                altura_grid = min(800, 200 + (len(df_filtrado) * 35))
-                altura_grid = max(400, altura_grid)
-                
-                # Exibir DataFrame
                 st.dataframe(
                     df_filtrado, 
                     use_container_width=True, 
@@ -656,142 +570,78 @@ def main():
                     hide_index=True
                 )
                 
-                st.caption(f"✅ Exibindo {len(df_filtrado)} de {len(df_original)} registros | 📊 {len(df_filtrado.columns)} colunas")
+                # Estatísticas no rodapé
+                exibir_estatisticas_rodape(df_filtrado, col_debito, col_credito)
             
-            # ========== TAB 2: PENDÊNCIAS POR NF ==========
+            # ========== TAB 2: PENDÊNCIAS ==========
             with tab2:
                 st.subheader("⚠️ Notas Fiscais com Pendências")
-                st.markdown("Identifica automaticamente NFs onde a soma dos débitos não equivale à soma dos créditos")
+                st.markdown("Identifica NFs onde **Débito - Crédito ≠ 0** (regra contábil)")
                 
-                # Analisar pendências
-                with st.spinner("Analisando pendências por NF..."):
-                    resultado = analisar_pendencias(df_original)
+                with st.spinner("Analisando pendências..."):
+                    df_pendencias = analisar_pendencias(df_original, col_debito, col_credito)
                     
-                    if resultado is not None:
-                        df_pendencias, col_debito, col_credito = resultado
+                    if df_pendencias is not None and not df_pendencias.empty:
+                        # Métricas
+                        total_pendencias = len(df_pendencias)
+                        total_diferenca = df_pendencias['DIFERENCA'].round(2).sum()
                         
-                        if not df_pendencias.empty:
-                            # Métricas das pendências
-                            total_nfs_pendentes = len(df_pendencias)
-                            total_diferenca = df_pendencias['DIFERENCA'].sum()
-                            total_debito_pendente = df_pendencias['DEBITO_NUM'].sum()
-                            total_credito_pendente = df_pendencias['CREDITO_NUM'].sum()
+                        col_a, col_b, col_c, col_d = st.columns(4)
+                        with col_a:
+                            st.metric("⚠️ NFs com Pendência", total_pendencias)
+                        with col_b:
+                            st.metric("💰 Débito Pendente", formatar_valor_brasileiro(df_pendencias['DEBITO_NUM'].sum()))
+                        with col_c:
+                            st.metric("💳 Crédito Pendente", formatar_valor_brasileiro(df_pendencias['CREDITO_NUM'].sum()))
+                        with col_d:
+                            delta_color = "inverse" if total_diferenca < 0 else "normal"
+                            st.metric("📊 Diferença Total", formatar_valor_brasileiro(total_diferenca), delta_color=delta_color)
+                        
+                        st.markdown("---")
+                        
+                        # Tabela formatada
+                        df_exibicao = df_pendencias.copy()
+                        df_exibicao['DEBITO_NUM'] = df_exibicao['DEBITO_NUM'].apply(formatar_valor_brasileiro)
+                        df_exibicao['CREDITO_NUM'] = df_exibicao['CREDITO_NUM'].apply(formatar_valor_brasileiro)
+                        df_exibicao['DIFERENCA'] = df_exibicao['DIFERENCA'].apply(formatar_valor_brasileiro)
+                        df_exibicao.columns = ['NF', 'Débito Total', 'Crédito Total', 'Diferença']
+                        
+                        st.dataframe(df_exibicao, use_container_width=True, height=400, hide_index=True)
+                        
+                        # Detalhamento por NF
+                        st.markdown("---")
+                        st.subheader("🔍 Detalhamento por NF")
+                        
+                        nf_selecionada = st.selectbox(
+                            "Selecione uma NF para ver os lançamentos:",
+                            options=df_pendencias['NF_EXTRAIDA'].tolist()
+                        )
+                        
+                        if nf_selecionada:
+                            df_detalhes = df_original[df_original['NF_EXTRAIDA'] == nf_selecionada].copy()
+                            st.markdown(f"**Detalhes da NF: {nf_selecionada}**")
+                            st.markdown(f"📄 Total de lançamentos: {len(df_detalhes)}")
                             
-                            # Exibir métricas
-                            col_a, col_b, col_c, col_d = st.columns(4)
-                            with col_a:
-                                st.metric("⚠️ NFs com Pendência", f"{total_nfs_pendentes}")
-                            with col_b:
-                                st.metric("💰 Total Débito Pendente", f"R$ {total_debito_pendente:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                            with col_c:
-                                st.metric("💳 Total Crédito Pendente", f"R$ {total_credito_pendente:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                            with col_d:
-                                cor_diferenca = "inverse" if total_diferenca < 0 else "normal"
-                                st.metric("📊 Diferença Total", f"R$ {total_diferenca:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."), delta_color=cor_diferenca)
+                            # Métricas da NF
+                            soma_debito = df_detalhes[col_debito].apply(converter_para_float).sum()
+                            soma_credito = df_detalhes[col_credito].apply(converter_para_float).sum()
                             
-                            st.markdown("---")
+                            col_e, col_f, col_g = st.columns(3)
+                            with col_e:
+                                st.metric("💸 Débito Total", formatar_valor_brasileiro(soma_debito))
+                            with col_f:
+                                st.metric("💳 Crédito Total", formatar_valor_brasileiro(soma_credito))
+                            with col_g:
+                                st.metric("⚠️ Diferença", formatar_valor_brasileiro(soma_debito - soma_credito))
                             
-                            # Formatar DataFrame para exibição
-                            df_exibicao = df_pendencias.copy()
-                            df_exibicao['DEBITO_NUM'] = df_exibicao['DEBITO_NUM'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                            df_exibicao['CREDITO_NUM'] = df_exibicao['CREDITO_NUM'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                            df_exibicao['DIFERENCA'] = df_exibicao['DIFERENCA'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                            
-                            # Renomear colunas
-                            df_exibicao.columns = ['NF', 'Débito Total', 'Crédito Total', 'Diferença']
-                            
-                            # Exibir tabela de pendências
-                            st.dataframe(
-                                df_exibicao,
-                                use_container_width=True,
-                                height=400,
-                                hide_index=True
-                            )
-                            
-                            # Diferencial: Permitir ver detalhes da NF
-                            st.markdown("---")
-                            st.subheader("🔍 Detalhamento por NF")
-                            st.markdown("Clique no botão abaixo para ver os lançamentos de uma NF específica:")
-                            
-                            # Selectbox para escolher NF
-                            nf_selecionada = st.selectbox(
-                                "Selecione uma NF para visualizar os detalhes:",
-                                options=df_pendencias['NF_EXTRAIDA'].tolist(),
-                                key="select_nf"
-                            )
-                            
-                            if nf_selecionada:
-                                # Filtrar lançamentos da NF selecionada
-                                df_detalhes = df_original[df_original['NF_EXTRAIDA'] == nf_selecionada].copy()
-                                
-                                st.markdown(f"**Detalhes da NF: {nf_selecionada}**")
-                                st.markdown(f"📄 Total de lançamentos: {len(df_detalhes)}")
-                                
-                                # Exibir métricas da NF específica
-                                col_e, col_f, col_g = st.columns(3)
-                                
-                                # Calcular totais da NF
-                                soma_debito_nf = df_detalhes[col_debito].astype(str).str.replace(',', '.').astype(float).sum()
-                                soma_credito_nf = df_detalhes[col_credito].astype(str).str.replace(',', '.').astype(float).sum()
-                                diferenca_nf = soma_debito_nf - soma_credito_nf
-                                
-                                with col_e:
-                                    st.metric("💸 Débito Total", f"R$ {soma_debito_nf:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                                with col_f:
-                                    st.metric("💳 Crédito Total", f"R$ {soma_credito_nf:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                                with col_g:
-                                    st.metric("⚠️ Diferença", f"R$ {diferenca_nf:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."), 
-                                             delta_color="inverse" if diferenca_nf < 0 else "normal")
-                                
-                                # Exibir lançamentos detalhados
-                                st.markdown("**Lançamentos detalhados:**")
-                                st.dataframe(
-                                    df_detalhes,
-                                    use_container_width=True,
-                                    height=300,
-                                    hide_index=True
-                                )
-                            
-                        else:
-                            st.success("🎉 Todas as Notas Fiscais estão conciliadas! Nenhuma pendência encontrada.")
-                            
-                            # Mostrar estatísticas de NFs processadas
-                            total_nfs = df_original[df_original['NF_EXTRAIDA'] != ""]['NF_EXTRAIDA'].nunique()
-                            st.info(f"📊 Total de NFs processadas: {total_nfs} - Todas estão regulares!")
+                            st.dataframe(df_detalhes, use_container_width=True, height=300, hide_index=True)
                     
-                    else:
-                        st.warning("Não foi possível analisar pendências devido à falta de colunas necessárias")
-        
-        elif df_original is not None and df_original.empty:
-            st.warning("⚠️ Nenhum dado encontrado após o processamento")
+                    elif df_pendencias is not None and df_pendencias.empty:
+                        total_nfs = df_original[df_original['NF_EXTRAIDA'] != ""]['NF_EXTRAIDA'].nunique()
+                        st.success(f"🎉 Todas as {total_nfs} NFs estão conciliadas!")
     
     else:
-        # Mensagem quando nenhum arquivo foi carregado
         st.info("👈 Faça upload de um arquivo Excel na barra lateral para começar")
-        
-        # Mostrar exemplo do layout
-        with st.expander("ℹ️ Como funciona a análise de pendências?"):
-            st.markdown("""
-            ### 🔍 Conciliação Contábil Automática
-            
-            A análise de pendências identifica automaticamente Notas Fiscais onde os valores não estão conciliados:
-            
-            **Regra de negócio:**
-            - Para cada NF, soma-se todos os **DÉBITOS**
-            - Para cada NF, soma-se todos os **CRÉDITOS**
-            - A diferença deve ser **ZERO** (Débito - Crédito = 0)
-            
-            **Interpretação dos resultados:**
-            - ✅ **Diferença = 0**: NF está conciliada
-            - ⚠️ **Diferença > 0**: Falta crédito (débito maior)
-            - ⚠️ **Diferença < 0**: Falta débito (crédito maior)
-            
-            **Funcionalidades:**
-            - Lista todas as NFs com pendências
-            - Mostra o valor exato da diferença
-            - Permite visualizar os lançamentos detalhados de cada NF
-            - Facilita a identificação e correção de erros contábeis
-            """)
 
 if __name__ == "__main__":
     main()
