@@ -10,11 +10,13 @@ with st.sidebar:
     arquivo1 = st.file_uploader("Arquivo Excel - Plano de Contas", type=["xlsx", "xls"])
     arquivo2 = st.file_uploader("Arquivo Excel - Posicao dos Titulos", type=["xlsx", "xls"])
     arquivo3 = st.file_uploader("Cadastro de Fornecedor", type=["xlsx", "xls"])
+    arquivo4 = st.file_uploader("Relação de Contas de Fornecedor", type=["xlsx", "xls"])
 
 st.title("Visualizador de Excel")
 
 # Processar primeiro arquivo
 df_contabil = None
+df_contabil_original = None
 if arquivo1:
     excel = pd.ExcelFile(arquivo1)
     
@@ -58,12 +60,27 @@ if arquivo1:
         if colunas_existentes:
             df = df[colunas_existentes]
         
-        # Aplicar filtro com prefixo correto
+        # Aplicar filtro com prefixo correto (removido - agora usa relação de contas)
         if "Conta" in df.columns:
-            df_contabil = df[df["Conta"].astype(str).str.startswith("2103001")]
+            df_contabil_original = df.copy()
+            df_contabil = df
     else:
         # Se não encontrou, exibir normalmente
-        df_contabil = pd.read_excel(arquivo1, sheet_name=aba_selecionada)
+        df_contabil_original = pd.read_excel(arquivo1, sheet_name=aba_selecionada)
+        df_contabil = df_contabil_original.copy()
+
+# Aplicar filtro pela relação de contas de fornecedor
+if arquivo4 and df_contabil is not None:
+    try:
+        df_relacao = pd.read_excel(arquivo4, dtype=str)
+        # Assumir que a primeira coluna contém as contas
+        contas_permitidas = df_relacao.iloc[:, 0].astype(str).str.strip().tolist()
+        contas_permitidas = [conta.replace(".", "") for conta in contas_permitidas]
+        
+        df_contabil = df_contabil[df_contabil["Conta"].astype(str).str.strip().isin(contas_permitidas)]
+        st.sidebar.success(f"✅ Filtrado: {len(df_contabil)} contas de fornecedor")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao ler relação de contas: {e}")
 
 # Processar segundo arquivo
 df_financeiro = None
@@ -126,8 +143,10 @@ if arquivo3:
 # Realizar LEFT JOIN entre Saldo Financeiro e Cadastro de Fornecedor
 if df_financeiro is not None and df_fornecedor is not None:
     # Garantir tipos como string e limpar espaços
-    df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip()
-    df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip()
+    if "Cod Fornecedor" in df_financeiro.columns:
+        df_financeiro["Cod Fornecedor"] = df_financeiro["Cod Fornecedor"].astype(str).str.strip()
+    if "Loja" in df_financeiro.columns:
+        df_financeiro["Loja"] = df_financeiro["Loja"].astype(str).str.strip()
     
     df_fornecedor["Codigo"] = df_fornecedor["Codigo"].astype(str).str.strip()
     df_fornecedor["Loja"] = df_fornecedor["Loja"].astype(str).str.strip()
@@ -329,6 +348,12 @@ def exportar_para_excel():
         # Aba 4: Cadastro de Fornecedor
         if df_fornecedor is not None:
             df_fornecedor.to_excel(writer, sheet_name=sanitizar_nome_aba("Cadastro de Fornecedor"), index=False)
+        
+        # Aba 5: Relação de Contas (se existir)
+        if arquivo4 and df_contabil_original is not None:
+            df_relacao_export = df_contabil_original[df_contabil_original["Conta"].isin(contas_permitidas)] if 'contas_permitidas' in dir() else df_contabil_original
+            if len(df_relacao_export) > 0:
+                df_relacao_export.to_excel(writer, sheet_name=sanitizar_nome_aba("Contas Fornecedor"), index=False)
     
     output.seek(0)
     return output
@@ -356,6 +381,8 @@ if df_contabil is not None or df_financeiro is not None or df_fornecedor is not 
         if df_contabil is not None:
             st.subheader("📋 Saldo Contábil")
             st.dataframe(df_contabil, use_container_width=True)
+            if arquivo4:
+                st.caption(f"✅ Filtrado pela relação de contas de fornecedor - Total: {len(df_contabil)} contas")
         else:
             st.info("Nenhum arquivo de plano de contas carregado")
     
