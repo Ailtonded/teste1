@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from datetime import datetime
 
 # Configuração da página
 st.set_page_config(
@@ -47,6 +48,57 @@ def encontrar_linha_cabecalho(df):
             return idx
     
     return None
+
+def formatar_data(valor):
+    """
+    Tenta converter um valor para o formato de data brasileiro (DD/MM/YYYY)
+    """
+    try:
+        # Se for string, tenta converter
+        if isinstance(valor, str):
+            # Tenta diferentes formatos
+            for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y']:
+                try:
+                    data = datetime.strptime(valor.strip(), fmt)
+                    return data.strftime('%d/%m/%Y')
+                except:
+                    continue
+            return valor
+        # Se for datetime
+        elif isinstance(valor, (datetime, pd.Timestamp)):
+            return valor.strftime('%d/%m/%Y')
+        # Se for número (Excel)
+        elif isinstance(valor, (int, float)):
+            try:
+                data = pd.Timestamp.fromordinal(int(valor) - 693594)
+                return data.strftime('%d/%m/%Y')
+            except:
+                return str(valor)
+        else:
+            return str(valor)
+    except:
+        return str(valor)
+
+def calcular_movimento(row, col_credito, col_debito):
+    """
+    Calcula o movimento: Crédito - Débito
+    """
+    try:
+        # Converter para número, tratando vírgula como separador decimal
+        credito = 0
+        debito = 0
+        
+        if pd.notna(row[col_credito]) and row[col_credito] != '':
+            valor_credito = str(row[col_credito]).replace(',', '.')
+            credito = float(valor_credito) if valor_credito.replace('.', '').replace('-', '').isdigit() else 0
+        
+        if pd.notna(row[col_debito]) and row[col_debito] != '':
+            valor_debito = str(row[col_debito]).replace(',', '.')
+            debito = float(valor_debito) if valor_debito.replace('.', '').replace('-', '').isdigit() else 0
+        
+        return credito - debito
+    except:
+        return 0
 
 def carregar_e_tratar_dados(arquivo, nome_aba):
     """
@@ -96,6 +148,35 @@ def carregar_e_tratar_dados(arquivo, nome_aba):
             df_dados[col] = df_dados[col].astype(str)
             # Substituir 'nan' por string vazia
             df_dados[col] = df_dados[col].replace('nan', '')
+        
+        # Identificar colunas de Crédito e Débito (case-insensitive)
+        col_credito = None
+        col_debito = None
+        
+        for col in df_dados.columns:
+            if 'credito' in col.lower():
+                col_credito = col
+            elif 'debito' in col.lower():
+                col_debito = col
+        
+        # Formatar coluna DATA se existir
+        col_data = None
+        for col in df_dados.columns:
+            if 'data' in col.lower():
+                col_data = col
+                df_dados[col_data] = df_dados[col_data].apply(formatar_data)
+                break
+        
+        # Calcular coluna Movimento
+        if col_credito and col_debito:
+            df_dados['Movimento'] = df_dados.apply(
+                lambda row: calcular_movimento(row, col_credito, col_debito), 
+                axis=1
+            )
+            # Formatar Movimento com 2 casas decimais
+            df_dados['Movimento'] = df_dados['Movimento'].apply(lambda x: f"{x:.2f}".replace('.', ','))
+        else:
+            st.warning("Colunas 'Crédito' e/ou 'Débito' não encontradas para calcular o movimento")
         
         return df_dados
     
