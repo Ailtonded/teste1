@@ -24,7 +24,7 @@ def processar_txt(conteudo):
         if "F2B_REGRA" in linha:
             continue
 
-        # início de novo registro (linha começando com número)
+        # início de novo registro
         if re.match(r'^\d+\s', linha):
             if atual:
                 registros.append(atual)
@@ -42,29 +42,29 @@ def processar_txt(conteudo):
             texto = " ".join(bloco)
 
             # ID
-            id_match = re.match(r'^(\d+)', texto)
-            numero = id_match.group(1) if id_match else ""
+            numero = re.match(r'^(\d+)', texto)
+            numero = numero.group(1) if numero else ""
 
             # REGRA
             regra_match = re.search(r'\b([A-Z]{4}\d{2})\b', texto)
             regra = regra_match.group(1) if regra_match else ""
 
-            # TRIB e CODESC
-            trib_match = re.search(r'\b(COFRET|COF|ICMS|IPI|PIS|ISS|INSS|IRF|CSL|DIFAL|CRDPRE)\b', texto)
-            trib = trib_match.group(1) if trib_match else ""
+            # TRIB + CODESC juntos (mais confiável)
+            trib_codesc_match = re.search(
+                r'\b(COFRET|COF|ICMS|IPI|PIS|ISS|INSS|IRF|CSL|DIFAL|CRDPRE)\s+([A-Z0-9]+)',
+                texto
+            )
 
-            codesc_match = re.search(r'\b([A-Z]{3,5}\d{2})\b', texto)
-            codesc = ""
+            if trib_codesc_match:
+                trib = trib_codesc_match.group(1)
+                codesc = trib_codesc_match.group(2)
+            else:
+                trib = ""
+                codesc = ""
 
-            if codesc_match:
-                # evita pegar a REGRA como CODESC
-                if codesc_match.group(1) != regra:
-                    codesc = codesc_match.group(1)
-
-            # descrição = remove partes conhecidas
+            # descrição limpa
             desc = texto
-
-            desc = re.sub(r'^\d+', '', desc)  # remove ID
+            desc = re.sub(r'^\d+', '', desc)
             desc = desc.replace(regra, "")
             desc = desc.replace(trib, "")
             desc = desc.replace(codesc, "")
@@ -83,8 +83,7 @@ def processar_txt(conteudo):
         except:
             continue
 
-    df = pd.DataFrame(dados)
-    return df
+    return pd.DataFrame(dados)
 
 
 if uploaded_file:
@@ -94,7 +93,6 @@ if uploaded_file:
 
     st.dataframe(df, use_container_width=True)
 
-    # gerar excel
     output = BytesIO()
     df.to_excel(output, index=False, engine='openpyxl')
 
