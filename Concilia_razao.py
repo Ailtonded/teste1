@@ -40,23 +40,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Cards de métricas */
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    
-    /* Título dos filtros */
-    .filters-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        margin-bottom: 1rem;
-        color: #2c3e50;
-    }
-    
     /* DataFrame com altura maior */
     .stDataFrame {
         height: auto !important;
@@ -74,6 +57,29 @@ st.markdown("""
         font-size: 1rem;
         font-weight: bold;
         padding: 0.5rem 1rem;
+    }
+    
+    /* Estilo para estatísticas no rodapé */
+    .footer-stats {
+        font-size: 0.75rem;
+        color: #666;
+        text-align: center;
+        padding: 1rem;
+        margin-top: 2rem;
+        border-top: 1px solid #ddd;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+    
+    .footer-stats span {
+        margin: 0 1rem;
+    }
+    
+    /* Estilo para o expansor de filtros */
+    .streamlit-expanderHeader {
+        background-color: #f0f2f6;
+        border-radius: 5px;
+        font-weight: bold;
     }
     
     /* Highlight para linhas da tabela de pendências */
@@ -358,6 +364,41 @@ def analisar_pendencias(df):
     
     return df_pendencias, col_debito, col_credito
 
+def exibir_estatisticas_rodape(df, col_debito, col_credito):
+    """
+    Exibe estatísticas no rodapé da página com fonte pequena
+    """
+    # Calcular métricas
+    total_registros = len(df)
+    
+    soma_debito = 0
+    if col_debito:
+        soma_debito = df[col_debito].astype(str).str.replace(',', '.').astype(float).sum()
+    
+    soma_credito = 0
+    if col_credito:
+        soma_credito = df[col_credito].astype(str).str.replace(',', '.').astype(float).sum()
+    
+    soma_movimento = 0
+    if 'Movimento' in df.columns:
+        soma_movimento = df['Movimento'].str.replace(',', '.').astype(float).sum()
+    
+    # HTML para estatísticas no rodapé
+    stats_html = f"""
+    <div class="footer-stats">
+        <span>📊 <strong>Estatísticas</strong></span>
+        <span>📄 Total de Registros: <strong>{total_registros:,}</strong></span>
+        <span>💸 Total Débito: <strong>R$ {soma_debito:,.2f}</strong></span>
+        <span>💳 Total Crédito: <strong>R$ {soma_credito:,.2f}</strong></span>
+        <span>💰 Total Movimento: <strong>R$ {soma_movimento:,.2f}</strong></span>
+    </div>
+    """
+    
+    # Substituir separadores decimais para formato brasileiro
+    stats_html = stats_html.replace(",", "v").replace(".", ",").replace("v", ".")
+    
+    st.markdown(stats_html, unsafe_allow_html=True)
+
 def carregar_e_tratar_dados(arquivo, nome_aba):
     """
     Carrega a planilha, identifica o cabeçalho e trata os dados.
@@ -457,11 +498,11 @@ def carregar_e_tratar_dados(arquivo, nome_aba):
             )
             df_dados['Movimento'] = df_dados['Movimento'].apply(lambda x: f"{x:.2f}".replace('.', ','))
         
-        return df_dados
+        return df_dados, col_debito, col_credito
     
     except Exception as e:
         st.error(f"Erro ao processar os dados: {str(e)}")
-        return None
+        return None, None, None
 
 def main():
     """
@@ -483,7 +524,14 @@ def main():
     # Área principal
     if uploaded_file is not None:
         with st.spinner("Processando arquivo..."):
-            df_original = carregar_e_tratar_dados(uploaded_file, encontrar_aba_correta(uploaded_file))
+            resultado = carregar_e_tratar_dados(uploaded_file, encontrar_aba_correta(uploaded_file))
+            
+            if resultado[0] is not None:
+                df_original, col_debito, col_credito = resultado
+            else:
+                df_original = None
+                col_debito = None
+                col_credito = None
         
         if df_original is not None and not df_original.empty:
             
@@ -492,128 +540,83 @@ def main():
             
             # ========== TAB 1: LANÇAMENTOS (ORIGINAL) ==========
             with tab1:
-                # Bloco de Filtros
-                st.subheader("🔍 Filtros Dinâmicos")
-                
-                # Organizar filtros em colunas
-                col1, col2, col3 = st.columns(3)
-                col4, col5, col6 = st.columns(3)
-                
-                # Dicionário para armazenar valores dos filtros
-                filtros = {}
-                
-                with col1:
-                    st.markdown("**📋 Conta**")
-                    filtros['conta'] = st.text_input("Conta (contém)", key="filtro_conta", placeholder="Digite parte da conta...")
+                # Filtros em menu expansível (recolhido por padrão)
+                with st.expander("🔍 Filtrar Dados", expanded=False):
+                    st.markdown("### Aplicar Filtros")
                     
-                    st.markdown("**🔢 Lote**")
-                    filtros['lote'] = st.text_input("Lote", key="filtro_lote", placeholder="Número do lote...")
-                
-                with col2:
-                    st.markdown("**📅 Data**")
-                    col_data_atual = None
-                    for col in df_original.columns:
-                        if 'data' in col.lower():
-                            col_data_atual = col
-                            break
+                    # Organizar filtros em colunas
+                    col1, col2, col3 = st.columns(3)
+                    col4, col5, col6 = st.columns(3)
                     
-                    if col_data_atual:
-                        datas_validas = pd.to_datetime(df_original[col_data_atual], format='%d/%m/%Y', errors='coerce').dropna()
-                        if not datas_validas.empty:
-                            min_data = datas_validas.min().date()
-                            max_data = datas_validas.max().date()
-                            
-                            filtros['data_inicio'] = st.date_input("Data inicial", value=min_data, key="filtro_data_ini")
-                            filtros['data_fim'] = st.date_input("Data final", value=max_data, key="filtro_data_fim")
+                    # Dicionário para armazenar valores dos filtros
+                    filtros = {}
+                    
+                    with col1:
+                        st.markdown("**📋 Conta**")
+                        filtros['conta'] = st.text_input("Conta (contém)", key="filtro_conta", placeholder="Digite parte da conta...")
+                        
+                        st.markdown("**🔢 Lote**")
+                        filtros['lote'] = st.text_input("Lote", key="filtro_lote", placeholder="Número do lote...")
+                    
+                    with col2:
+                        st.markdown("**📅 Data**")
+                        col_data_atual = None
+                        for col in df_original.columns:
+                            if 'data' in col.lower():
+                                col_data_atual = col
+                                break
+                        
+                        if col_data_atual:
+                            datas_validas = pd.to_datetime(df_original[col_data_atual], format='%d/%m/%Y', errors='coerce').dropna()
+                            if not datas_validas.empty:
+                                min_data = datas_validas.min().date()
+                                max_data = datas_validas.max().date()
+                                
+                                filtros['data_inicio'] = st.date_input("Data inicial", value=min_data, key="filtro_data_ini")
+                                filtros['data_fim'] = st.date_input("Data final", value=max_data, key="filtro_data_fim")
+                            else:
+                                filtros['data_inicio'] = st.date_input("Data inicial", key="filtro_data_ini")
+                                filtros['data_fim'] = st.date_input("Data final", key="filtro_data_fim")
                         else:
                             filtros['data_inicio'] = st.date_input("Data inicial", key="filtro_data_ini")
                             filtros['data_fim'] = st.date_input("Data final", key="filtro_data_fim")
-                    else:
-                        filtros['data_inicio'] = st.date_input("Data inicial", key="filtro_data_ini")
-                        filtros['data_fim'] = st.date_input("Data final", key="filtro_data_fim")
-                
-                with col3:
-                    st.markdown("**🏷️ NF Extraída**")
-                    filtros['nf_extraida'] = st.text_input("Número da NF", key="filtro_nf", placeholder="Digite o número da NF...")
-                
-                with col4:
-                    st.markdown("**💰 Movimento**")
-                    col1_min, col1_max = st.columns(2)
-                    with col1_min:
-                        filtros['movimento_min'] = st.text_input("Mínimo", key="filtro_mov_min", placeholder="0,00")
-                    with col1_max:
-                        filtros['movimento_max'] = st.text_input("Máximo", key="filtro_mov_max", placeholder="999.999,99")
-                
-                with col5:
-                    st.markdown("**💸 Débito**")
-                    col2_min, col2_max = st.columns(2)
-                    with col2_min:
-                        filtros['debito_min'] = st.text_input("Mínimo", key="filtro_deb_min", placeholder="0,00")
-                    with col2_max:
-                        filtros['debito_max'] = st.text_input("Máximo", key="filtro_deb_max", placeholder="999.999,99")
-                
-                with col6:
-                    st.markdown("**💳 Crédito**")
-                    col3_min, col3_max = st.columns(2)
-                    with col3_min:
-                        filtros['credito_min'] = st.text_input("Mínimo", key="filtro_cred_min", placeholder="0,00")
-                    with col3_max:
-                        filtros['credito_max'] = st.text_input("Máximo", key="filtro_cred_max", placeholder="999.999,99")
-                
-                # Botão para limpar filtros
-                if st.button("🧹 Limpar todos os filtros", key="limpar_filtros", use_container_width=True):
-                    st.rerun()
-                
-                st.markdown("---")
+                    
+                    with col3:
+                        st.markdown("**🏷️ NF Extraída**")
+                        filtros['nf_extraida'] = st.text_input("Número da NF", key="filtro_nf", placeholder="Digite o número da NF...")
+                    
+                    with col4:
+                        st.markdown("**💰 Movimento**")
+                        col1_min, col1_max = st.columns(2)
+                        with col1_min:
+                            filtros['movimento_min'] = st.text_input("Mínimo", key="filtro_mov_min", placeholder="0,00")
+                        with col1_max:
+                            filtros['movimento_max'] = st.text_input("Máximo", key="filtro_mov_max", placeholder="999.999,99")
+                    
+                    with col5:
+                        st.markdown("**💸 Débito**")
+                        col2_min, col2_max = st.columns(2)
+                        with col2_min:
+                            filtros['debito_min'] = st.text_input("Mínimo", key="filtro_deb_min", placeholder="0,00")
+                        with col2_max:
+                            filtros['debito_max'] = st.text_input("Máximo", key="filtro_deb_max", placeholder="999.999,99")
+                    
+                    with col6:
+                        st.markdown("**💳 Crédito**")
+                        col3_min, col3_max = st.columns(2)
+                        with col3_min:
+                            filtros['credito_min'] = st.text_input("Mínimo", key="filtro_cred_min", placeholder="0,00")
+                        with col3_max:
+                            filtros['credito_max'] = st.text_input("Máximo", key="filtro_cred_max", placeholder="999.999,99")
+                    
+                    # Botão para limpar filtros
+                    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+                    with col_btn2:
+                        if st.button("🧹 Limpar todos os filtros", key="limpar_filtros", use_container_width=True):
+                            st.rerun()
                 
                 # Aplicar filtros
                 df_filtrado = aplicar_filtros(df_original, filtros)
-                
-                # Bloco de Métricas
-                st.subheader("📊 Estatísticas")
-                
-                # Calcular métricas
-                total_registros = len(df_filtrado)
-                
-                # Somar Débito
-                col_debito = None
-                for col in df_filtrado.columns:
-                    if 'debito' in col.lower():
-                        col_debito = col
-                        break
-                
-                soma_debito = 0
-                if col_debito:
-                    soma_debito = df_filtrado[col_debito].astype(str).str.replace(',', '.').astype(float).sum()
-                
-                # Somar Crédito
-                col_credito = None
-                for col in df_filtrado.columns:
-                    if 'credito' in col.lower():
-                        col_credito = col
-                        break
-                
-                soma_credito = 0
-                if col_credito:
-                    soma_credito = df_filtrado[col_credito].astype(str).str.replace(',', '.').astype(float).sum()
-                
-                # Somar Movimento
-                soma_movimento = 0
-                if 'Movimento' in df_filtrado.columns:
-                    soma_movimento = df_filtrado['Movimento'].str.replace(',', '.').astype(float).sum()
-                
-                # Exibir métricas em 4 colunas
-                m1, m2, m3, m4 = st.columns(4)
-                with m1:
-                    st.metric("📄 Total de Registros", f"{total_registros:,}".replace(",", "."))
-                with m2:
-                    st.metric("💸 Total Débito", f"R$ {soma_debito:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                with m3:
-                    st.metric("💳 Total Crédito", f"R$ {soma_credito:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                with m4:
-                    st.metric("💰 Total Movimento", f"R$ {soma_movimento:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
-                
-                st.markdown("---")
                 
                 # Bloco do Grid
                 st.subheader("📋 Dados Detalhados")
@@ -630,7 +633,8 @@ def main():
                     hide_index=True
                 )
                 
-                st.caption(f"✅ Exibindo {len(df_filtrado)} de {len(df_original)} registros | 📊 {len(df_filtrado.columns)} colunas")
+                # Exibir estatísticas no rodapé
+                exibir_estatisticas_rodape(df_filtrado, col_debito, col_credito)
             
             # ========== TAB 2: PENDÊNCIAS POR NF ==========
             with tab2:
@@ -639,10 +643,10 @@ def main():
                 
                 # Analisar pendências
                 with st.spinner("Analisando pendências por NF..."):
-                    resultado = analisar_pendencias(df_original)
+                    resultado_pendencias = analisar_pendencias(df_original)
                     
-                    if resultado is not None:
-                        df_pendencias, col_debito, col_credito = resultado
+                    if resultado_pendencias is not None:
+                        df_pendencias, col_debito_pend, col_credito_pend = resultado_pendencias
                         
                         if not df_pendencias.empty:
                             # Métricas das pendências
@@ -660,8 +664,7 @@ def main():
                             with col_c:
                                 st.metric("💳 Total Crédito Pendente", f"R$ {total_credito_pendente:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
                             with col_d:
-                                cor_diferenca = "inverse" if total_diferenca < 0 else "normal"
-                                st.metric("📊 Diferença Total", f"R$ {total_diferenca:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."), delta_color=cor_diferenca)
+                                st.metric("📊 Diferença Total", f"R$ {total_diferenca:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
                             
                             st.markdown("---")
                             
@@ -705,8 +708,8 @@ def main():
                                 col_e, col_f, col_g = st.columns(3)
                                 
                                 # Calcular totais da NF
-                                soma_debito_nf = df_detalhes[col_debito].astype(str).str.replace(',', '.').astype(float).sum()
-                                soma_credito_nf = df_detalhes[col_credito].astype(str).str.replace(',', '.').astype(float).sum()
+                                soma_debito_nf = df_detalhes[col_debito_pend].astype(str).str.replace(',', '.').astype(float).sum()
+                                soma_credito_nf = df_detalhes[col_credito_pend].astype(str).str.replace(',', '.').astype(float).sum()
                                 diferenca_nf = soma_debito_nf - soma_credito_nf
                                 
                                 with col_e:
@@ -714,8 +717,7 @@ def main():
                                 with col_f:
                                     st.metric("💳 Crédito Total", f"R$ {soma_credito_nf:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
                                 with col_g:
-                                    st.metric("⚠️ Diferença", f"R$ {diferenca_nf:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."), 
-                                             delta_color="inverse" if diferenca_nf < 0 else "normal")
+                                    st.metric("⚠️ Diferença", f"R$ {diferenca_nf:,.2f}".replace(",", "v").replace(".", ",").replace("v", "."))
                                 
                                 # Exibir lançamentos detalhados
                                 st.markdown("**Lançamentos detalhados:**")
@@ -725,6 +727,18 @@ def main():
                                     height=300,
                                     hide_index=True
                                 )
+                            
+                            # Estatísticas no rodapé da tab de pendências
+                            st.markdown("---")
+                            stats_html_pend = f"""
+                            <div style="font-size: 0.75rem; color: #666; text-align: center; padding: 0.5rem;">
+                                <span>📊 <strong>Resumo Pendências</strong></span>
+                                <span>⚠️ NFs Pendentes: <strong>{total_nfs_pendentes}</strong></span>
+                                <span>💰 Valor Total Pendente: <strong>R$ {abs(total_diferenca):,.2f}</strong></span>
+                            </div>
+                            """
+                            stats_html_pend = stats_html_pend.replace(",", "v").replace(".", ",").replace("v", ".")
+                            st.markdown(stats_html_pend, unsafe_allow_html=True)
                             
                         else:
                             st.success("🎉 Todas as Notas Fiscais estão conciliadas! Nenhuma pendência encontrada.")
@@ -743,11 +757,4 @@ def main():
         # Mensagem quando nenhum arquivo foi carregado
         st.info("👈 Faça upload de um arquivo Excel na barra lateral para começar")
         
-        # Mostrar exemplo do layout
-        with st.expander("ℹ️ Como funciona a análise de pendências?"):
-            st.markdown("""
-            ### 🔍 Conciliação Contábil Automática
-            
-            A análise de pendências identifica automaticamente Notas Fiscais onde os valores não estão conciliados:
-            
-            **Regra de negócio:**
+       
