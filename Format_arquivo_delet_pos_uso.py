@@ -3,12 +3,22 @@ import pandas as pd
 import re
 from io import BytesIO
 
-st.title("Conversor TXT → Excel")
+st.title("Conversor TXT → Excel (colar texto)")
 
-uploaded_file = st.file_uploader("Envie o arquivo TXT", type=["txt"])
+# 👇 Caixa para colar conteúdo
+conteudo = st.text_area("Cole aqui o conteúdo do TXT", height=300)
+
+
+def corrigir_encoding(texto):
+    try:
+        return texto.encode('latin-1').decode('utf-8')
+    except:
+        return texto
 
 
 def processar_txt(conteudo):
+    conteudo = corrigir_encoding(conteudo)
+
     linhas = conteudo.splitlines()
 
     registros = []
@@ -20,11 +30,9 @@ def processar_txt(conteudo):
         if not linha:
             continue
 
-        # ignora cabeçalho
         if "F2B_REGRA" in linha:
             continue
 
-        # início de novo registro
         if re.match(r'^\d+\s', linha):
             if atual:
                 registros.append(atual)
@@ -49,7 +57,7 @@ def processar_txt(conteudo):
             regra_match = re.search(r'\b([A-Z]{4}\d{2})\b', texto)
             regra = regra_match.group(1) if regra_match else ""
 
-            # TRIB + CODESC juntos (mais confiável)
+            # TRIB + CODESC
             trib_codesc_match = re.search(
                 r'\b(COFRET|COF|ICMS|IPI|PIS|ISS|INSS|IRF|CSL|DIFAL|CRDPRE)\s+([A-Z0-9]+)',
                 texto
@@ -86,19 +94,21 @@ def processar_txt(conteudo):
     return pd.DataFrame(dados)
 
 
-if uploaded_file:
-    conteudo = uploaded_file.read().decode("latin-1")
+# 👇 botão de processar
+if st.button("Processar"):
+    if conteudo.strip():
+        df = processar_txt(conteudo)
 
-    df = processar_txt(conteudo)
+        st.dataframe(df, use_container_width=True)
 
-    st.dataframe(df, use_container_width=True)
+        output = BytesIO()
+        df.to_excel(output, index=False, engine='openpyxl')
 
-    output = BytesIO()
-    df.to_excel(output, index=False, engine='openpyxl')
-
-    st.download_button(
-        label="📥 Baixar Excel",
-        data=output.getvalue(),
-        file_name="resultado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.download_button(
+            label="📥 Baixar Excel",
+            data=output.getvalue(),
+            file_name="resultado.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.warning("Cole algum conteúdo primeiro.")
