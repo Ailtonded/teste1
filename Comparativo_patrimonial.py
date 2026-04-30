@@ -133,6 +133,13 @@ if arquivo2:
     
     df_financeiro = pd.read_excel(arquivo2, sheet_name=aba_financeiro, dtype=str)
     
+    # ========== FILTRO: REMOVER LINHAS ONDE Tp = "PA" ==========
+    if "Tp" in df_financeiro.columns:
+        antes = len(df_financeiro)
+        df_financeiro = df_financeiro[df_financeiro["Tp"].astype(str).str.upper() != "PA"]
+        depois = len(df_financeiro)
+        st.sidebar.info(f"✅ Removidas {antes - depois} linhas com Tp=PA - Restam {depois} registros")
+    
     # Tratar coluna Codigo-Nome do Fornecedor
     if "Codigo-Nome do Fornecedor" in df_financeiro.columns:
         split_df = df_financeiro["Codigo-Nome do Fornecedor"].astype(str).str.split("-", expand=True)
@@ -328,7 +335,15 @@ if df_contabil is not None or df_financeiro is not None or df_fornecedor is not 
     with tab2:
         if df_financeiro is not None:
             st.subheader("📋 Saldo Financeiro")
-            st.dataframe(df_financeiro, use_container_width=True)
+            
+            # Mostrar versão agrupada por C Contabil
+            if "C Contabil" in df_financeiro.columns and "Valor Original" in df_financeiro.columns:
+                df_financeiro_agrupado = df_financeiro.groupby("C Contabil", as_index=False)["Valor Original"].sum()
+                df_financeiro_agrupado["Valor Original"] = df_financeiro_agrupado["Valor Original"].apply(lambda x: f"R$ {x:,.2f}")
+                st.dataframe(df_financeiro_agrupado, use_container_width=True)
+                st.caption(f"📊 Total de registros agrupados: {len(df_financeiro_agrupado)}")
+            else:
+                st.dataframe(df_financeiro, use_container_width=True)
         else:
             st.info("Nenhum arquivo carregado")
     
