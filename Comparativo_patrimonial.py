@@ -169,7 +169,15 @@ if df_contabil is not None and df_financeiro is not None:
             if pd.isna(valor) or valor == "" or valor == "nan":
                 return 0.0
             valor_str = str(valor).strip()
-            valor_str = valor_str.replace(".", "").replace(",", ".")
+            
+            # Verificar se é formato brasileiro (contém vírgula)
+            if "," in valor_str:
+                # Formato brasileiro: remover pontos de milhar e substituir vírgula por ponto
+                valor_str = valor_str.replace(".", "").replace(",", ".")
+            else:
+                # Formato americano: apenas remover caracteres não numéricos exceto ponto
+                valor_str = valor_str.replace(" ", "")
+            
             return float(valor_str)
         except:
             return 0.0
