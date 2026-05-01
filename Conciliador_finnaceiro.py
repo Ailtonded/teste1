@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="Conciliação Contábil", layout="wide")
@@ -11,27 +10,55 @@ st.title("💰 Conciliação Contábil Inteligente")
 # =============================
 # 📥 Upload
 # =============================
-st.sidebar.header("📂 Upload de Arquivos")
+st.sidebar.header("📂 Upload")
 
 file_extrato = st.sidebar.file_uploader("Extrato Financeiro", type=["xlsx"])
 file_razao = st.sidebar.file_uploader("Razão Contábil", type=["xlsx"])
 
 # =============================
-# 🔧 Funções
+# 🔧 FUNÇÕES BASE
 # =============================
 
+def normalizar_colunas(df):
+    df.columns = (
+        df.columns
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .str.replace(" ", "_")
+    )
+    return df
+
+
+def detectar_coluna(df, palavras):
+    for p in palavras:
+        cols = [c for c in df.columns if p in c]
+        if cols:
+            return cols[0]
+    return None
+
+
+# =============================
+# 📊 EXTRATO
+# =============================
 def carregar_extrato(file):
     df = pd.read_excel(file)
 
-    df = df.rename(columns={
-        'DATA': 'DATA',
-        'ENTRADAS': 'ENTRADAS',
-        'SAIDAS': 'SAIDAS'
-    })
+    df = normalizar_colunas(df)
 
-    df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
-    df['ENTRADAS'] = pd.to_numeric(df['ENTRADAS'], errors='coerce').fillna(0)
-    df['SAIDAS'] = pd.to_numeric(df['SAIDAS'], errors='coerce').fillna(0)
+    st.write("🔍 Colunas Extrato:", df.columns.tolist())
+
+    col_data = detectar_coluna(df, ["DATA"])
+    col_entradas = detectar_coluna(df, ["ENTRADA"])
+    col_saidas = detectar_coluna(df, ["SAIDA"])
+
+    if not col_data:
+        st.error("❌ Coluna DATA não encontrada no Extrato")
+        st.stop()
+
+    df['DATA'] = pd.to_datetime(df[col_data], errors='coerce')
+    df['ENTRADAS'] = pd.to_numeric(df[col_entradas], errors='coerce').fillna(0) if col_entradas else 0
+    df['SAIDAS'] = pd.to_numeric(df[col_saidas], errors='coerce').fillna(0) if col_saidas else 0
 
     df['MOV'] = df['ENTRADAS'] - df['SAIDAS']
     df['TP'] = 'EXTRATO'
@@ -39,17 +66,34 @@ def carregar_extrato(file):
     return df
 
 
+# =============================
+# 📘 RAZÃO
+# =============================
 def carregar_razao(file):
     df = pd.read_excel(file)
 
-    df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
-    df['ENTRADAS'] = pd.to_numeric(df.get('ENTRADAS', 0), errors='coerce').fillna(0)
-    df['SAIDAS'] = pd.to_numeric(df.get('SAIDAS', 0), errors='coerce').fillna(0)
+    df = normalizar_colunas(df)
 
-    # Caso venha como DEBITO/CREDITO
-    if 'DEBITO' in df.columns and 'CREDITO' in df.columns:
-        df['ENTRADAS'] = pd.to_numeric(df['DEBITO'], errors='coerce').fillna(0)
-        df['SAIDAS'] = pd.to_numeric(df['CREDITO'], errors='coerce').fillna(0)
+    st.write("🔍 Colunas Razão:", df.columns.tolist())
+
+    col_data = detectar_coluna(df, ["DATA"])
+    col_debito = detectar_coluna(df, ["DEBITO"])
+    col_credito = detectar_coluna(df, ["CREDITO"])
+    col_entradas = detectar_coluna(df, ["ENTRADA"])
+    col_saidas = detectar_coluna(df, ["SAIDA"])
+
+    if not col_data:
+        st.error("❌ Coluna DATA não encontrada no Razão")
+        st.stop()
+
+    df['DATA'] = pd.to_datetime(df[col_data], errors='coerce')
+
+    if col_debito and col_credito:
+        df['ENTRADAS'] = pd.to_numeric(df[col_debito], errors='coerce').fillna(0)
+        df['SAIDAS'] = pd.to_numeric(df[col_credito], errors='coerce').fillna(0)
+    else:
+        df['ENTRADAS'] = pd.to_numeric(df[col_entradas], errors='coerce').fillna(0)
+        df['SAIDAS'] = pd.to_numeric(df[col_saidas], errors='coerce').fillna(0)
 
     df['MOV'] = df['ENTRADAS'] - df['SAIDAS']
     df['TP'] = 'RAZAO'
@@ -57,6 +101,9 @@ def carregar_razao(file):
     return df
 
 
+# =============================
+# 🔗 CHAVE
+# =============================
 def criar_chave(df):
     df['CHAVE'] = (
         df['DATA'].dt.strftime('%Y-%m-%d') + '_' +
@@ -65,27 +112,26 @@ def criar_chave(df):
     return df
 
 
+# =============================
+# 🧠 SUGESTÕES
+# =============================
 def gerar_sugestoes(df_ext, df_raz):
     sugestoes = []
 
-    for i, ext in df_ext.iterrows():
-        for j, raz in df_raz.iterrows():
+    for _, ext in df_ext.iterrows():
+        for _, raz in df_raz.iterrows():
 
             score = 0
 
-            # Valor exato
+            # Valor
             if ext['MOV'] == raz['MOV']:
                 score += 50
-
-            # Valor próximo
             elif abs(ext['MOV'] - raz['MOV']) <= 0.05:
                 score += 30
 
-            # Mesma data
+            # Data
             if ext['DATA'] == raz['DATA']:
                 score += 50
-
-            # Data próxima
             elif abs((ext['DATA'] - raz['DATA']).days) <= 2:
                 score += 30
 
@@ -101,20 +147,20 @@ def gerar_sugestoes(df_ext, df_raz):
     return pd.DataFrame(sugestoes)
 
 
-def exportar_excel(df_dict):
+# =============================
+# 📤 EXPORTAÇÃO
+# =============================
+def exportar_excel(dfs):
     output = BytesIO()
-
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        for nome, df in df_dict.items():
+        for nome, df in dfs.items():
             df.to_excel(writer, sheet_name=nome, index=False)
-
     return output.getvalue()
 
 
 # =============================
-# 🚀 PROCESSAMENTO
+# 🚀 EXECUÇÃO
 # =============================
-
 if file_extrato and file_razao:
 
     df_ext = carregar_extrato(file_extrato)
@@ -124,9 +170,9 @@ if file_extrato and file_razao:
     df_raz = criar_chave(df_raz)
 
     # =============================
-    # 📅 Filtro de Data
+    # 📅 Filtro
     # =============================
-    st.sidebar.header("📅 Filtro")
+    st.sidebar.header("📅 Período")
 
     data_ini = st.sidebar.date_input("Data Inicial", df_ext['DATA'].min())
     data_fim = st.sidebar.date_input("Data Final", df_ext['DATA'].max())
@@ -135,7 +181,7 @@ if file_extrato and file_razao:
     df_raz = df_raz[(df_raz['DATA'] >= pd.to_datetime(data_ini)) & (df_raz['DATA'] <= pd.to_datetime(data_fim))]
 
     # =============================
-    # 🔗 MATCH EXATO
+    # 🔗 MATCH
     # =============================
     conciliados = df_ext.merge(
         df_raz,
@@ -144,19 +190,13 @@ if file_extrato and file_razao:
         how='inner'
     )
 
-    # =============================
-    # ❌ NÃO CONCILIADOS
-    # =============================
     nao_ext = df_ext[~df_ext['CHAVE'].isin(conciliados['CHAVE'])]
     nao_raz = df_raz[~df_raz['CHAVE'].isin(conciliados['CHAVE'])]
 
-    # =============================
-    # 🧠 SUGESTÕES
-    # =============================
     sugestoes = gerar_sugestoes(nao_ext, nao_raz)
 
     # =============================
-    # 📊 TABS
+    # 🖥️ UI
     # =============================
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "✅ Conciliados",
@@ -167,52 +207,39 @@ if file_extrato and file_razao:
     ])
 
     with tab1:
-        st.subheader("Conciliados")
         st.dataframe(conciliados, use_container_width=True)
 
     with tab2:
-        st.subheader("Sugestões")
         st.dataframe(sugestoes.sort_values(by='SCORE', ascending=False), use_container_width=True)
 
     with tab3:
-        st.subheader("Não conciliados - Extrato")
         st.dataframe(nao_ext, use_container_width=True)
 
     with tab4:
-        st.subheader("Não conciliados - Razão")
         st.dataframe(nao_raz, use_container_width=True)
 
     with tab5:
-        st.subheader("Resumo")
-
-        total_ext = df_ext['MOV'].sum()
-        total_raz = df_raz['MOV'].sum()
-        total_conc = conciliados['MOV_EXT'].sum()
-
-        st.metric("Total Extrato", f"{total_ext:,.2f}")
-        st.metric("Total Razão", f"{total_raz:,.2f}")
-        st.metric("Total Conciliado", f"{total_conc:,.2f}")
-        st.metric("Diferença", f"{(total_ext - total_raz):,.2f}")
+        st.metric("Total Extrato", f"{df_ext['MOV'].sum():,.2f}")
+        st.metric("Total Razão", f"{df_raz['MOV'].sum():,.2f}")
+        st.metric("Conciliado", f"{conciliados['MOV_EXT'].sum():,.2f}")
+        st.metric("Diferença", f"{df_ext['MOV'].sum() - df_raz['MOV'].sum():,.2f}")
 
     # =============================
-    # 📤 EXPORTAÇÃO
+    # 📥 Download
     # =============================
-    st.sidebar.header("📤 Exportar")
-
-    if st.sidebar.button("Exportar Excel"):
+    if st.sidebar.button("📤 Exportar Excel"):
         excel = exportar_excel({
             'Conciliados': conciliados,
             'Sugestoes': sugestoes,
-            'Extrato_Nao_Conciliado': nao_ext,
-            'Razao_Nao_Conciliado': nao_raz
+            'Extrato': nao_ext,
+            'Razao': nao_raz
         })
 
         st.sidebar.download_button(
-            label="Download",
+            "Download",
             data=excel,
-            file_name="conciliacao.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name="conciliacao.xlsx"
         )
 
 else:
-    st.info("👆 Faça upload dos dois arquivos para começar")
+    st.info("👆 Faça upload dos dois arquivos")
