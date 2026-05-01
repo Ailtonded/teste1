@@ -1,7 +1,7 @@
 """
-Sistema de Conciliação Contábil - versão 2.6 (Otimização de Espaçamento)
+Sistema de Conciliação Contábil - versão 2.7 (Correção Lógica Contábil)
 Autor: Desenvolvedor Sênior Python
-Descrição: Redução de espaçamento vertical para maximizar área do grid.
+Descrição: Correção do mapeamento Razão (Débito=Entrada, Crédito=Saída) e ajuste de sugestões.
 """
 
 import streamlit as st
@@ -23,28 +23,14 @@ st.set_page_config(
 )
 
 # ============================================================================
-# NOVO: CSS PARA REDUZIR ESPAÇAMENTO E MAXIMIZAR GRID
+# CSS PARA REDUZIR ESPAÇAMENTO
 # ============================================================================
 st.markdown("""
 <style>
-    /* Remove padding superior e inferior do container principal */
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 0rem !important;
-    }
-    /* Reduz espaçamento entre título e subtítulo */
-    h1 {
-        margin-bottom: 0rem !important;
-    }
-    /* Reduz espaçamento dos subtítulos */
-    h3 {
-        margin-top: 0.5rem !important;
-        margin-bottom: 0.2rem !important;
-    }
-    /* Reduz espaçamento de textos e captions */
-    .stMarkdown, .stCaption {
-        margin-bottom: 0.2rem !important;
-    }
+    .block-container { padding-top: 1rem !important; padding-bottom: 0rem !important; }
+    h1 { margin-bottom: 0rem !important; }
+    h3 { margin-top: 0.5rem !important; margin-bottom: 0.2rem !important; }
+    .stMarkdown, .stCaption { margin-bottom: 0.2rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,8 +50,8 @@ CONFIG = {
 
 KEYWORDS = {
     'data': ['DATA', 'DT', 'DTPAG', 'DT_MOV', 'MOVIMENTACAO', 'EMISSAO'],
-    'entrada': ['ENTRADA', 'CREDITO', 'CREDITOS', 'VR_ENTRADA', 'RECEITA', 'ENTRADAS'],
-    'saida': ['SAIDA', 'DEBITO', 'DEBITOS', 'VR_SAIDA', 'DESPESA', 'SAIDAS'],
+    'entrada': ['ENTRADA', 'ENTRADAS', 'DEBITO', 'DEBITOS', 'VR_ENTRADA', 'RECEITA'], # Nota: DEBITO em extrato é saída, mas aqui é genérico
+    'saida': ['SAIDA', 'SAIDAS', 'CREDITO', 'CREDITOS', 'VR_SAIDA', 'DESPESA'],       # Nota: CREDITO em extrato é entrada, mas aqui é genérico
     'documento': ['DOCUMENTO', 'DOC', 'NUMDOC', 'NUM_DOC', 'NR_DOC', 'NUMERO', 'LOTE'],
     'historico': ['HISTORICO', 'HIST', 'DESCRICAO', 'DESC', 'OBSERVACAO', 'OBS', 'COMPLEMENTO', 'OPERACAO'],
     'conta': ['CONTA', 'CTA', 'CONTA_CONTABIL', 'COD_CONTA']
@@ -176,10 +162,37 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
         df = df.loc[:, ~df.columns.astype(str).str.startswith('Unnamed')]
         df.columns = [normalizar_nome_coluna(col) for col in df.columns]
         
+        # =====================================================================
+        # CORREÇÃO LÓGICA CONTÁBIL PARA RAZÃO (Ativo Bancário)
+        # =====================================================================
+        if nome_tipo == 'RAZAO':
+            # Em contabilidade de banco (Ativo):
+            # DÉBITO = Entrada de dinheiro (Aumenta saldo)
+            # CRÉDITO = Saída de dinheiro (Diminui saldo)
+            
+            cols_norm = {normalizar_nome_coluna(c): c for c in df.columns}
+            
+            # Mapear Débito -> ENTRADAS
+            col_debito = None
+            for cn, co in cols_norm.items():
+                if 'DEBITO' in cn: col_debito = co; break
+            if col_debito:
+                df = df.rename(columns={col_debito: 'ENTRADAS'})
+                logs.append(f"✅ '{col_debito}' → 'ENTRADAS' (Razão: Débito)")
+            
+            # Mapear Crédito -> SAIDAS
+            col_credito = None
+            for cn, co in cols_norm.items():
+                if 'CREDITO' in cn: col_credito = co; break
+            if col_credito:
+                df = df.rename(columns={col_credito: 'SAIDAS'})
+                logs.append(f"✅ '{col_credito}' → 'SAIDAS' (Razão: Crédito)")
+        
+        # Lógica padrão (Extrato ou fallback)
         mapeamento = {
             'data': ('DATA', detectar_coluna(df, 'data')),
-            'entrada': ('ENTRADAS', detectar_coluna(df, 'entrada')),
-            'saida': ('SAIDAS', detectar_coluna(df, 'saida')),
+            'entrada': ('ENTRADAS', detectar_coluna(df, 'entrada') if 'ENTRADAS' not in df.columns else None),
+            'saida': ('SAIDAS', detectar_coluna(df, 'saida') if 'SAIDAS' not in df.columns else None),
             'historico': ('HISTORICO', detectar_coluna(df, 'historico')),
             'documento': ('DOCUMENTO', detectar_coluna(df, 'documento')),
             'conta': ('CONTA', detectar_coluna(df, 'conta'))
@@ -189,18 +202,18 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
             if col_orig:
                 df = df.rename(columns={col_orig: novo_nome})
                 logs.append(f"✅ '{col_orig}' → '{novo_nome}'")
-            else:
+            elif novo_nome not in df.columns:
                 if key in ['data']: 
                     logs.append(f"❌ Coluna obrigatória {key} não encontrada")
                     return None, logs
-                df[novo_nome] = '' if key not in ['entrada', 'saida'] else 0.0
+                df[novo_nome] = 0.0 if key in ['entrada', 'saida'] else ''
                 logs.append(f"⚠️ {novo_nome} não detectado")
         
         df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce', dayfirst=True)
         df = df.dropna(subset=['DATA'])
         
-        df['ENTRADAS'] = df['ENTRADAS'].apply(converter_valor_monetario).fillna(0)
-        df['SAIDAS'] = df['SAIDAS'].apply(converter_valor_monetario).fillna(0)
+        df['ENTRADAS'] = df.get('ENTRADAS', pd.Series([0.0]*len(df))).apply(converter_valor_monetario).fillna(0)
+        df['SAIDAS'] = df.get('SAIDAS', pd.Series([0.0]*len(df))).apply(converter_valor_monetario).fillna(0)
         
         df['MOV'] = (df['ENTRADAS'] - df['SAIDAS']).round(CONFIG['casas_decimais'])
         df['TP'] = nome_tipo
@@ -218,7 +231,11 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
 
 def calcular_score_match(row1: pd.Series, row2: pd.Series) -> int:
     score = 0
-    diff_valor = abs(abs(row1['MOV']) - abs(row2['MOV']))
+    
+    # CORREÇÃO: Usar diferença real, não abs(abs()).
+    # Isso penaliza matches de Entrada vs Saída (sinais opostos)
+    diff_valor = abs(row1['MOV'] - row2['MOV'])
+    
     if diff_valor == 0: score += 50
     elif diff_valor <= CONFIG['tolerancia_valor']: score += 30
     
@@ -275,11 +292,19 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     
     if not extrato_nc.empty and not razao_nc.empty:
         razao_nc_idx = razao_nc.copy()
-        razao_nc_idx['_v_int'] = (razao_nc_idx['MOV'].abs() * 100).astype(int)
+        # Indexar por valor (considerando sinal agora para evitar sugestões erradas)
+        # Multiplicar por 100 e converter para int para indexação rápida
+        razao_nc_idx['_v_int'] = (razao_nc_idx['MOV'] * 100).round().astype(int)
         
         for idx_e, row_e in extrato_nc.iterrows():
-            v_int = int(abs(row_e['MOV']) * 100)
-            candidatos = razao_nc_idx[(razao_nc_idx['_v_int'] >= v_int - 5) & (razao_nc_idx['_v_int'] <= v_int + 5)]
+            v_int = int(round(row_e['MOV'] * 100))
+            
+            # Busca candidatos com valor EXATO ou muito próximo (tolerancia 5 centavos)
+            # Note: se MOV é -100 (saida), busca -100. Não busca +100.
+            candidatos = razao_nc_idx[
+                (razao_nc_idx['_v_int'] >= v_int - 5) & 
+                (razao_nc_idx['_v_int'] <= v_int + 5)
+            ]
             
             for idx_r in candidatos.index:
                 score = calcular_score_match(row_e, razao_nc_idx.loc[idx_r])
@@ -320,7 +345,6 @@ def exportar_excel_unificado(df: pd.DataFrame) -> bytes:
 
 def main():
     st.title("🔄 Conciliação Contábil - Visão Unificada")
-    # REMOVIDO: st.markdown("---") para economizar espaço vertical
     
     # Sidebar
     with st.sidebar:
@@ -386,7 +410,6 @@ def main():
         mask = (df_base['DATA'].dt.date >= data_ini) & (df_base['DATA'].dt.date <= data_fim)
         df_filtrado_periodo = df_base.loc[mask]
         
-        # Otimizado: Título e Caption em bloco único
         st.markdown(f"### 📊 Lançamentos no Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} <small style='color:gray;'>&nbsp;&nbsp;|&nbsp;&nbsp;Exibindo {len(df_filtrado_periodo)} de {len(df_base)}</small>", unsafe_allow_html=True)
         
         col_f1, col_f2 = st.columns([1, 1])
