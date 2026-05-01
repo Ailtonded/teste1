@@ -1,7 +1,7 @@
 """
-Sistema de Conciliação Contábil - versão 2.3 (Controle de ID e Validação)
+Sistema de Conciliação Contábil - versão 2.4 (Correção Validação Manual)
 Autor: Desenvolvedor Sênior Python
-Descrição: Adicionado ID_CONCILIACAO e validação de soma zero para conciliação manual.
+Descrição: Correção da lógica de validação para separar EXTRATO vs RAZÃO.
 """
 
 import streamlit as st
@@ -215,7 +215,6 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     df_extrato['STATUS'] = 'Não Conciliado'
     df_razao['STATUS'] = 'Não Conciliado'
     
-    # NOVO: Inicializar coluna ID_CONCILIACAO
     df_extrato['ID_CONCILIACAO'] = None
     df_razao['ID_CONCILIACAO'] = None
     
@@ -223,7 +222,6 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     chaves_razao = df_razao['CHAVE'].value_counts().to_dict()
     chaves_comuns = set(df_extrato['CHAVE']).intersection(set(df_razao['CHAVE']))
     
-    # NOVO: Contador para ID automático
     contador_id_conc = 0
     
     for chave in chaves_comuns:
@@ -237,15 +235,13 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
         df_extrato.loc[idx_e, 'STATUS'] = 'Conciliado'
         df_razao.loc[idx_r, 'STATUS'] = 'Conciliado'
         
-        # NOVO: Gerar ID para conciliação automática
         contador_id_conc += 1
         novo_id = f"CONC_{contador_id_conc}"
         df_extrato.loc[idx_e, 'ID_CONCILIACAO'] = novo_id
         df_razao.loc[idx_r, 'ID_CONCILIACAO'] = novo_id
     
-    # Sugestões (simplificado para performance)
     extrato_nc = df_extrato[df_extrato['STATUS'] == 'Não Conciliado']
-    razao_nc = df_razao[df_razao['STATUS'] == 'Não Conciliado']
+    razao_nc = df_razao[df_extrato['STATUS'] == 'Não Conciliado']
     
     if not extrato_nc.empty and not razao_nc.empty:
         razao_nc_idx = razao_nc.copy()
@@ -262,7 +258,6 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
                     df_razao.loc[idx_r, 'STATUS'] = 'Sugestão'
                     break
     
-    # NOVO: Adicionado ID_CONCILIACAO às colunas unificadas
     colunas_unificadas = ['ID', 'STATUS', 'ID_CONCILIACAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
     for col in colunas_unificadas:
         if col not in df_extrato: df_extrato[col] = ''
@@ -276,7 +271,6 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
 def exportar_excel_unificado(df: pd.DataFrame) -> bytes:
     output = BytesIO()
     df_exp = df.copy()
-    # Converter data para string para evitar erros de serialização
     if 'DATA' in df_exp.columns:
         df_exp['DATA'] = df_exp['DATA'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '')
     
@@ -302,21 +296,17 @@ def main():
         st.markdown("---")
         st.header("📅 2. Filtro de Período")
         
-        # Inicializar datas padrão
         data_min_global = datetime.now() - timedelta(days=365)
         data_max_global = datetime.now()
         
-        # Se já temos dados processados, usar essas datas
         if 'df_unificado' in st.session_state and not st.session_state['df_unificado'].empty:
             df_temp = st.session_state['df_unificado']
             if 'DATA' in df_temp.columns and not df_temp['DATA'].isna().all():
-                # Converter para datetime seguro
                 datas_validas = pd.to_datetime(df_temp['DATA'], errors='coerce').dropna()
                 if not datas_validas.empty:
                     data_min_global = datas_validas.min().to_pydatetime()
                     data_max_global = datas_validas.max().to_pydatetime()
         
-        # Lógica de padrão: Últimos 2 dias (ou intervalo menor se houver menos dados)
         delta = (data_max_global - data_min_global).days
         if delta > 2:
             default_start = data_max_global - timedelta(days=2)
@@ -339,7 +329,6 @@ def main():
     
     # Processamento Inicial
     if arquivo_extrato and arquivo_razao:
-        # Processa apenas se ainda não processou ou se mudou o arquivo
         if 'df_unificado' not in st.session_state or st.session_state.get('processar_novamente', False):
             with st.spinner("Processando arquivos... Isso pode levar alguns segundos."):
                 df_extrato, _ = processar_arquivo_excel(arquivo_extrato, "EXTRATO")
@@ -357,20 +346,10 @@ def main():
     if 'df_unificado' in st.session_state:
         df_base = st.session_state['df_unificado'].copy()
         
-        # =====================================================================
-        # FILTRO DE DATA (Aplicado no DataFrame completo)
-        # =====================================================================
-        
-        # Converter coluna DATA para datetime para garantir filtragem correta
         df_base['DATA'] = pd.to_datetime(df_base['DATA'], errors='coerce')
         
-        # Aplicar Filtro
         mask = (df_base['DATA'].dt.date >= data_ini) & (df_base['DATA'].dt.date <= data_fim)
         df_filtrado_periodo = df_base.loc[mask]
-        
-        # =====================================================================
-        # FILTROS DE EXIBIÇÃO
-        # =====================================================================
         
         st.markdown(f"### 📊 Lançamentos no Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
         st.caption(f"Exibindo {len(df_filtrado_periodo)} registros de um total de {len(df_base)}.")
@@ -391,37 +370,27 @@ def main():
                 default=['EXTRATO', 'RAZAO']
             )
         
-        # Aplicar Filtros de Tela
         df_display = df_filtrado_periodo[
             df_filtrado_periodo['STATUS'].isin(filtro_status) & 
             df_filtrado_periodo['TP'].isin(filtro_tipo)
         ].copy()
         
-        # =====================================================================
-        # PREPARAÇÃO PARA O DATA_EDITOR (CORREÇÃO DE TIPOS)
-        # =====================================================================
-        
-        # 1. Converter DATA para formato string para evitar erros de tipo no editor
         df_display['DATA'] = df_display['DATA'].dt.strftime('%d/%m/%Y')
         
-        # 2. Preencher NaNs para evitar erros de API
         df_display = df_display.fillna('')
         for col in ['ENTRADAS', 'SAIDAS', 'MOV']:
             if col in df_display.columns:
                 df_display[col] = pd.to_numeric(df_display[col], errors='coerce').fillna(0.0)
 
-        # Colunas de seleção
         if 'SELECAO' not in df_display.columns:
             df_display['SELECAO'] = False
             
-        # NOVO: Adicionado ID_CONCILIACAO à ordem de exibição
         cols_ordem = ['SELECAO', 'STATUS', 'ID_CONCILIACAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
         cols_existentes = [c for c in cols_ordem if c in df_display.columns]
         cols_existentes += [c for c in df_display.columns if c not in cols_existentes]
         
         df_editor_ready = df_display[cols_existentes]
         
-        # NOVO: Adicionado config para ID_CONCILIACAO
         column_config = {
             "SELECAO": st.column_config.CheckboxColumn("Selecionar", default=False),
             "DATA": st.column_config.TextColumn("Data"), 
@@ -437,7 +406,6 @@ def main():
             "CHAVE": None 
         }
         
-        # Exibir Editor
         edited_df = st.data_editor(
             df_editor_ready,
             column_config=column_config,
@@ -448,20 +416,34 @@ def main():
         )
         
         # =====================================================================
-        # NOVO: CÁLCULO E VALIDAÇÃO DE SALDO ABAIXO DO GRID
+        # CORREÇÃO: CÁLCULO SEPARADO EXTRATO vs RAZÃO (SEM USAR MOV)
         # =====================================================================
         
         st.markdown("---")
         st.subheader("Validação da Conciliação Manual")
         
         selecionados = edited_df[edited_df['SELECAO'] == True]
-        soma_selecao = selecionados['MOV'].sum()
+        
+        # 1. Separar por origem
+        sel_extrato = selecionados[selecionados['TP'] == 'EXTRATO']
+        sel_razao = selecionados[selecionados['TP'] == 'RAZAO']
+        
+        # 2. Calcular totais de ENTRADAS e SAIDAS para cada grupo
+        total_entrada_extrato = sel_extrato['ENTRADAS'].sum()
+        total_saida_extrato = sel_extrato['SAIDAS'].sum()
+        
+        total_entrada_razao = sel_razao['ENTRADAS'].sum()
+        total_saida_razao = sel_razao['SAIDAS'].sum()
+        
+        # 3. Aplicar fórmula exata solicitada
+        # SALDO = (ENTRADAS_EXTRATO - ENTRADAS_RAZAO) + (SAIDAS_EXTRATO - SAIDAS_RAZAO)
+        saldo_conciliacao = (total_entrada_extrato - total_entrada_razao) + (total_saida_extrato - total_saida_razao)
         
         col_val1, col_val2, col_val3 = st.columns([2, 1, 1])
         
         with col_val1:
-            st.markdown(f"### Saldo da conciliação: **{formatar_valor_para_exibicao(soma_selecao)}**")
-            if len(selecionados) > 0 and soma_selecao != 0:
+            st.markdown(f"### Saldo da conciliação: **{formatar_valor_para_exibicao(saldo_conciliacao)}**")
+            if len(selecionados) > 0 and saldo_conciliacao != 0:
                 st.error("A soma dos lançamentos deve ser zero para conciliar")
         
         with col_val2:
@@ -471,7 +453,7 @@ def main():
             btn_desfazer = st.button("↩️ Desfazer Seleção", use_container_width=True)
 
         # =====================================================================
-        # AÇÕES MANUAIS (Lógica existente atualizada)
+        # AÇÕES MANUAIS
         # =====================================================================
         
         if btn_conciliar:
@@ -482,13 +464,12 @@ def main():
                 if 'EXTRATO' not in tipos_sel or 'RAZAO' not in tipos_sel:
                     st.warning("Selecione pelo menos 1 item do EXTRATO e 1 do RAZÃO.")
                 else:
-                    # NOVO: Validação do saldo
-                    if soma_selecao != 0:
+                    # Validação com o novo cálculo
+                    if saldo_conciliacao != 0:
                         st.error("A soma dos lançamentos deve ser zero para conciliar")
                     else:
                         indices_para_atualizar = selecionados.index
                         
-                        # NOVO: Gerar ID de conciliação manual incremental
                         ids_existentes = st.session_state['df_unificado']['ID_CONCILIACAO'].dropna()
                         max_id_num = 0
                         for id_val in ids_existentes:
@@ -511,7 +492,6 @@ def main():
             if len(selecionados) > 0:
                 indices_para_atualizar = selecionados.index
                 st.session_state['df_unificado'].loc[indices_para_atualizar, 'STATUS'] = 'Não Conciliado'
-                # NOVO: Limpar ID_CONCILIACAO ao desfazer
                 st.session_state['df_unificado'].loc[indices_para_atualizar, 'ID_CONCILIACAO'] = None
                 st.success("Status alterado para 'Não Conciliado'.")
                 st.rerun()
