@@ -1,7 +1,7 @@
 """
-Sistema de Conciliação Contábil - versão 2.2 (Otimizado e Corrigido)
+Sistema de Conciliação Contábil - versão 2.3 (Controle de ID e Validação)
 Autor: Desenvolvedor Sênior Python
-Descrição: Adicionado filtro de data, otimização de carga inicial e correção de tipos.
+Descrição: Adicionado ID_CONCILIACAO e validação de soma zero para conciliação manual.
 """
 
 import streamlit as st
@@ -215,9 +215,16 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     df_extrato['STATUS'] = 'Não Conciliado'
     df_razao['STATUS'] = 'Não Conciliado'
     
+    # NOVO: Inicializar coluna ID_CONCILIACAO
+    df_extrato['ID_CONCILIACAO'] = None
+    df_razao['ID_CONCILIACAO'] = None
+    
     chaves_extrato = df_extrato['CHAVE'].value_counts().to_dict()
     chaves_razao = df_razao['CHAVE'].value_counts().to_dict()
     chaves_comuns = set(df_extrato['CHAVE']).intersection(set(df_razao['CHAVE']))
+    
+    # NOVO: Contador para ID automático
+    contador_id_conc = 0
     
     for chave in chaves_comuns:
         qtd_e = chaves_extrato.get(chave, 0)
@@ -229,6 +236,12 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
         
         df_extrato.loc[idx_e, 'STATUS'] = 'Conciliado'
         df_razao.loc[idx_r, 'STATUS'] = 'Conciliado'
+        
+        # NOVO: Gerar ID para conciliação automática
+        contador_id_conc += 1
+        novo_id = f"CONC_{contador_id_conc}"
+        df_extrato.loc[idx_e, 'ID_CONCILIACAO'] = novo_id
+        df_razao.loc[idx_r, 'ID_CONCILIACAO'] = novo_id
     
     # Sugestões (simplificado para performance)
     extrato_nc = df_extrato[df_extrato['STATUS'] == 'Não Conciliado']
@@ -249,7 +262,8 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
                     df_razao.loc[idx_r, 'STATUS'] = 'Sugestão'
                     break
     
-    colunas_unificadas = ['ID', 'STATUS', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
+    # NOVO: Adicionado ID_CONCILIACAO às colunas unificadas
+    colunas_unificadas = ['ID', 'STATUS', 'ID_CONCILIACAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
     for col in colunas_unificadas:
         if col not in df_extrato: df_extrato[col] = ''
         if col not in df_razao: df_razao[col] = ''
@@ -326,8 +340,6 @@ def main():
     # Processamento Inicial
     if arquivo_extrato and arquivo_razao:
         # Processa apenas se ainda não processou ou se mudou o arquivo
-        # (Streamlit não detecta mudança de arquivo facilmente sem lógica complexa, 
-        # então usamos um flag simples ou botão se necessário. Aqui mantemos stateless para simplicidade)
         if 'df_unificado' not in st.session_state or st.session_state.get('processar_novamente', False):
             with st.spinner("Processando arquivos... Isso pode levar alguns segundos."):
                 df_extrato, _ = processar_arquivo_excel(arquivo_extrato, "EXTRATO")
@@ -390,13 +402,10 @@ def main():
         # =====================================================================
         
         # 1. Converter DATA para formato string para evitar erros de tipo no editor
-        #    O st.data_editor não lida bem com datetime objects puros em alguns cenários
         df_display['DATA'] = df_display['DATA'].dt.strftime('%d/%m/%Y')
         
         # 2. Preencher NaNs para evitar erros de API
-        #    Streamlit data_editor requer tipos homogêneos
-        df_display = df_display.fillna('') # Strings vazias para texto
-        # Colunas numéricas devem permanecer numéricas, mas preencher vazios com 0 se houver
+        df_display = df_display.fillna('')
         for col in ['ENTRADAS', 'SAIDAS', 'MOV']:
             if col in df_display.columns:
                 df_display[col] = pd.to_numeric(df_display[col], errors='coerce').fillna(0.0)
@@ -405,22 +414,22 @@ def main():
         if 'SELECAO' not in df_display.columns:
             df_display['SELECAO'] = False
             
-        # Ordenar colunas
-        cols_ordem = ['SELECAO', 'STATUS', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
+        # NOVO: Adicionado ID_CONCILIACAO à ordem de exibição
+        cols_ordem = ['SELECAO', 'STATUS', 'ID_CONCILIACAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
         cols_existentes = [c for c in cols_ordem if c in df_display.columns]
-        # Adicionar colunas que possam ter sobrado
         cols_existentes += [c for c in df_display.columns if c not in cols_existentes]
         
         df_editor_ready = df_display[cols_existentes]
         
-        # Configuração das colunas
+        # NOVO: Adicionado config para ID_CONCILIACAO
         column_config = {
             "SELECAO": st.column_config.CheckboxColumn("Selecionar", default=False),
-            "DATA": st.column_config.TextColumn("Data"), # Texto para evitar erro
+            "DATA": st.column_config.TextColumn("Data"), 
             "ENTRADAS": st.column_config.NumberColumn("Entradas", format="R$ %.2f"),
             "SAIDAS": st.column_config.NumberColumn("Saídas", format="R$ %.2f"),
             "MOV": st.column_config.NumberColumn("Movimento", format="R$ %.2f"),
             "STATUS": st.column_config.TextColumn("Status"),
+            "ID_CONCILIACAO": st.column_config.TextColumn("ID Conciliação"),
             "TP": st.column_config.TextColumn("Tipo"),
             "CONTA": st.column_config.TextColumn("Conta"),
             "HISTORICO": st.column_config.TextColumn("Histórico"),
@@ -434,47 +443,78 @@ def main():
             column_config=column_config,
             use_container_width=True,
             hide_index=True,
-            disabled=['DATA', 'MOV', 'STATUS', 'TP', 'ENTRADAS', 'SAIDAS', 'CHAVE'], 
+            disabled=['DATA', 'MOV', 'STATUS', 'TP', 'ENTRADAS', 'SAIDAS', 'CHAVE', 'ID_CONCILIACAO'], 
             key="data_editor_main"
         )
         
         # =====================================================================
-        # AÇÕES MANUAIS
+        # NOVO: CÁLCULO E VALIDAÇÃO DE SALDO ABAIXO DO GRID
         # =====================================================================
-        st.markdown("---")
-        col_a1, col_a2, col_a3 = st.columns([1, 1, 4])
         
-        with col_a1:
-            if st.button("✅ Conciliar Selecionados", type="primary", use_container_width=True):
-                selecionados = edited_df[edited_df['SELECAO'] == True]
-                
-                if len(selecionados) < 2:
-                    st.warning("Selecione pelo menos 2 linhas.")
+        st.markdown("---")
+        st.subheader("Validação da Conciliação Manual")
+        
+        selecionados = edited_df[edited_df['SELECAO'] == True]
+        soma_selecao = selecionados['MOV'].sum()
+        
+        col_val1, col_val2, col_val3 = st.columns([2, 1, 1])
+        
+        with col_val1:
+            st.markdown(f"### Saldo da conciliação: **{formatar_valor_para_exibicao(soma_selecao)}**")
+            if len(selecionados) > 0 and soma_selecao != 0:
+                st.error("A soma dos lançamentos deve ser zero para conciliar")
+        
+        with col_val2:
+            btn_conciliar = st.button("✅ Conciliar Selecionados", type="primary", use_container_width=True)
+            
+        with col_val3:
+            btn_desfazer = st.button("↩️ Desfazer Seleção", use_container_width=True)
+
+        # =====================================================================
+        # AÇÕES MANUAIS (Lógica existente atualizada)
+        # =====================================================================
+        
+        if btn_conciliar:
+            if len(selecionados) < 2:
+                st.warning("Selecione pelo menos 2 linhas.")
+            else:
+                tipos_sel = selecionados['TP'].unique()
+                if 'EXTRATO' not in tipos_sel or 'RAZAO' not in tipos_sel:
+                    st.warning("Selecione pelo menos 1 item do EXTRATO e 1 do RAZÃO.")
                 else:
-                    tipos_sel = selecionados['TP'].unique()
-                    if 'EXTRATO' not in tipos_sel or 'RAZAO' not in tipos_sel:
-                        st.warning("Selecione pelo menos 1 item do EXTRATO e 1 do RAZÃO.")
+                    # NOVO: Validação do saldo
+                    if soma_selecao != 0:
+                        st.error("A soma dos lançamentos deve ser zero para conciliar")
                     else:
-                        # Como filtramos o df, precisamos atualizar o STATE original
-                        # Vamos usar o índice do edited_df que corresponde ao df_filtrado_periodo
-                        
-                        # O índice do edited_df corresponde ao índice do df_display/df_filtrado_periodo
                         indices_para_atualizar = selecionados.index
                         
+                        # NOVO: Gerar ID de conciliação manual incremental
+                        ids_existentes = st.session_state['df_unificado']['ID_CONCILIACAO'].dropna()
+                        max_id_num = 0
+                        for id_val in ids_existentes:
+                            if str(id_val).startswith('CONC_'):
+                                try:
+                                    num = int(str(id_val).split('_')[1])
+                                    if num > max_id_num: max_id_num = num
+                                except: pass
+                        
+                        novo_id_manual = f"CONC_{max_id_num + 1}"
+                        
                         st.session_state['df_unificado'].loc[indices_para_atualizar, 'STATUS'] = 'Conciliado Manual'
+                        st.session_state['df_unificado'].loc[indices_para_atualizar, 'ID_CONCILIACAO'] = novo_id_manual
                         st.session_state['df_unificado'].loc[indices_para_atualizar, 'SELECAO'] = False
                         
-                        st.success(f"{len(selecionados)} itens conciliados manualmente!")
+                        st.success(f"{len(selecionados)} itens conciliados manualmente com ID {novo_id_manual}!")
                         st.rerun()
 
-        with col_a2:
-            if st.button("↩️ Desfazer Seleção", use_container_width=True):
-                selecionados = edited_df[edited_df['SELECAO'] == True]
-                if len(selecionados) > 0:
-                    indices_para_atualizar = selecionados.index
-                    st.session_state['df_unificado'].loc[indices_para_atualizar, 'STATUS'] = 'Não Conciliado'
-                    st.success("Status alterado para 'Não Conciliado'.")
-                    st.rerun()
+        if btn_desfazer:
+            if len(selecionados) > 0:
+                indices_para_atualizar = selecionados.index
+                st.session_state['df_unificado'].loc[indices_para_atualizar, 'STATUS'] = 'Não Conciliado'
+                # NOVO: Limpar ID_CONCILIACAO ao desfazer
+                st.session_state['df_unificado'].loc[indices_para_atualizar, 'ID_CONCILIACAO'] = None
+                st.success("Status alterado para 'Não Conciliado'.")
+                st.rerun()
         
         # Resumo
         st.markdown("### 📈 Resumo Geral (Período Inteiro)")
