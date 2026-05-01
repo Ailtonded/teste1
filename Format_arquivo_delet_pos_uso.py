@@ -60,6 +60,11 @@ def init_session_state():
                     "pai": None,
                     "nivel": 1
                 }
+    
+    if "grid_lancamentos" not in st.session_state:
+        st.session_state.grid_lancamentos = [
+            {"conta": "", "tipo": "Débito", "valor": 0.0, "historico": ""}
+        ]
 
 init_session_state()
 
@@ -144,7 +149,135 @@ def pode_excluir_conta(codigo, contas_dict, lancamentos):
     return True, "OK"
 
 # -------------------------
-# Funções de Lançamentos
+# Funções do Grid de Lançamentos (NOVA)
+# -------------------------
+def adicionar_linha_grid():
+    """Adiciona nova linha vazia ao grid"""
+    st.session_state.grid_lancamentos.append(
+        {"conta": "", "tipo": "Débito", "valor": 0.0, "historico": ""}
+    )
+
+def remover_linha_grid(index):
+    """Remove uma linha do grid"""
+    if len(st.session_state.grid_lancamentos) > 1:
+        st.session_state.grid_lancamentos.pop(index)
+    else:
+        st.warning("Mantenha pelo menos uma linha!")
+
+def validar_grid_e_salvar(data, grid_lancamentos):
+    """Valida o grid e salva os lançamentos"""
+    
+    # Calcular totais
+    total_debito = 0
+    total_credito = 0
+    
+    for linha in grid_lancamentos:
+        valor = linha["valor"] if linha["valor"] else 0
+        if linha["tipo"] == "Débito":
+            total_debito += valor
+        else:
+            total_credito += valor
+    
+    # Verificar se totais são iguais
+    if abs(total_debito - total_credito) > 0.01:
+        return False, f"Totais não conferem! Débito: R$ {total_debito:,.2f} | Crédito: R$ {total_credito:,.2f} | Diferença: R$ {abs(total_debito - total_credito):,.2f}"
+    
+    # Verificar se há alguma linha com valor
+    if total_debito == 0 and total_credito == 0:
+        return False, "Nenhum valor informado!"
+    
+    # Verificar contas analíticas
+    contas_analiticas = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() 
+                        if c["natureza"] == "Analítica"]
+    
+    for i, linha in enumerate(grid_lancamentos):
+        if not linha["conta"]:
+            return False, f"Linha {i+1}: Conta é obrigatória!"
+        
+        if linha["conta"] not in contas_analiticas:
+            return False, f"Linha {i+1}: Conta '{linha['conta']}' não é analítica ou não existe!"
+        
+        if linha["valor"] <= 0:
+            return False, f"Linha {i+1}: Valor deve ser maior que zero!"
+    
+    # Converter grid para lançamentos no formato atual
+    # Para manter compatibilidade, vamos criar lançamentos de partida dobrada
+    # agrupando débitos e créditos
+    
+    linhas_debito = [l for l in grid_lancamentos if l["tipo"] == "Débito" and l["valor"] > 0]
+    linhas_credito = [l for l in grid_lancamentos if l["tipo"] == "Crédito" and l["valor"] > 0]
+    
+    novos_lancamentos = []
+    
+    # Se há apenas um débito e um crédito, cria um lançamento de partida dobrada
+    if len(linhas_debito) == 1 and len(linhas_credito) == 1:
+        novo_lanc = {
+            "data": data.strftime("%Y-%m-%d"),
+            "tipo": "Partida Dobrada",
+            "conta_debito": linhas_debito[0]["conta"],
+            "conta_credito": linhas_credito[0]["conta"],
+            "valor": linhas_debito[0]["valor"],
+            "historico": linhas_debito[0]["historico"] or linhas_credito[0]["historico"] or "Lançamento via grid",
+            "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        novos_lancamentos.append(novo_lanc)
+    else:
+        # Múltiplas linhas: criar lançamentos individuais com contrapartida temporária
+        # Para débitos: crédito em "Contrapartida Temporária"
+        # Para créditos: débito em "Contrapartida Temporária"
+        
+        # Verificar se existe conta de contrapartida
+        contrapartida = "Contrapartida Temporária"
+        if contrapartida not in contas_analiticas:
+            # Criar conta de contrapartida se não existir
+            novo_codigo = "9999"
+            st.session_state.contas_hierarquicas[novo_codigo] = {
+                "codigo": novo_codigo,
+                "descricao": contrapartida,
+                "tipo": "Ativo",
+                "natureza": "Analítica",
+                "pai": None,
+                "nivel": 1
+            }
+            st.session_state.contas.append(contrapartida)
+        
+        historico_combined = " | ".join([l["historico"] for l in grid_lancamentos if l["historico"]]) or "Lançamento múltiplo via grid"
+        
+        for linha in linhas_debito:
+            novo_lanc = {
+                "data": data.strftime("%Y-%m-%d"),
+                "tipo": "Partida Dobrada",
+                "conta_debito": linha["conta"],
+                "conta_credito": contrapartida,
+                "valor": linha["valor"],
+                "historico": linha["historico"] or historico_combined,
+                "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            novos_lancamentos.append(novo_lanc)
+        
+        for linha in linhas_credito:
+            novo_lanc = {
+                "data": data.strftime("%Y-%m-%d"),
+                "tipo": "Partida Dobrada",
+                "conta_debito": contrapartida,
+                "conta_credito": linha["conta"],
+                "valor": linha["valor"],
+                "historico": linha["historico"] or historico_combined,
+                "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            novos_lancamentos.append(novo_lanc)
+    
+    st.session_state.lancamentos.extend(novos_lancamentos)
+    return True, f"{len(novos_lancamentos)} lançamento(s) registrado(s) com sucesso! Totais: Débito R$ {total_debito:,.2f} = Crédito R$ {total_credito:,.2f}"
+
+def limpar_grid():
+    """Limpa o grid mantendo uma linha padrão"""
+    st.session_state.grid_lancamentos = [
+        {"conta": "", "tipo": "Débito", "valor": 0.0, "historico": ""}
+    ]
+
+# -------------------------
+# Funções de Lançamentos (PRESERVADAS)
 # -------------------------
 def gerar_lancamentos_recorrentes(data_base, tipo_lanc, conta_debito, conta_credito, valor, historico, quantidade, periodicidade):
     lancamentos = []
@@ -224,7 +357,7 @@ def adicionar_lancamento(data, tipo_lanc, conta_debito, conta_credito, valor, hi
         st.session_state.lancamentos.extend(lancamentos)
         return True, f"{len(lancamentos)} lançamento(s) registrado(s)!"
     
-    else:  # Crédito Simples
+    else:
         if conta_credito not in contas_analiticas:
             return False, f"Conta '{conta_credito}' não é analítica!"
         
@@ -251,11 +384,9 @@ def excluir_lancamento(index):
     return False
 
 def sugerir_conta(historico, lancamentos):
-    """Sugere conta baseada no histórico anterior"""
     if not lancamentos or not historico:
         return None
     
-    # Buscar histórico similar
     palavras = historico.lower().split()
     contas_usadas = {}
     
@@ -263,7 +394,7 @@ def sugerir_conta(historico, lancamentos):
         if lanc["historico"]:
             for palavra in palavras:
                 if palavra in lanc["historico"].lower():
-                    if lanc["conta_debito"]:
+                    if lanc.get("conta_debito"):
                         contas_usadas[lanc["conta_debito"]] = contas_usadas.get(lanc["conta_debito"], 0) + 1
                     if lanc.get("conta_credito"):
                         contas_usadas[lanc.get("conta_credito")] = contas_usadas.get(lanc.get("conta_credito"), 0) + 1
@@ -273,7 +404,7 @@ def sugerir_conta(historico, lancamentos):
     return None
 
 # -------------------------
-# Funções de Cálculo
+# Funções de Cálculo (PRESERVADAS)
 # -------------------------
 def calcular_saldo_conta(conta_descricao, df_anterior, df_periodo):
     deb_anterior = df_anterior[df_anterior["conta_debito"] == conta_descricao]["valor"].sum()
@@ -304,7 +435,6 @@ def calcular_saldo_sintetico(conta_codigo, contas_dict, df_anterior, df_periodo)
     return resultado
 
 def calcular_dre(data_inicio, data_fim):
-    """Calcula DRE (Demonstrativo de Resultado do Exercício)"""
     if not st.session_state.lancamentos:
         return pd.DataFrame(), 0, 0
     
@@ -343,7 +473,6 @@ def calcular_dre(data_inicio, data_fim):
     return df_detalhe, receitas, despesas
 
 def calcular_fluxo_caixa(data_inicio, data_fim):
-    """Calcula fluxo de caixa diário"""
     if not st.session_state.lancamentos:
         return pd.DataFrame()
     
@@ -396,7 +525,6 @@ def calcular_fluxo_caixa(data_inicio, data_fim):
     return pd.DataFrame(fluxo)
 
 def calcular_comparativo_mensal():
-    """Calcula comparativo mensal de receitas e despesas"""
     if not st.session_state.lancamentos:
         return pd.DataFrame()
     
@@ -434,7 +562,6 @@ def calcular_comparativo_mensal():
     return pd.DataFrame(resultado).sort_values("Mês")
 
 def calcular_demonstrativo_saldos(data_inicio, data_fim):
-    """Calcula demonstrativo completo com hierarquia"""
     if not st.session_state.lancamentos:
         return []
     
@@ -484,12 +611,10 @@ def importar_dados(arquivo_json):
         dados = json.load(arquivo_json)
         
         if "versao" not in dados or dados["versao"] in ["1.0", "2.0", "3.0", "4.0"]:
-            # Compatibilidade com versões anteriores
             st.session_state.contas_hierarquicas = dados.get("contas_hierarquicas", dados.get("contas_estruturadas", {}))
             st.session_state.lancamentos = dados.get("lancamentos", [])
             st.session_state.contas = dados.get("contas_simples", [])
             
-            # Garantir estrutura mínima
             if not st.session_state.contas:
                 st.session_state.contas = [c["descricao"] for c in st.session_state.contas_hierarquicas.values()]
         else:
@@ -584,7 +709,6 @@ with tab1:
     
     with col_lista:
         if st.session_state.contas_hierarquicas:
-            # Botões de expandir/recolher
             col_exp, col_col = st.columns(2)
             with col_exp:
                 if st.button("📂 Expandir Tudo", use_container_width=True):
@@ -640,67 +764,148 @@ with tab1:
                     st.error(msg)
 
 # -------------------------
-# TAB 2: LANÇAMENTOS COM RECORRÊNCIA E SUGESTÃO
+# TAB 2: GRID CONTÁBIL MULTI-LINHAS (NOVO)
 # -------------------------
 with tab2:
-    st.subheader("➕ Novo Lançamento")
+    st.subheader("➕ Lançamentos - Grid Contábil Multi-Linhas")
     
     contas_analiticas = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() if c["natureza"] == "Analítica"]
     
     if not contas_analiticas:
         st.warning("⚠️ Nenhuma conta analítica cadastrada!")
     else:
-        with st.form("form_lancamento", clear_on_submit=True):
-            data = st.date_input("Data", datetime.today())
-            tipo_lanc = st.selectbox("Tipo de Lançamento", ["Partida Dobrada", "Débito Simples", "Crédito Simples"])
+        with st.form("form_grid_lancamentos"):
+            st.markdown("### 📋 Grid de Lançamentos")
             
-            historico = st.text_input("Histórico", placeholder="Descrição...")
+            data = st.date_input("Data do Lançamento", datetime.today())
             
-            # Sugestão automática
-            if historico and len(historico) > 3:
-                sugestao = sugerir_conta(historico, st.session_state.lancamentos)
-                if sugestao:
-                    st.info(f"💡 Sugestão: {sugestao}")
+            # Exibir grid editável
+            col1, col2, col3, col4, col5 = st.columns([3, 1.5, 2, 3, 0.5])
+            with col1:
+                st.markdown("**Conta**")
+            with col2:
+                st.markdown("**Tipo**")
+            with col3:
+                st.markdown("**Valor (R$)**")
+            with col4:
+                st.markdown("**Histórico**")
+            with col5:
+                st.markdown("**Ações**")
             
-            if tipo_lanc == "Partida Dobrada":
-                col1, col2 = st.columns(2)
-                with col1:
-                    conta_debito = st.selectbox("Conta Débito", contas_analiticas)
-                with col2:
-                    conta_credito = st.selectbox("Conta Crédito", contas_analiticas)
-            elif tipo_lanc == "Débito Simples":
-                conta_debito = st.selectbox("Conta Débito", contas_analiticas)
-                conta_credito = None
-            else:
-                conta_debito = None
-                conta_credito = st.selectbox("Conta Crédito", contas_analiticas)
+            # Lista para armazenar linhas
+            linhas_para_remover = []
             
-            valor = st.number_input("Valor (R$)", min_value=0.01, step=0.01, format="%.2f")
+            for i, linha in enumerate(st.session_state.grid_lancamentos):
+                cols = st.columns([3, 1.5, 2, 3, 0.5])
+                
+                with cols[0]:
+                    conta = st.selectbox(
+                        "Conta",
+                        [""] + contas_analiticas,
+                        index=([""] + contas_analiticas).index(linha["conta"]) if linha["conta"] in contas_analiticas else 0,
+                        key=f"conta_{i}",
+                        label_visibility="collapsed"
+                    )
+                
+                with cols[1]:
+                    tipo = st.selectbox(
+                        "Tipo",
+                        ["Débito", "Crédito"],
+                        index=0 if linha["tipo"] == "Débito" else 1,
+                        key=f"tipo_{i}",
+                        label_visibility="collapsed"
+                    )
+                
+                with cols[2]:
+                    valor = st.number_input(
+                        "Valor",
+                        min_value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                        value=float(linha["valor"]),
+                        key=f"valor_{i}",
+                        label_visibility="collapsed"
+                    )
+                
+                with cols[3]:
+                    historico = st.text_input(
+                        "Histórico",
+                        value=linha["historico"],
+                        key=f"historico_{i}",
+                        label_visibility="collapsed",
+                        placeholder="Descrição opcional"
+                    )
+                
+                with cols[4]:
+                    if st.button("❌", key=f"remove_{i}"):
+                        linhas_para_remover.append(i)
+                
+                # Atualizar valores
+                st.session_state.grid_lancamentos[i]["conta"] = conta
+                st.session_state.grid_lancamentos[i]["tipo"] = tipo
+                st.session_state.grid_lancamentos[i]["valor"] = valor
+                st.session_state.grid_lancamentos[i]["historico"] = historico
+            
+            # Remover linhas marcadas
+            for idx in sorted(linhas_para_remover, reverse=True):
+                if len(st.session_state.grid_lancamentos) > 1:
+                    st.session_state.grid_lancamentos.pop(idx)
+            
+            # Botões de ação
+            col_add, col_clear = st.columns(2)
+            with col_add:
+                if st.button("➕ Adicionar Linha", use_container_width=True):
+                    adicionar_linha_grid()
+                    st.rerun()
+            
+            with col_clear:
+                if st.button("🗑️ Limpar Tudo", type="secondary", use_container_width=True):
+                    limpar_grid()
+                    st.rerun()
             
             st.markdown("---")
-            st.subheader("🔄 Recorrência")
             
-            recorrente = st.checkbox("Lançamento Recorrente")
-            qtd_recorrencia = 1
-            periodicidade = "Mensal"
+            # Calcular totais
+            total_debito = sum(l["valor"] for l in st.session_state.grid_lancamentos if l["tipo"] == "Débito")
+            total_credito = sum(l["valor"] for l in st.session_state.grid_lancamentos if l["tipo"] == "Crédito")
             
-            if recorrente:
-                col_r1, col_r2 = st.columns(2)
-                with col_r1:
-                    qtd_recorrencia = st.number_input("Quantidade", min_value=2, max_value=365, value=3)
-                with col_r2:
-                    periodicidade = st.selectbox("Periodicidade", ["Diário", "Semanal", "Mensal"])
+            # Exibir totais com cores
+            col_tot1, col_tot2, col_tot3 = st.columns([2, 2, 3])
             
-            submitted = st.form_submit_button("Registrar Lançamento", use_container_width=True)
+            with col_tot1:
+                debito_color = "green" if total_debito > 0 else "gray"
+                st.markdown(f"### 💰 **Total Débito:** <span style='color:{debito_color}'>R$ {total_debito:,.2f}</span>", unsafe_allow_html=True)
+            
+            with col_tot2:
+                credito_color = "red" if total_credito > 0 else "gray"
+                st.markdown(f"### 💸 **Total Crédito:** <span style='color:{credito_color}'>R$ {total_credito:,.2f}</span>", unsafe_allow_html=True)
+            
+            with col_tot3:
+                diferenca = total_debito - total_credito
+                if abs(diferenca) < 0.01:
+                    st.markdown("### ✅ **Status:** <span style='color:green'>EQUILIBRADO (D = C)</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"### ⚠️ **Diferença:** <span style='color:red'>R$ {abs(diferenca):,.2f}</span>", unsafe_allow_html=True)
+                    st.markdown("### ❌ **Status:** <span style='color:red'>DESEQUILIBRADO</span>", unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            submitted = st.form_submit_button("✅ Registrar Lançamentos", use_container_width=True, type="primary")
             
             if submitted:
-                ok, msg = adicionar_lancamento(data, tipo_lanc, conta_debito, conta_credito, valor, historico, recorrente, qtd_recorrencia, periodicidade)
-                if ok:
-                    st.success(msg)
-                    st.balloons()
-                    st.rerun()
+                if abs(total_debito - total_credito) > 0.01:
+                    st.error(f"❌ Total de Débitos (R$ {total_debito:,.2f}) e Créditos (R$ {total_credito:,.2f}) não conferem! Diferença: R$ {abs(total_debito - total_credito):,.2f}")
+                elif total_debito == 0 and total_credito == 0:
+                    st.error("❌ Nenhum valor informado! Adicione pelo menos uma linha com valor maior que zero.")
                 else:
-                    st.error(msg)
+                    ok, msg = validar_grid_e_salvar(data, st.session_state.grid_lancamentos)
+                    if ok:
+                        st.success(msg)
+                        st.balloons()
+                        limpar_grid()
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
 
 # -------------------------
 # TAB 3: LISTAGEM DE LANÇAMENTOS
@@ -719,7 +924,7 @@ with tab3:
             data_fim = st.date_input("Data Final", value=None, key="list_fim")
         with col_f3:
             contas_filtro = ["Todas"] + st.session_state.contas
-            conta_filtro = st.selectbox("Conta", contas_filtro)
+            conta_filtro = st.selectbox("Conta", contas_filtro, key="filtro_conta_list")
         
         if data_ini:
             df = df[df["data"] >= pd.to_datetime(data_ini)]
@@ -758,7 +963,7 @@ with tab3:
                 with cols[4]:
                     st.write(f"R$ {row['valor']:,.2f}")
                 with cols[5]:
-                    if st.button("🗑️", key=f"del_{idx}"):
+                    if st.button("🗑️", key=f"del_{idx}_{datetime.now().timestamp()}"):
                         excluir_lancamento(idx)
                         st.rerun()
                 st.divider()
@@ -809,7 +1014,6 @@ with tab4:
                 df_balanco = pd.DataFrame(dados_tabela)
                 st.dataframe(df_balanco, use_container_width=True, hide_index=True)
                 
-                # Totais
                 st.markdown("---")
                 st.subheader("📈 Totais Gerais")
                 
@@ -868,7 +1072,6 @@ with tab5:
             else:
                 st.info("Nenhum movimento no período")
             
-            # Gráfico comparativo
             if receitas > 0 or despesas > 0:
                 fig = go.Figure(data=[
                     go.Bar(name="Receitas", x=["Valores"], y=[receitas], marker_color="green"),
@@ -920,7 +1123,6 @@ with tab6:
                 df_fluxo_display["Data"] = df_fluxo_display["Data"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_fluxo_display, use_container_width=True, hide_index=True)
                 
-                # Gráfico comparativo mensal
                 st.markdown("---")
                 st.subheader("📊 Comparativo Mensal")
                 
@@ -941,4 +1143,4 @@ with tab6:
 # Rodapé
 # -------------------------
 st.markdown("---")
-st.caption(f"🏢 Mini ERP Contábil v5.0 | {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+st.caption(f"🏢 Mini ERP Contábil v5.1 - Grid Multi-Linhas | {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
