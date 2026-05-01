@@ -1,1031 +1,509 @@
+# app.py
 import streamlit as st
 import pandas as pd
-import json
+import numpy as np
 from datetime import datetime, timedelta
-import plotly.express as px
-import plotly.graph_objects as go
-from dateutil.relativedelta import relativedelta
+from difflib import SequenceMatcher
+import io
+import re
 
-st.set_page_config(page_title="Mini ERP Contábil", layout="wide")
+# Configuração da página
+st.set_page_config(
+    page_title="Sistema de Conciliação Contábil",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# -------------------------
-# Inicialização do Estado
-# -------------------------
-def init_session_state():
-    if "lancamentos" not in st.session_state:
-        st.session_state.lancamentos = []
-    
-    if "contas" not in st.session_state:
-        st.session_state.contas = ["Caixa", "Banco", "Receita", "Despesa"]
-    
-    if "expanded_nodes" not in st.session_state:
-        st.session_state.expanded_nodes = set(["1", "2", "3", "4"])
-    
-    if "contas_hierarquicas" not in st.session_state:
-        st.session_state.contas_hierarquicas = {}
+# ============================================================================
+# FUNÇÕES DE DETECÇÃO E NORMALIZAÇÃO
+# ============================================================================
+
+def encontrar_linha_cabecalho(df, palavras_chave):
+    """
+    Detecta a linha que contém o cabeçalho baseado em palavras-chave.
+    Retorna o índice da linha e os nomes das colunas encontradas.
+    """
+    for idx, row in df.iterrows():
+        # Converte toda a linha para string para verificação
+        linha_str = ' '.join([str(valor).upper() for valor in row.values if pd.notna(valor)])
         
-        estrutura_base = {
-            "1": {"codigo": "1", "descricao": "ATIVO", "tipo": "Ativo", "natureza": "Sintética", "pai": None, "nivel": 1},
-            "11": {"codigo": "11", "descricao": "Disponibilidade", "tipo": "Ativo", "natureza": "Sintética", "pai": "1", "nivel": 2},
-            "111": {"codigo": "111", "descricao": "Caixa", "tipo": "Ativo", "natureza": "Analítica", "pai": "11", "nivel": 3},
-            "112": {"codigo": "112", "descricao": "Banco", "tipo": "Ativo", "natureza": "Analítica", "pai": "11", "nivel": 3},
-            "2": {"codigo": "2", "descricao": "PASSIVO", "tipo": "Passivo", "natureza": "Sintética", "pai": None, "nivel": 1},
-            "3": {"codigo": "3", "descricao": "RECEITAS", "tipo": "Receita", "natureza": "Sintética", "pai": None, "nivel": 1},
-            "30": {"codigo": "30", "descricao": "Receitas Operacionais", "tipo": "Receita", "natureza": "Sintética", "pai": "3", "nivel": 2},
-            "301": {"codigo": "301", "descricao": "Vendas", "tipo": "Receita", "natureza": "Analítica", "pai": "30", "nivel": 3},
-            "4": {"codigo": "4", "descricao": "DESPESAS", "tipo": "Despesa", "natureza": "Sintética", "pai": None, "nivel": 1},
-            "40": {"codigo": "40", "descricao": "Despesas Operacionais", "tipo": "Despesa", "natureza": "Sintética", "pai": "4", "nivel": 2},
-            "401": {"codigo": "401", "descricao": "Aluguel", "tipo": "Despesa", "natureza": "Analítica", "pai": "40", "nivel": 3},
-        }
-        
-        for codigo, dados in estrutura_base.items():
-            st.session_state.contas_hierarquicas[codigo] = dados
-        
-        for conta in st.session_state.contas:
-            if conta not in [c["descricao"] for c in estrutura_base.values()]:
-                codigo = f"999{len(st.session_state.contas_hierarquicas)}"
-                tipo = "Ativo"
-                if "receita" in conta.lower():
-                    tipo = "Receita"
-                elif "despesa" in conta.lower():
-                    tipo = "Despesa"
-                elif "passivo" in conta.lower():
-                    tipo = "Passivo"
-                
-                st.session_state.contas_hierarquicas[codigo] = {
-                    "codigo": codigo,
-                    "descricao": conta,
-                    "tipo": tipo,
-                    "natureza": "Analítica",
-                    "pai": None,
-                    "nivel": 1
-                }
+        # Verifica se alguma palavra-chave está presente
+        for palavra in palavras_chave:
+            if palavra in linha_str:
+                # Encontrou o cabeçalho
+                cabecalho = [str(valor).strip().upper() if pd.notna(valor) else f"COL_{i}" 
+                            for i, valor in enumerate(row.values)]
+                return idx, cabecalho
     
-    if "grid_lancamentos" not in st.session_state:
-        st.session_state.grid_lancamentos = [
-            {"conta": "", "tipo": "Débito", "valor": 0.0, "historico": ""}
-        ]
+    return None, None
 
-init_session_state()
+def detectar_colunas(df):
+    """
+    Detecta automaticamente as colunas de DATA, ENTRADAS e SAIDAS
+    baseado em palavras-chave.
+    """
+    colunas = {col: col for col in df.columns}
+    
+    # Palavras-chave para cada tipo de coluna
+    padroes = {
+        'DATA': ['DATA', 'DT', 'DATE', 'DIA', 'LANÇAMENTO', 'MOVIMENTO'],
+        'ENTRADA': ['ENTRADA', 'DEBITO', 'DEB', 'RECEITA', 'CREDITO', 'DEPOSITO'],
+        'SAIDA': ['SAIDA', 'CREDITO', 'CRED', 'DESPESA', 'DEBITO', 'RETIRADA', 'PAGAMENTO']
+    }
+    
+    colunas_detectadas = {'DATA': None, 'ENTRADA': None, 'SAIDA': None}
+    
+    # Detectar cada tipo de coluna
+    for tipo, padroes_tipo in padroes.items():
+        for col in df.columns:
+            col_upper = col.upper()
+            for padrao in padroes_tipo:
+                if padrao in col_upper:
+                    colunas_detectadas[tipo] = col
+                    break
+            if colunas_detectadas[tipo]:
+                break
+    
+    # Validação: pelo menos a coluna DATA deve ser encontrada
+    if colunas_detectadas['DATA'] is None:
+        raise ValueError("Não foi possível detectar a coluna de DATA. Verifique se o arquivo contém colunas como 'DATA', 'DT' ou 'DATE'.")
+    
+    return colunas_detectadas
 
-# -------------------------
-# Funções de Hierarquia
-# -------------------------
-def auto_calcular_nivel(codigo):
-    if '.' in codigo:
-        return len(codigo.split('.'))
-    else:
-        return len(codigo)
-
-def auto_identificar_pai(codigo):
-    if '.' in codigo:
-        partes = codigo.split('.')
-        if len(partes) > 1:
-            return '.'.join(partes[:-1])
-    else:
-        if len(codigo) > 1:
-            return codigo[:-1]
-    return None
-
-def montar_hierarquia(contas_dict, expanded_nodes):
-    """Retorna lista de contas com indentacao e respeito aos nos expandidos"""
-    def ordenar_recursivo(pai=None, nivel=0):
-        resultado = []
-        contas_filhas = [c for c in contas_dict.values() if c.get("pai") == pai]
-        contas_filhas.sort(key=lambda x: x["codigo"])
-        
-        for conta in contas_filhas:
-            resultado.append(conta)
-            if conta["codigo"] in expanded_nodes:
-                resultado.extend(ordenar_recursivo(conta["codigo"], nivel + 1))
-        
-        return resultado
+def normalizar_dataframe(df, tipo_arquivo):
+    """
+    Normaliza o DataFrame completo: detecta cabeçalho, identifica colunas,
+    trata dados e cria coluna MOV.
+    """
+    if df is None or df.empty:
+        return None
     
-    raizes = [c for c in contas_dict.values() if c.get("pai") is None]
-    raizes.sort(key=lambda x: x["codigo"])
+    # Passo 1: Detectar linha de cabeçalho
+    palavras_chave = ['DATA', 'DT', 'DATE', 'ENTRADA', 'SAIDA', 'DEBITO', 'CREDITO']
+    linha_cabecalho, colunas_cabecalho = encontrar_linha_cabecalho(df, palavras_chave)
     
-    resultado = []
-    for raiz in raizes:
-        resultado.append(raiz)
-        if raiz["codigo"] in expanded_nodes:
-            resultado.extend(ordenar_recursivo(raiz["codigo"], 1))
+    if linha_cabecalho is None:
+        st.error(f"❌ Não foi possível encontrar o cabeçalho no arquivo de {tipo_arquivo}")
+        return None
     
-    return resultado
-
-def validar_codigo(codigo, tipo, contas_dict):
-    if not codigo:
-        return False, "Código é obrigatório!"
-    if codigo in contas_dict:
-        return False, "Código já existe!"
+    # Passo 2: Reconstruir DataFrame com cabeçalho correto
+    df = df.iloc[linha_cabecalho + 1:].reset_index(drop=True)
+    df.columns = colunas_cabecalho
     
-    primeiro_digito = codigo[0]
-    regras = {"Ativo": "1", "Passivo": "2", "Receita": "3", "Despesa": "4"}
+    # Passo 3: Normalizar nomes das colunas
+    df.columns = [str(col).strip().upper().replace(' ', '_') for col in df.columns]
     
-    if tipo in regras and primeiro_digito != regras[tipo]:
-        return False, f"Conta {tipo} deve começar com {regras[tipo]}!"
-    
-    pai = auto_identificar_pai(codigo)
-    if pai and pai not in contas_dict:
-        return False, f"Conta pai '{pai}' não existe!"
-    
-    return True, "OK"
-
-def pode_excluir_conta(codigo, contas_dict, lancamentos):
-    if codigo not in contas_dict:
-        return False, "Conta não encontrada!"
-    
-    tem_filhos = any(c.get("pai") == codigo for c in contas_dict.values())
-    if tem_filhos:
-        return False, "Conta possui contas filhas!"
-    
-    conta = contas_dict[codigo]
-    tem_lancamento = any(lanc["conta_debito"] == conta["descricao"] or 
-                        (lanc.get("conta_credito") == conta["descricao"]) 
-                        for lanc in lancamentos)
-    
-    if tem_lancamento:
-        return False, "Conta possui lançamentos!"
-    
-    return True, "OK"
-
-# -------------------------
-# Funções do Grid de Lançamentos (CORRIGIDO)
-# -------------------------
-def adicionar_linha_grid():
-    """Adiciona nova linha vazia ao grid"""
-    st.session_state.grid_lancamentos.append(
-        {"conta": "", "tipo": "Débito", "valor": 0.0, "historico": ""}
-    )
-
-def remover_linha_grid(index):
-    """Remove uma linha do grid"""
-    if len(st.session_state.grid_lancamentos) > 1:
-        st.session_state.grid_lancamentos.pop(index)
-    else:
-        st.warning("Mantenha pelo menos uma linha!")
-
-def validar_grid_e_salvar(data, grid_lancamentos):
-    """Valida o grid e salva os lançamentos"""
-    
-    # Calcular totais
-    total_debito = 0
-    total_credito = 0
-    
-    for linha in grid_lancamentos:
-        valor = linha["valor"] if linha["valor"] else 0
-        if linha["tipo"] == "Débito":
-            total_debito += valor
-        else:
-            total_credito += valor
-    
-    # Verificar se totais são iguais
-    if abs(total_debito - total_credito) > 0.01:
-        return False, f"Totais não conferem! Débito: R$ {total_debito:,.2f} | Crédito: R$ {total_credito:,.2f}"
-    
-    # Verificar se há alguma linha com valor
-    if total_debito == 0 and total_credito == 0:
-        return False, "Nenhum valor informado!"
-    
-    # Verificar contas analíticas
-    contas_analiticas = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() 
-                        if c["natureza"] == "Analítica"]
-    
-    for i, linha in enumerate(grid_lancamentos):
-        if not linha["conta"]:
-            return False, f"Linha {i+1}: Conta é obrigatória!"
-        
-        if linha["conta"] not in contas_analiticas:
-            return False, f"Linha {i+1}: Conta '{linha['conta']}' não é analítica ou não existe!"
-        
-        if linha["valor"] <= 0:
-            return False, f"Linha {i+1}: Valor deve ser maior que zero!"
-    
-    # Lógica de conversão para estrutura plana (mantendo compatibilidade)
-    linhas_debito = [l for l in grid_lancamentos if l["tipo"] == "Débito" and l["valor"] > 0]
-    linhas_credito = [l for l in grid_lancamentos if l["tipo"] == "Crédito" and l["valor"] > 0]
-    
-    novos_lancamentos = []
-    
-    if len(linhas_debito) == 1 and len(linhas_credito) == 1:
-        novo_lanc = {
-            "data": data.strftime("%Y-%m-%d"),
-            "tipo": "Partida Dobrada",
-            "conta_debito": linhas_debito[0]["conta"],
-            "conta_credito": linhas_credito[0]["conta"],
-            "valor": linhas_debito[0]["valor"],
-            "historico": linhas_debito[0]["historico"] or linhas_credito[0]["historico"] or "Lançamento via grid",
-            "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        novos_lancamentos.append(novo_lanc)
-    else:
-        # Múltiplas linhas: criar lançamentos com contrapartida temporária
-        contrapartida = "Contrapartida Temporária"
-        if contrapartida not in [c["descricao"] for c in st.session_state.contas_hierarquicas.values()]:
-            novo_codigo = "9999"
-            st.session_state.contas_hierarquicas[novo_codigo] = {
-                "codigo": novo_codigo,
-                "descricao": contrapartida,
-                "tipo": "Ativo",
-                "natureza": "Analítica",
-                "pai": None,
-                "nivel": 1
-            }
-            st.session_state.contas.append(contrapartida)
-        
-        historico_combined = " | ".join([l["historico"] for l in grid_lancamentos if l["historico"]]) or "Lançamento múltiplo"
-        
-        for linha in linhas_debito:
-            novos_lancamentos.append({
-                "data": data.strftime("%Y-%m-%d"),
-                "tipo": "Partida Dobrada",
-                "conta_debito": linha["conta"],
-                "conta_credito": contrapartida,
-                "valor": linha["valor"],
-                "historico": linha["historico"] or historico_combined,
-                "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
-        
-        for linha in linhas_credito:
-            novos_lancamentos.append({
-                "data": data.strftime("%Y-%m-%d"),
-                "tipo": "Partida Dobrada",
-                "conta_debito": contrapartida,
-                "conta_credito": linha["conta"],
-                "valor": linha["valor"],
-                "historico": linha["historico"] or historico_combined,
-                "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
-    
-    st.session_state.lancamentos.extend(novos_lancamentos)
-    return True, f"{len(novos_lancamentos)} lançamento(s) salvo(s)! D = C = R$ {total_debito:,.2f}"
-
-def limpar_grid():
-    """Limpa o grid mantendo uma linha padrão"""
-    st.session_state.grid_lancamentos = [
-        {"conta": "", "tipo": "Débito", "valor": 0.0, "historico": ""}
-    ]
-
-# -------------------------
-# Funções de Lançamentos (PRESERVADAS)
-# -------------------------
-def gerar_lancamentos_recorrentes(data_base, tipo_lanc, conta_debito, conta_credito, valor, historico, quantidade, periodicidade):
-    lancamentos = []
-    
-    for i in range(quantidade):
-        if i == 0:
-            data_lanc = data_base
-        else:
-            if periodicidade == "Diário":
-                data_lanc = data_base + timedelta(days=i)
-            elif periodicidade == "Semanal":
-                data_lanc = data_base + timedelta(weeks=i)
-            elif periodicidade == "Mensal":
-                data_lanc = data_base + relativedelta(months=i)
-            else:
-                data_lanc = data_base
-        
-        lancamentos.append({
-            "data": data_lanc.strftime("%Y-%m-%d"),
-            "tipo": tipo_lanc,
-            "conta_debito": conta_debito if tipo_lanc in ["Partida Dobrada", "Débito Simples"] else None,
-            "conta_credito": conta_credito if tipo_lanc in ["Partida Dobrada", "Crédito Simples"] else None,
-            "valor": valor,
-            "historico": f"{historico} ({'Original' if i==0 else f'Repetição {i}'})",
-            "data_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    
-    return lancamentos
-
-def excluir_lancamento(index):
-    if 0 <= index < len(st.session_state.lancamentos):
-        st.session_state.lancamentos.pop(index)
-        return True
-    return False
-
-# -------------------------
-# Funções de Cálculo (PRESERVADAS)
-# -------------------------
-def calcular_saldo_conta(conta_descricao, df_anterior, df_periodo):
-    deb_anterior = df_anterior[df_anterior["conta_debito"] == conta_descricao]["valor"].sum()
-    cred_anterior = df_anterior[df_anterior["conta_credito"] == conta_descricao]["valor"].sum()
-    saldo_anterior = deb_anterior - cred_anterior
-    
-    deb_periodo = df_periodo[df_periodo["conta_debito"] == conta_descricao]["valor"].sum()
-    cred_periodo = df_periodo[df_periodo["conta_credito"] == conta_descricao]["valor"].sum()
-    
-    saldo_final = saldo_anterior + deb_periodo - cred_periodo
-    
-    return {"saldo_anterior": saldo_anterior, "debitos": deb_periodo, "creditos": cred_periodo, "saldo_final": saldo_final}
-
-def calcular_saldo_sintetico(conta_codigo, contas_dict, df_anterior, df_periodo):
-    contas_filhas = [c for c in contas_dict.values() if c.get("pai") == conta_codigo]
-    
-    resultado = {"saldo_anterior": 0, "debitos": 0, "creditos": 0, "saldo_final": 0}
-    
-    for filha in contas_filhas:
-        if filha["natureza"] == "Analítica":
-            saldo = calcular_saldo_conta(filha["descricao"], df_anterior, df_periodo)
-        else:
-            saldo = calcular_saldo_sintetico(filha["codigo"], contas_dict, df_anterior, df_periodo)
-        
-        for key in resultado:
-            resultado[key] += saldo[key]
-    
-    return resultado
-
-def calcular_dre(data_inicio, data_fim):
-    if not st.session_state.lancamentos:
-        return pd.DataFrame(), 0, 0
-    
-    df = pd.DataFrame(st.session_state.lancamentos)
-    df["data"] = pd.to_datetime(df["data"])
-    
-    df_periodo = df[(df["data"] >= pd.to_datetime(data_inicio)) & (df["data"] <= pd.to_datetime(data_fim))]
-    
-    receitas = 0
-    despesas = 0
-    contas_detalhe = []
-    
-    contas_receita = [c for c in st.session_state.contas_hierarquicas.values() 
-                      if c["tipo"] == "Receita" and c["natureza"] == "Analítica"]
-    
-    contas_despesa = [c for c in st.session_state.contas_hierarquicas.values() 
-                      if c["tipo"] == "Despesa" and c["natureza"] == "Analítica"]
-    
-    for conta in contas_receita:
-        credito = df_periodo[df_periodo["conta_credito"] == conta["descricao"]]["valor"].sum()
-        debito = df_periodo[df_periodo["conta_debito"] == conta["descricao"]]["valor"].sum()
-        saldo = credito - debito
-        receitas += saldo
-        if saldo != 0:
-            contas_detalhe.append({"Conta": f"{conta['codigo']} - {conta['descricao']}", "Tipo": "Receita", "Valor": saldo})
-    
-    for conta in contas_despesa:
-        debito = df_periodo[df_periodo["conta_debito"] == conta["descricao"]]["valor"].sum()
-        credito = df_periodo[df_periodo["conta_credito"] == conta["descricao"]]["valor"].sum()
-        saldo = debito - credito
-        despesas += saldo
-        if saldo != 0:
-            contas_detalhe.append({"Conta": f"{conta['codigo']} - {conta['descricao']}", "Tipo": "Despesa", "Valor": saldo})
-    
-    df_detalhe = pd.DataFrame(contas_detalhe)
-    return df_detalhe, receitas, despesas
-
-def calcular_fluxo_caixa(data_inicio, data_fim):
-    if not st.session_state.lancamentos:
-        return pd.DataFrame()
-    
-    df = pd.DataFrame(st.session_state.lancamentos)
-    df["data"] = pd.to_datetime(df["data"])
-    
-    contas_caixa = ["Caixa", "Banco", "Disponibilidade"]
-    contas_receita = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() 
-                      if c["tipo"] == "Receita" and c["natureza"] == "Analítica"]
-    contas_despesa = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() 
-                      if c["tipo"] == "Despesa" and c["natureza"] == "Analítica"]
-    
-    df_periodo = df[(df["data"] >= pd.to_datetime(data_inicio)) & (df["data"] <= pd.to_datetime(data_fim))]
-    
-    datas = pd.date_range(start=data_inicio, end=data_fim, freq='D')
-    fluxo = []
-    
-    saldo_acumulado = 0
-    
-    for data in datas:
-        entradas = 0
-        saidas = 0
-        
-        lanc_dia = df_periodo[df_periodo["data"] == data]
-        
-        for _, lanc in lanc_dia.iterrows():
-            if lanc["tipo"] == "Partida Dobrada":
-                if lanc["conta_credito"] in contas_receita:
-                    entradas += lanc["valor"]
-                if lanc["conta_debito"] in contas_despesa:
-                    saidas += lanc["valor"]
-            elif lanc["tipo"] == "Débito Simples":
-                if lanc["conta_debito"] in contas_despesa:
-                    saidas += lanc["valor"]
-            else:
-                if lanc["conta_credito"] in contas_receita:
-                    entradas += lanc["valor"]
-        
-        saldo_dia = entradas - saidas
-        saldo_acumulado += saldo_dia
-        
-        fluxo.append({
-            "Data": data,
-            "Entradas": entradas,
-            "Saídas": saidas,
-            "Saldo Dia": saldo_dia,
-            "Saldo Acumulado": saldo_acumulado
-        })
-    
-    return pd.DataFrame(fluxo)
-
-def calcular_comparativo_mensal():
-    if not st.session_state.lancamentos:
-        return pd.DataFrame()
-    
-    df = pd.DataFrame(st.session_state.lancamentos)
-    df["data"] = pd.to_datetime(df["data"])
-    df["mes_ano"] = df["data"].dt.strftime("%Y-%m")
-    
-    contas_receita = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() 
-                      if c["tipo"] == "Receita" and c["natureza"] == "Analítica"]
-    contas_despesa = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() 
-                      if c["tipo"] == "Despesa" and c["natureza"] == "Analítica"]
-    
-    resultado = []
-    
-    for mes in df["mes_ano"].unique():
-        df_mes = df[df["mes_ano"] == mes]
-        
-        receitas = 0
-        for conta in contas_receita:
-            receitas += df_mes[df_mes["conta_credito"] == conta]["valor"].sum()
-            receitas -= df_mes[df_mes["conta_debito"] == conta]["valor"].sum()
-        
-        despesas = 0
-        for conta in contas_despesa:
-            despesas += df_mes[df_mes["conta_debito"] == conta]["valor"].sum()
-            despesas -= df_mes[df_mes["conta_credito"] == conta]["valor"].sum()
-        
-        resultado.append({
-            "Mês": mes,
-            "Receitas": receitas,
-            "Despesas": despesas,
-            "Resultado": receitas - despesas
-        })
-    
-    return pd.DataFrame(resultado).sort_values("Mês")
-
-def calcular_demonstrativo_saldos(data_inicio, data_fim):
-    if not st.session_state.lancamentos:
-        return []
-    
-    df = pd.DataFrame(st.session_state.lancamentos)
-    df["data"] = pd.to_datetime(df["data"])
-    
-    df_anterior = df[df["data"] < pd.to_datetime(data_inicio)]
-    df_periodo = df[(df["data"] >= pd.to_datetime(data_inicio)) & (df["data"] <= pd.to_datetime(data_fim))]
-    
-    hierarquia = montar_hierarquia(st.session_state.contas_hierarquicas, set())
-    
-    resultado = []
-    for conta in hierarquia:
-        if conta["natureza"] == "Analítica":
-            saldo = calcular_saldo_conta(conta["descricao"], df_anterior, df_periodo)
-        else:
-            saldo = calcular_saldo_sintetico(conta["codigo"], st.session_state.contas_hierarquicas, df_anterior, df_periodo)
-        
-        resultado.append({
-            "codigo": conta["codigo"],
-            "descricao": conta["descricao"],
-            "tipo": conta["tipo"],
-            "natureza": conta["natureza"],
-            "nivel": conta["nivel"],
-            "saldo_anterior": saldo["saldo_anterior"],
-            "debitos": saldo["debitos"],
-            "creditos": saldo["creditos"],
-            "saldo_final": saldo["saldo_final"]
-        })
-    
-    return resultado
-
-# -------------------------
-# Funções de Backup
-# -------------------------
-def exportar_dados():
-    return json.dumps({
-        "versao": "5.1",
-        "exportado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "contas_hierarquicas": st.session_state.contas_hierarquicas,
-        "lancamentos": st.session_state.lancamentos,
-        "contas_simples": st.session_state.contas
-    }, indent=2, ensure_ascii=False)
-
-def importar_dados(arquivo_json):
+    # Passo 4: Detectar colunas específicas
     try:
-        dados = json.load(arquivo_json)
-        
-        if "versao" not in dados or dados["versao"] in ["1.0", "2.0", "3.0", "4.0"]:
-            st.session_state.contas_hierarquicas = dados.get("contas_hierarquicas", dados.get("contas_estruturadas", {}))
-            st.session_state.lancamentos = dados.get("lancamentos", [])
-            st.session_state.contas = dados.get("contas_simples", [])
-            
-            if not st.session_state.contas:
-                st.session_state.contas = [c["descricao"] for c in st.session_state.contas_hierarquicas.values()]
-        else:
-            st.session_state.contas_hierarquicas = dados.get("contas_hierarquicas", {})
-            st.session_state.lancamentos = dados.get("lancamentos", [])
-            st.session_state.contas = dados.get("contas_simples", [])
-        
-        return True, "Dados importados com sucesso!"
+        colunas = detectar_colunas(df)
+    except ValueError as e:
+        st.error(f"❌ {str(e)}")
+        return None
+    
+    # Passo 5: Renomear colunas para padrão
+    df = df.rename(columns={
+        colunas['DATA']: 'DATA',
+        colunas['ENTRADA']: 'ENTRADAS' if colunas['ENTRADA'] else 'ENTRADAS',
+        colunas['SAIDA']: 'SAIDAS' if colunas['SAIDA'] else 'SAIDAS'
+    })
+    
+    # Passo 6: Garantir que as colunas existam
+    if 'ENTRADAS' not in df.columns:
+        df['ENTRADAS'] = 0
+    if 'SAIDAS' not in df.columns:
+        df['SAIDAS'] = 0
+    
+    # Passo 7: Tratar dados
+    # Converter DATA
+    df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce', dayfirst=True)
+    
+    # Converter ENTRADAS e SAIDAS para numérico
+    df['ENTRADAS'] = pd.to_numeric(df['ENTRADAS'], errors='coerce').fillna(0)
+    df['SAIDAS'] = pd.to_numeric(df['SAIDAS'], errors='coerce').fillna(0)
+    
+    # Remover linhas sem DATA válida
+    df = df.dropna(subset=['DATA']).reset_index(drop=True)
+    
+    # Passo 8: Criar coluna MOV (movimento líquido)
+    df['MOV'] = df['ENTRADAS'] - df['SAIDAS']
+    
+    # Passo 9: Adicionar identificador de origem
+    df['TP'] = tipo_arquivo.upper()
+    
+    # Passo 10: Criar chave de conciliação
+    df['CHAVE'] = df['DATA'].dt.strftime('%Y-%m-%d') + '_' + df['MOV'].round(2).astype(str)
+    
+    return df
+
+def carregar_arquivo(uploaded_file, tipo_arquivo):
+    """
+    Carrega arquivo Excel de forma resiliente.
+    """
+    if uploaded_file is None:
+        return None
+    
+    try:
+        # Tentar carregar com header=None para detectar cabeçalho manualmente
+        df = pd.read_excel(uploaded_file, header=None, dtype=str)
+        return normalizar_dataframe(df, tipo_arquivo)
     except Exception as e:
-        return False, f"Erro ao importar: {str(e)}"
+        st.error(f"❌ Erro ao carregar {tipo_arquivo}: {str(e)}")
+        return None
 
-# -------------------------
-# Interface Principal
-# -------------------------
-st.title("🏢 Mini ERP Contábil Completo")
-st.markdown("---")
+# ============================================================================
+# FUNÇÕES DE CONCILIAÇÃO
+# ============================================================================
 
-# Sidebar
-with st.sidebar:
-    st.header("💾 Backup")
+def conciliar_exato(df_extrato, df_razao):
+    """
+    Conciliação exata baseada na chave (DATA + MOV).
+    Retorna DataFrames conciliados e não conciliados.
+    """
+    if df_extrato is None or df_razao is None:
+        return None, None, None, None
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("📤 Exportar", use_container_width=True):
-            json_data = exportar_dados()
-            st.download_button("⬇️ JSON", json_data, f"erp_{datetime.now().strftime('%Y%m%d')}.json", use_container_width=True)
+    # Criar chaves únicas para conciliação 1-para-1
+    extrato_com_chave = df_extrato.copy()
+    razao_com_chave = df_razao.copy()
     
-    with col2:
-        arquivo = st.file_uploader("📂 Importar", type="json", key="backup_import")
-        if arquivo:
-            ok, msg = importar_dados(arquivo)
-            if ok:
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
+    # Contador para evitar duplicatas
+    extrato_com_chave['_contador'] = extrato_com_chave.groupby('CHAVE').cumcount()
+    razao_com_chave['_contador'] = razao_com_chave.groupby('CHAVE').cumcount()
     
+    extrato_com_chave['CHAVE_UNICA'] = extrato_com_chave['CHAVE'] + '_' + extrato_com_chave['_contador'].astype(str)
+    razao_com_chave['CHAVE_UNICA'] = razao_com_chave['CHAVE'] + '_' + razao_com_chave['_contador'].astype(str)
+    
+    # Merge para conciliação
+    conciliados = pd.merge(
+        extrato_com_chave, 
+        razao_com_chave,
+        on='CHAVE_UNICA',
+        suffixes=('_extrato', '_razao'),
+        how='inner'
+    )
+    
+    # Extrair não conciliados
+    extrato_nao_conciliado = extrato_com_chave[~extrato_com_chave['CHAVE_UNICA'].isin(conciliados['CHAVE_UNICA'])].copy()
+    razao_nao_conciliado = razao_com_chave[~razao_com_chave['CHAVE_UNICA'].isin(conciliados['CHAVE_UNICA'])].copy()
+    
+    # Remover colunas auxiliares
+    for df in [conciliados, extrato_nao_conciliado, razao_nao_conciliado]:
+        if df is not None and not df.empty:
+            df.drop(columns=['_contador', 'CHAVE_UNICA'], inplace=True, errors='ignore')
+    
+    return conciliados, extrato_nao_conciliado, razao_nao_conciliado
+
+def sugerir_conciliacoes(df_extrato_nao, df_razao_nao):
+    """
+    Algoritmo de scoring para sugerir conciliações possíveis.
+    Evita O(n²) usando merge baseado em data e valor aproximado.
+    """
+    if df_extrato_nao is None or df_razao_nao is None:
+        return pd.DataFrame()
+    
+    if df_extrato_nao.empty or df_razao_nao.empty:
+        return pd.DataFrame()
+    
+    sugestoes = []
+    
+    # Para cada lançamento não conciliado do extrato, buscar possíveis matches no razão
+    for idx_extrato, row_extrato in df_extrato_nao.iterrows():
+        data_extrato = row_extrato['DATA']
+        mov_extrato = row_extrato['MOV']
+        
+        # Filtrar razão por data próxima (±2 dias) e valor próximo (±0.05)
+        mask_data = (df_razao_nao['DATA'] >= data_extrato - timedelta(days=2)) & \
+                    (df_razao_nao['DATA'] <= data_extrato + timedelta(days=2))
+        mask_valor = (df_razao_nao['MOV'] >= mov_extrato - 0.05) & \
+                     (df_razao_nao['MOV'] <= mov_extrato + 0.05)
+        
+        candidates = df_razao_nao[mask_data & mask_valor]
+        
+        for idx_razao, row_razao in candidates.iterrows():
+            # Calcular score
+            score = 0
+            
+            # Score por valor
+            if row_razao['MOV'] == mov_extrato:
+                score += 50
+            elif abs(row_razao['MOV'] - mov_extrato) <= 0.05:
+                score += 30
+            
+            # Score por data
+            if row_razao['DATA'] == data_extrato:
+                score += 50
+            elif abs((row_razao['DATA'] - data_extrato).days) <= 2:
+                score += 30
+            
+            if score >= 60:
+                sugestoes.append({
+                    'DATA_EXTRATO': data_extrato,
+                    'MOV_EXTRATO': mov_extrato,
+                    'DESC_EXTRATO': row_extrato.get('DESCRICAO', 'N/A') if 'DESCRICAO' in df_extrato_nao.columns else 'N/A',
+                    'DATA_RAZAO': row_razao['DATA'],
+                    'MOV_RAZAO': row_razao['MOV'],
+                    'DESC_RAZAO': row_razao.get('DESCRICAO', 'N/A') if 'DESCRICAO' in df_razao_nao.columns else 'N/A',
+                    'SCORE': score,
+                    'DIF_VALOR': abs(row_razao['MOV'] - mov_extrato),
+                    'DIF_DIAS': abs((row_razao['DATA'] - data_extrato).days)
+                })
+    
+    if sugestoes:
+        df_sugestoes = pd.DataFrame(sugestoes)
+        df_sugestoes = df_sugestoes.sort_values('SCORE', ascending=False).drop_duplicates(
+            subset=['DATA_EXTRATO', 'MOV_EXTRATO'], keep='first'
+        )
+        return df_sugestoes
+    
+    return pd.DataFrame()
+
+# ============================================================================
+# FUNÇÕES DE INTERFACE E EXPORTAÇÃO
+# ============================================================================
+
+def aplicar_filtro_periodo(df, data_inicio, data_fim):
+    """
+    Aplica filtro de período no DataFrame.
+    """
+    if df is None or df.empty:
+        return df
+    
+    mask = (df['DATA'] >= data_inicio) & (df['DATA'] <= data_fim)
+    return df[mask].copy()
+
+def exportar_resultados(conciliados, sugestoes, extrato_nao, razao_nao):
+    """
+    Exporta os resultados para Excel com múltiplas abas.
+    """
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if conciliados is not None and not conciliados.empty:
+            conciliados.to_excel(writer, sheet_name='Conciliados', index=False)
+        
+        if sugestoes is not None and not sugestoes.empty:
+            sugestoes.to_excel(writer, sheet_name='Sugestoes', index=False)
+        
+        if extrato_nao is not None and not extrato_nao.empty:
+            extrato_nao.to_excel(writer, sheet_name='Extrato_nao_conciliado', index=False)
+        
+        if razao_nao is not None and not razao_nao.empty:
+            razao_nao.to_excel(writer, sheet_name='Razao_nao_conciliado', index=False)
+    
+    output.seek(0)
+    return output
+
+def formatar_valor(valor):
+    """
+    Formata valor para exibição.
+    """
+    if pd.isna(valor):
+        return "R$ 0,00"
+    return f"R$ {valor:,.2f}".replace(",", "v").replace(".", ",").replace("v", ".")
+
+# ============================================================================
+# INTERFACE PRINCIPAL STREAMLIT
+# ============================================================================
+
+def main():
+    st.title("📊 Sistema de Conciliação Contábil")
     st.markdown("---")
-    st.metric("📊 Lançamentos", len(st.session_state.lancamentos))
-    st.metric("📘 Contas", len(st.session_state.contas_hierarquicas))
-
-# Tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📘 Plano de Contas", "➕ Lançamentos", "📋 Listagem", 
-    "📊 Balanço", "📈 DRE", "💰 Fluxo de Caixa"
-])
-
-# -------------------------
-# TAB 1: PLANO DE CONTAS HIERÁRQUICO INTERATIVO
-# -------------------------
-with tab1:
-    st.subheader("📘 Plano de Contas - Visualização Hierárquica")
     
-    col_form, col_lista = st.columns([1, 2])
-    
-    with col_form:
-        with st.expander("➕ Nova Conta", expanded=True):
-            with st.form("form_conta"):
-                codigo = st.text_input("Código", placeholder="Ex: 111, 112, 1.01")
-                descricao = st.text_input("Descrição")
-                
-                col_tipo = st.columns(2)
-                with col_tipo[0]:
-                    tipo = st.selectbox("Tipo", ["Ativo", "Passivo", "Receita", "Despesa"])
-                with col_tipo[1]:
-                    natureza = st.selectbox("Natureza", ["Analítica", "Sintética"])
-                
-                submitted = st.form_submit_button("Adicionar Conta", use_container_width=True)
-                
-                if submitted:
-                    valido, msg = validar_codigo(codigo, tipo, st.session_state.contas_hierarquicas)
-                    if valido:
-                        pai_auto = auto_identificar_pai(codigo)
-                        nivel_auto = auto_calcular_nivel(codigo)
-                        
-                        st.session_state.contas_hierarquicas[codigo] = {
-                            "codigo": codigo,
-                            "descricao": descricao,
-                            "tipo": tipo,
-                            "natureza": natureza,
-                            "pai": pai_auto,
-                            "nivel": nivel_auto
-                        }
-                        
-                        if descricao not in st.session_state.contas:
-                            st.session_state.contas.append(descricao)
-                        
-                        st.success(f"Conta {codigo} - {descricao} adicionada!")
-                        st.rerun()
-                    else:
-                        st.error(msg)
-    
-    with col_lista:
-        if st.session_state.contas_hierarquicas:
-            col_exp, col_col = st.columns(2)
-            with col_exp:
-                if st.button("📂 Expandir Tudo", use_container_width=True):
-                    st.session_state.expanded_nodes = set(st.session_state.contas_hierarquicas.keys())
-                    st.rerun()
-            with col_col:
-                if st.button("📁 Recolher Tudo", use_container_width=True):
-                    st.session_state.expanded_nodes = set()
-                    st.rerun()
-            
-            st.markdown("---")
-            
-            hierarquia = montar_hierarquia(st.session_state.contas_hierarquicas, st.session_state.expanded_nodes)
-            
-            dados_tabela = []
-            for conta in hierarquia:
-                indent = "  " * (conta["nivel"] - 1)
-                prefixo = "📂 " if conta["natureza"] == "Sintética" else "📄 "
-                
-                col1, col2, col3, col4 = st.columns([1, 3, 1.5, 1])
-                
-                with col1:
-                    st.write(conta["codigo"])
-                with col2:
-                    if st.button(f"{prefixo}{indent}{conta['descricao']}", key=f"btn_{conta['codigo']}", use_container_width=True):
-                        if conta["codigo"] in st.session_state.expanded_nodes:
-                            st.session_state.expanded_nodes.discard(conta["codigo"])
-                        else:
-                            st.session_state.expanded_nodes.add(conta["codigo"])
-                        st.rerun()
-                with col3:
-                    st.write(conta["tipo"])
-                with col4:
-                    st.write(conta["natureza"])
-            
-            st.markdown("---")
-            st.subheader("🗑️ Remover Conta")
-            
-            contas_opcoes = [f"{c['codigo']} - {c['descricao']}" for c in hierarquia]
-            conta_remover = st.selectbox("Selecione", contas_opcoes)
-            
-            if st.button("Remover Conta", type="secondary", use_container_width=True):
-                codigo = conta_remover.split(" - ")[0]
-                pode, msg = pode_excluir_conta(codigo, st.session_state.contas_hierarquicas, st.session_state.lancamentos)
-                if pode:
-                    desc = st.session_state.contas_hierarquicas[codigo]["descricao"]
-                    del st.session_state.contas_hierarquicas[codigo]
-                    if desc in st.session_state.contas:
-                        st.session_state.contas.remove(desc)
-                    st.success("Conta removida!")
-                    st.rerun()
-                else:
-                    st.error(msg)
-
-# -------------------------
-# TAB 2: GRID CONTÁBIL MULTI-LINHAS (CORRIGIDO)
-# -------------------------
-with tab2:
-    st.subheader("➕ Lançamentos - Grid Contábil Multi-Linhas")
-    
-    contas_analiticas = [c["descricao"] for c in st.session_state.contas_hierarquicas.values() if c["natureza"] == "Analítica"]
-    
-    if not contas_analiticas:
-        st.warning("⚠️ Nenhuma conta analítica cadastrada! Vá na aba 'Plano de Contas'.")
-    else:
-        st.markdown("### 📋 Grid de Lançamentos")
+    # Sidebar para uploads
+    with st.sidebar:
+        st.header("📁 Upload dos Arquivos")
         
-        data = st.date_input("Data do Lançamento", datetime.today())
+        extrato_file = st.file_uploader(
+            "📄 Extrato Bancário",
+            type=['xlsx', 'xls'],
+            help="Upload do arquivo de extrato bancário"
+        )
         
-        # Exibir grid editável (FORA DO FORMULÁRIO para permitir dinamicidade)
-        col1, col2, col3, col4, col5 = st.columns([3, 1.5, 2, 3, 0.5])
+        razao_file = st.file_uploader(
+            "📒 Razão Contábil",
+            type=['xlsx', 'xls'],
+            help="Upload do arquivo de razão contábil"
+        )
+        
+        st.markdown("---")
+        st.header("📅 Período de Análise")
+        
+        col1, col2 = st.columns(2)
         with col1:
-            st.markdown("**Conta**")
+            data_inicio = st.date_input("Data Inicial", datetime.now() - timedelta(days=30))
         with col2:
-            st.markdown("**Tipo**")
-        with col3:
-            st.markdown("**Valor (R$)**")
-        with col4:
-            st.markdown("**Histórico**")
-        with col5:
-            st.markdown("**Ação**")
-        
-        # Loop para exibir linhas
-        for i, linha in enumerate(st.session_state.grid_lancamentos):
-            cols = st.columns([3, 1.5, 2, 3, 0.5])
-            
-            with cols[0]:
-                # index para selectbox precisa ser tratado com cuidado
-                idx_default = 0
-                if linha["conta"] in contas_analiticas:
-                    idx_default = contas_analiticas.index(linha["conta"]) + 1
-                
-                conta_sel = st.selectbox(
-                    "Conta",
-                    [""] + contas_analiticas,
-                    index=idx_default,
-                    key=f"conta_{i}",
-                    label_visibility="collapsed"
-                )
-                # Atualiza estado imediatamente
-                st.session_state.grid_lancamentos[i]["conta"] = conta_sel
-            
-            with cols[1]:
-                tipo_sel = st.selectbox(
-                    "Tipo",
-                    ["Débito", "Crédito"],
-                    index=0 if linha["tipo"] == "Débito" else 1,
-                    key=f"tipo_{i}",
-                    label_visibility="collapsed"
-                )
-                st.session_state.grid_lancamentos[i]["tipo"] = tipo_sel
-            
-            with cols[2]:
-                valor_sel = st.number_input(
-                    "Valor",
-                    min_value=0.0,
-                    step=0.01,
-                    format="%.2f",
-                    value=float(linha["valor"]),
-                    key=f"valor_{i}",
-                    label_visibility="collapsed"
-                )
-                st.session_state.grid_lancamentos[i]["valor"] = valor_sel
-            
-            with cols[3]:
-                hist_sel = st.text_input(
-                    "Histórico",
-                    value=linha["historico"],
-                    key=f"historico_{i}",
-                    label_visibility="collapsed",
-                    placeholder="Descrição"
-                )
-                st.session_state.grid_lancamentos[i]["historico"] = hist_sel
-            
-            with cols[4]:
-                # Botão remover inline
-                if st.button("❌", key=f"rem_{i}", help="Remover linha"):
-                    remover_linha_grid(i)
-                    st.rerun()
+            data_fim = st.date_input("Data Final", datetime.now())
         
         st.markdown("---")
-        
-        # Botões de ação do Grid
-        c1, c2, c3 = st.columns([1, 1, 2])
-        with c1:
-            if st.button("➕ Adicionar Linha", use_container_width=True):
-                adicionar_linha_grid()
-                st.rerun()
-        with c2:
-            if st.button("🗑️ Limpar Tudo", use_container_width=True):
-                limpar_grid()
-                st.rerun()
-        
-        st.markdown("---")
-        
-        # Cálculo de Totais
-        total_debito = sum(l["valor"] for l in st.session_state.grid_lancamentos if l["tipo"] == "Débito")
-        total_credito = sum(l["valor"] for l in st.session_state.grid_lancamentos if l["tipo"] == "Crédito")
-        
-        col_tot1, col_tot2, col_tot3 = st.columns(3)
-        with col_tot1:
-            st.metric("💰 Total Débito", f"R$ {total_debito:,.2f}")
-        with col_tot2:
-            st.metric("💸 Total Crédito", f"R$ {total_credito:,.2f}")
-        with col_tot3:
-            diferenca = abs(total_debito - total_credito)
-            if diferenca < 0.01:
-                st.metric("✅ Status", "EQUILIBRADO")
-            else:
-                st.metric("⚠️ Diferença", f"R$ {diferenca:,.2f}")
-        
-        st.markdown("---")
-        
-        # Botão Salvar
-        if st.button("✅ Registrar Lançamentos", type="primary", use_container_width=True):
-            ok, msg = validar_grid_e_salvar(data, st.session_state.grid_lancamentos)
-            if ok:
-                st.success(msg)
-                st.balloons()
-                limpar_grid()
-                st.rerun()
-            else:
-                st.error(f"❌ {msg}")
-
-# -------------------------
-# TAB 3: LISTAGEM DE LANÇAMENTOS
-# -------------------------
-with tab3:
-    st.subheader("📋 Listagem de Lançamentos")
+        processar = st.button("🚀 Processar Conciliação", type="primary", use_container_width=True)
     
-    if st.session_state.lancamentos:
-        df = pd.DataFrame(st.session_state.lancamentos)
-        df["data"] = pd.to_datetime(df["data"])
-        
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            data_ini = st.date_input("Data Inicial", value=None, key="list_ini")
-        with col_f2:
-            data_fim = st.date_input("Data Final", value=None, key="list_fim")
-        with col_f3:
-            contas_filtro = ["Todas"] + st.session_state.contas
-            conta_filtro = st.selectbox("Conta", contas_filtro, key="filtro_conta_list")
-        
-        if data_ini:
-            df = df[df["data"] >= pd.to_datetime(data_ini)]
-        if data_fim:
-            df = df[df["data"] <= pd.to_datetime(data_fim)]
-        
-        if conta_filtro != "Todas":
-            df = df[(df["conta_debito"] == conta_filtro) | (df["conta_credito"] == conta_filtro)]
-        
-        df = df.sort_values("data", ascending=False)
-        
-        st.metric("💰 Total", f"R$ {df['valor'].sum():,.2f}")
-        
-        for idx, row in df.iterrows():
-            with st.container():
-                cols = st.columns([1, 1.5, 2, 2, 1.5, 0.5])
-                
-                with cols[0]:
-                    st.write(row["data"].strftime("%d/%m/%Y"))
-                with cols[1]:
-                    st.write(row["tipo"])
-                with cols[2]:
-                    if row["conta_debito"]:
-                        codigo = next((c["codigo"] for c in st.session_state.contas_hierarquicas.values() 
-                                     if c["descricao"] == row["conta_debito"]), "")
-                        st.write(f"{codigo} - {row['conta_debito']}" if codigo else row["conta_debito"])
-                    else:
-                        st.write("-")
-                with cols[3]:
-                    if row["conta_credito"]:
-                        codigo = next((c["codigo"] for c in st.session_state.contas_hierarquicas.values() 
-                                     if c["descricao"] == row["conta_credito"]), "")
-                        st.write(f"{codigo} - {row['conta_credito']}" if codigo else row["conta_credito"])
-                    else:
-                        st.write("-")
-                with cols[4]:
-                    st.write(f"R$ {row['valor']:,.2f}")
-                with cols[5]:
-                    if st.button("🗑️", key=f"del_{idx}_{datetime.now().timestamp()}"):
-                        excluir_lancamento(idx)
-                        st.rerun()
-                st.divider()
-    else:
-        st.info("Nenhum lançamento registrado")
-
-# -------------------------
-# TAB 4: DEMONSTRATIVO DE SALDOS
-# -------------------------
-with tab4:
-    st.subheader("📊 Balanço Patrimonial")
-    
-    hoje = datetime.now()
-    data_ini_default = datetime(hoje.year, hoje.month, 1)
-    data_fim_default = datetime(hoje.year, hoje.month + 1, 1) - timedelta(days=1) if hoje.month < 12 else datetime(hoje.year, 12, 31)
-    
-    col_p1, col_p2 = st.columns(2)
-    with col_p1:
-        data_inicio = st.date_input("Data Inicial", data_ini_default, key="balanco_ini")
-    with col_p2:
-        data_fim = st.date_input("Data Final", data_fim_default, key="balanco_fim")
-    
-    if st.button("📊 Gerar Balanço", use_container_width=True):
-        with st.spinner("Calculando..."):
-            resultado = calcular_demonstrativo_saldos(data_inicio, data_fim)
+    # Processamento principal
+    if processar and extrato_file and razao_file:
+        with st.spinner("🔄 Processando arquivos..."):
+            # Carregar e normalizar dados
+            df_extrato = carregar_arquivo(extrato_file, "EXTRATO")
+            df_razao = carregar_arquivo(razao_file, "RAZAO")
             
-            if resultado:
-                dados_tabela = []
-                for item in resultado:
-                    indent = "  " * (item["nivel"] - 1)
-                    
-                    saldo_anterior = item["saldo_anterior"]
-                    saldo_final = item["saldo_final"]
-                    
-                    saldo_anterior_str = f"R$ {saldo_anterior:,.2f}"
-                    saldo_final_str = f"R$ {saldo_final:,.2f}"
-                    
-                    dados_tabela.append({
-                        "Código": item["codigo"],
-                        "Conta": f"{indent}{item['descricao']}",
-                        "Tipo": item["tipo"],
-                        "Saldo Anterior": saldo_anterior_str,
-                        "Débitos": f"R$ {item['debitos']:,.2f}",
-                        "Créditos": f"R$ {item['creditos']:,.2f}",
-                        "Saldo Final": saldo_final_str
-                    })
+            if df_extrato is not None and df_razao is not None:
+                # Aplicar filtro de período
+                df_extrato_filtrado = aplicar_filtro_periodo(df_extrato, data_inicio, data_fim)
+                df_razao_filtrado = aplicar_filtro_periodo(df_razao, data_inicio, data_fim)
                 
-                df_balanco = pd.DataFrame(dados_tabela)
-                st.dataframe(df_balanco, use_container_width=True, hide_index=True)
+                # Executar conciliação
+                conciliados, extrato_nao, razao_nao = conciliar_exato(df_extrato_filtrado, df_razao_filtrado)
+                sugestoes = sugerir_conciliacoes(extrato_nao, razao_nao)
                 
-                st.markdown("---")
-                st.subheader("📈 Totais Gerais")
+                # Armazenar na sessão
+                st.session_state['conciliados'] = conciliados
+                st.session_state['sugestoes'] = sugestoes
+                st.session_state['extrato_nao'] = extrato_nao
+                st.session_state['razao_nao'] = razao_nao
+                st.session_state['df_extrato'] = df_extrato_filtrado
+                st.session_state['df_razao'] = df_razao_filtrado
+                st.session_state['processado'] = True
                 
-                total_debitos = sum(r["debitos"] for r in resultado)
-                total_creditos = sum(r["creditos"] for r in resultado)
-                diff = total_debitos - total_creditos
-                
-                col_t1, col_t2, col_t3 = st.columns(3)
-                with col_t1:
-                    st.metric("Total Débitos", f"R$ {total_debitos:,.2f}")
-                with col_t2:
-                    st.metric("Total Créditos", f"R$ {total_creditos:,.2f}")
-                with col_t3:
-                    st.metric("Diferença", f"R$ {diff:,.2f}", delta_color="inverse" if diff != 0 else "off")
-                
-                if abs(diff) < 0.01:
-                    st.success("✅ Sistema em equilíbrio contábil!")
-                else:
-                    st.warning("⚠️ Diferença detectada!")
+                st.success("✅ Conciliação concluída com sucesso!")
             else:
-                st.info("Nenhum dado no período")
-
-# -------------------------
-# TAB 5: DRE AUTOMÁTICA
-# -------------------------
-with tab5:
-    st.subheader("📈 DRE - Demonstrativo de Resultado")
+                st.error("❌ Erro ao processar os arquivos. Verifique o formato.")
     
-    col_p1, col_p2 = st.columns(2)
-    with col_p1:
-        dre_data_ini = st.date_input("Data Inicial", datetime(datetime.now().year, datetime.now().month, 1), key="dre_ini")
-    with col_p2:
-        dre_data_fim = st.date_input("Data Final", datetime.now(), key="dre_fim")
-    
-    if st.button("📊 Calcular DRE", use_container_width=True):
-        with st.spinner("Calculando..."):
-            df_detalhe, receitas, despesas = calcular_dre(dre_data_ini, dre_data_fim)
-            resultado = receitas - despesas
+    # Exibir resultados se processados
+    if st.session_state.get('processado', False):
+        conciliados = st.session_state.get('conciliados')
+        sugestoes = st.session_state.get('sugestoes')
+        extrato_nao = st.session_state.get('extrato_nao')
+        razao_nao = st.session_state.get('razao_nao')
+        df_extrato = st.session_state.get('df_extrato')
+        df_razao = st.session_state.get('df_razao')
+        
+        # Abas para resultados
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "✅ Conciliados", "🧠 Sugestões", "⚠️ Extrato Não Conciliado", 
+            "⚠️ Razão Não Conciliado", "📊 Resumo"
+        ])
+        
+        with tab1:
+            st.subheader("Lançamentos Conciliados")
+            if conciliados is not None and not conciliados.empty:
+                st.dataframe(
+                    conciliados[['DATA_extrato', 'ENTRADAS_extrato', 'SAIDAS_extrato', 'MOV_extrato', 
+                                'DATA_razao', 'ENTRADAS_razao', 'SAIDAS_razao', 'MOV_razao']],
+                    use_container_width=True,
+                    height=400
+                )
+                st.metric("Total de itens conciliados", len(conciliados))
+            else:
+                st.info("Nenhum lançamento conciliado encontrado.")
+        
+        with tab2:
+            st.subheader("Sugestões de Conciliação")
+            st.caption("Lançamentos com alta probabilidade de correspondência (score ≥ 60)")
             
-            st.markdown("### 📊 Resultado do Período")
+            if sugestoes is not None and not sugestoes.empty:
+                # Formatar para exibição
+                display_sugestoes = sugestoes.copy()
+                display_sugestoes['SCORE'] = display_sugestoes['SCORE'].astype(int)
+                
+                st.dataframe(
+                    display_sugestoes,
+                    use_container_width=True,
+                    height=400,
+                    column_config={
+                        "SCORE": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                        "DIF_VALOR": st.column_config.NumberColumn("Diferença R$", format="R$ %.2f"),
+                        "DIF_DIAS": st.column_config.NumberColumn("Diferença Dias", format="%d dias")
+                    }
+                )
+                st.info(f"🧠 Encontradas {len(sugestoes)} sugestões de conciliação")
+            else:
+                st.success("✅ Não há sugestões pendentes. Todas as diferenças são significativas.")
+        
+        with tab3:
+            st.subheader("Lançamentos do Extrato sem Conciliação")
+            if extrato_nao is not None and not extrato_nao.empty:
+                st.dataframe(
+                    extrato_nao[['DATA', 'ENTRADAS', 'SAIDAS', 'MOV']],
+                    use_container_width=True,
+                    height=400
+                )
+                st.warning(f"⚠️ {len(extrato_nao)} lançamentos do extrato não conciliados")
+                st.metric("Valor total não conciliado", formatar_valor(extrato_nao['MOV'].sum()))
+            else:
+                st.success("✅ Todos os lançamentos do extrato foram conciliados!")
+        
+        with tab4:
+            st.subheader("Lançamentos do Razão sem Conciliação")
+            if razao_nao is not None and not razao_nao.empty:
+                st.dataframe(
+                    razao_nao[['DATA', 'ENTRADAS', 'SAIDAS', 'MOV']],
+                    use_container_width=True,
+                    height=400
+                )
+                st.warning(f"⚠️ {len(razao_nao)} lançamentos do razão não conciliados")
+                st.metric("Valor total não conciliado", formatar_valor(razao_nao['MOV'].sum()))
+            else:
+                st.success("✅ Todos os lançamentos do razão foram conciliados!")
+        
+        with tab5:
+            st.subheader("Resumo da Conciliação")
             
-            col_r1, col_r2, col_r3 = st.columns(3)
-            with col_r1:
-                st.metric("💰 Receitas Totais", f"R$ {receitas:,.2f}")
-            with col_r2:
-                st.metric("📉 Despesas Totales", f"R$ {despesas:,.2f}")
-            with col_r3:
-                cor = "normal" if resultado >= 0 else "inverse"
-                st.metric("📈 Resultado Líquido", f"R$ {resultado:,.2f}", delta_color=cor)
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_extrato = df_extrato['MOV'].sum() if df_extrato is not None else 0
+                st.metric("💰 Total Extrato", formatar_valor(total_extrato))
+            
+            with col2:
+                total_razao = df_razao['MOV'].sum() if df_razao is not None else 0
+                st.metric("📚 Total Razão", formatar_valor(total_razao))
+            
+            with col3:
+                total_conciliado = conciliados['MOV_extrato'].sum() if conciliados is not None and not conciliados.empty else 0
+                st.metric("✅ Total Conciliado", formatar_valor(total_conciliado))
+            
+            with col4:
+                diferenca = total_extrato - total_razao
+                st.metric(
+                    "📊 Diferença", 
+                    formatar_valor(diferenca),
+                    delta=f"{abs(diferenca):.2f}" if diferenca != 0 else None,
+                    delta_color="inverse" if diferenca != 0 else "off"
+                )
             
             st.markdown("---")
-            st.subheader("Detalhamento por Conta")
             
-            if not df_detalhe.empty:
-                st.dataframe(df_detalhe, use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum movimento no período")
+            # Métricas adicionais
+            col1, col2, col3 = st.columns(3)
             
-            if receitas > 0 or despesas > 0:
-                fig = go.Figure(data=[
-                    go.Bar(name="Receitas", x=["Valores"], y=[receitas], marker_color="green"),
-                    go.Bar(name="Despesas", x=["Valores"], y=[despesas], marker_color="red")
-                ])
-                fig.update_layout(title="Receitas vs Despesas", barmode='group')
-                st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------
-# TAB 6: FLUXO DE CAIXA
-# -------------------------
-with tab6:
-    st.subheader("💰 Fluxo de Caixa")
+            with col1:
+                taxa_cobertura = (len(conciliados) / max(len(df_extrato), 1)) * 100 if conciliados is not None else 0
+                st.progress(taxa_cobertura / 100)
+                st.caption(f"Taxa de cobertura: {taxa_cobertura:.1f}%")
+            
+            with col2:
+                st.info(f"📊 Período analisado: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
+            
+            with col3:
+                st.info(f"📈 Total de lançamentos: {len(df_extrato) if df_extrato is not None else 0} (Extrato) | {len(df_razao) if df_razao is not None else 0} (Razão)")
+        
+        # Botão de exportação
+        st.markdown("---")
+        col_export1, col_export2, col_export3 = st.columns([1, 2, 1])
+        
+        with col_export2:
+            if st.button("📥 Exportar Resultados para Excel", type="secondary", use_container_width=True):
+                excel_file = exportar_resultados(conciliados, sugestoes, extrato_nao, razao_nao)
+                st.download_button(
+                    label="💾 Baixar Arquivo Excel",
+                    data=excel_file,
+                    file_name=f"conciliacao_contabil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
     
-    hoje = datetime.now()
-    fluxo_data_ini = st.date_input("Data Inicial", datetime(hoje.year, hoje.month, 1), key="fluxo_ini")
-    fluxo_data_fim = st.date_input("Data Final", datetime(hoje.year, hoje.month + 1, 1) - timedelta(days=1) if hoje.month < 12 else datetime(hoje.year, 12, 31), key="fluxo_fim")
-    
-    if st.button("📊 Calcular Fluxo", use_container_width=True):
-        with st.spinner("Calculando fluxo de caixa..."):
-            df_fluxo = calcular_fluxo_caixa(fluxo_data_ini, fluxo_data_fim)
-            
-            if not df_fluxo.empty:
-                st.markdown("### 📊 Resumo do Período")
-                
-                total_entradas = df_fluxo["Entradas"].sum()
-                total_saidas = df_fluxo["Saídas"].sum()
-                saldo_final = df_fluxo["Saldo Acumulado"].iloc[-1] if not df_fluxo.empty else 0
-                
-                col_f1, col_f2, col_f3 = st.columns(3)
-                with col_f1:
-                    st.metric("💰 Total Entradas", f"R$ {total_entradas:,.2f}")
-                with col_f2:
-                    st.metric("💸 Total Saídas", f"R$ {total_saidas:,.2f}")
-                with col_f3:
-                    st.metric("📊 Saldo Final", f"R$ {saldo_final:,.2f}", delta_color="normal" if saldo_final >= 0 else "inverse")
-                
-                st.markdown("---")
-                st.subheader("📈 Evolução do Saldo")
-                
-                fig = px.line(df_fluxo, x="Data", y="Saldo Acumulado", title="Saldo Acumulado Diário")
-                fig.update_layout(xaxis_title="Data", yaxis_title="Saldo (R$)")
-                st.plotly_chart(fig, use_container_width=True)
-                
-                st.subheader("📋 Fluxo Detalhado")
-                df_fluxo_display = df_fluxo.copy()
-                for col in ["Entradas", "Saídas", "Saldo Dia", "Saldo Acumulado"]:
-                    df_fluxo_display[col] = df_fluxo_display[col].apply(lambda x: f"R$ {x:,.2f}")
-                df_fluxo_display["Data"] = df_fluxo_display["Data"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_fluxo_display, use_container_width=True, hide_index=True)
-                
-                st.markdown("---")
-                st.subheader("📊 Comparativo Mensal")
-                
-                df_mensal = calcular_comparativo_mensal()
-                if not df_mensal.empty:
-                    fig2 = go.Figure()
-                    fig2.add_trace(go.Bar(name="Receitas", x=df_mensal["Mês"], y=df_mensal["Receitas"], marker_color="green"))
-                    fig2.add_trace(go.Bar(name="Despesas", x=df_mensal["Mês"], y=df_mensal["Despesas"], marker_color="red"))
-                    fig2.add_trace(go.Scatter(name="Resultado", x=df_mensal["Mês"], y=df_mensal["Resultado"], mode="lines+markers", line=dict(color="blue", width=2)))
-                    fig2.update_layout(title="Evolução Mensal", barmode='group')
-                    st.plotly_chart(fig2, use_container_width=True)
-                    
-                    st.dataframe(df_mensal, use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum movimento no período")
+    elif processar:
+        if not extrato_file or not razao_file:
+            st.warning("⚠️ Por favor, faça upload dos dois arquivos (Extrato e Razão) antes de processar.")
 
-# -------------------------
-# Rodapé
-# -------------------------
-st.markdown("---")
-st.caption(f"🏢 Mini ERP Contábil v5.1 - Grid Multi-Linhas Corrigido | {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+if __name__ == "__main__":
+    main()
