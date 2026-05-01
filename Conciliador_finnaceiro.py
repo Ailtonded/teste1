@@ -1,9 +1,8 @@
-# app.py
+# app.py - Versão com limpeza inteligente de cabeçalhos
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from difflib import SequenceMatcher
 import io
 import re
 
@@ -16,139 +15,188 @@ st.set_page_config(
 )
 
 # ============================================================================
-# FUNÇÕES DE DETECÇÃO E NORMALIZAÇÃO
+# FUNÇÕES DE DETECÇÃO E LIMPEZA
 # ============================================================================
 
-def encontrar_linha_cabecalho(df, palavras_chave):
+def encontrar_linha_cabecalho_inteligente(df, palavras_chave_obrigatorias=['DATA']):
     """
-    Detecta a linha que contém o cabeçalho baseado em palavras-chave.
-    Retorna o índice da linha e os nomes das colunas encontradas.
+    Encontra a linha que contém todas as palavras-chave obrigatórias.
+    Remove linhas de título e formatação automaticamente.
     """
     for idx, row in df.iterrows():
-        # Converte toda a linha para string para verificação
-        linha_str = ' '.join([str(valor).upper() for valor in row.values if pd.notna(valor)])
+        # Converte a linha para string e upper
+        linha_str = ' '.join([str(valor).upper() if pd.notna(valor) else '' for valor in row.values])
         
-        # Verifica se alguma palavra-chave está presente
-        for palavra in palavras_chave:
-            if palavra in linha_str:
-                # Encontrou o cabeçalho
-                cabecalho = [str(valor).strip().upper() if pd.notna(valor) else f"COL_{i}" 
-                            for i, valor in enumerate(row.values)]
-                return idx, cabecalho
+        # Verifica se todas as palavras obrigatórias estão presentes
+        tem_todas = all(palavra in linha_str for palavra in palavras_chave_obrigatorias)
+        
+        # Verifica se não é uma linha de título (como "TOTAIS", "LANÇAMENTOS CONTÁBEIS")
+        eh_titulo = len([v for v in row.values if pd.notna(v) and isinstance(v, str) and v.upper().strip() in ['TOTAIS', 'LANÇAMENTOS CONTÁBEIS', 'EXTRATO', 'RAZÃO', 'PARAMETROS']]) > 0
+        
+        if tem_todas and not eh_titulo:
+            # Encontrou o cabeçalho
+            cabecalho = []
+            for col_value in row.values:
+                if pd.notna(col_value):
+                    # Limpa o nome da coluna
+                    col_name = str(col_value).strip().upper()
+                    col_name = re.sub(r'[^\w\s]', '', col_name)  # Remove pontuação
+                    col_name = col_name.replace(' ', '_')
+                    cabecalho.append(col_name)
+                else:
+                    cabecalho.append(f"COL_{len(cabecalho)}")
+            
+            return idx, cabecalho
     
     return None, None
 
-def detectar_colunas(df):
+def limpar_e_normalizar_dataframe(df, tipo_arquivo, palavras_chave_obrigatorias=['DATA']):
     """
-    Detecta automaticamente as colunas de DATA, ENTRADAS e SAIDAS
-    baseado em palavras-chave.
-    """
-    colunas = {col: col for col in df.columns}
-    
-    # Palavras-chave para cada tipo de coluna
-    padroes = {
-        'DATA': ['DATA', 'DT', 'DATE', 'DIA', 'LANÇAMENTO', 'MOVIMENTO'],
-        'ENTRADA': ['ENTRADA', 'DEBITO', 'DEB', 'RECEITA', 'CREDITO', 'DEPOSITO'],
-        'SAIDA': ['SAIDA', 'CREDITO', 'CRED', 'DESPESA', 'DEBITO', 'RETIRADA', 'PAGAMENTO']
-    }
-    
-    colunas_detectadas = {'DATA': None, 'ENTRADA': None, 'SAIDA': None}
-    
-    # Detectar cada tipo de coluna
-    for tipo, padroes_tipo in padroes.items():
-        for col in df.columns:
-            col_upper = col.upper()
-            for padrao in padroes_tipo:
-                if padrao in col_upper:
-                    colunas_detectadas[tipo] = col
-                    break
-            if colunas_detectadas[tipo]:
-                break
-    
-    # Validação: pelo menos a coluna DATA deve ser encontrada
-    if colunas_detectadas['DATA'] is None:
-        raise ValueError("Não foi possível detectar a coluna de DATA. Verifique se o arquivo contém colunas como 'DATA', 'DT' ou 'DATE'.")
-    
-    return colunas_detectadas
-
-def normalizar_dataframe(df, tipo_arquivo):
-    """
-    Normaliza o DataFrame completo: detecta cabeçalho, identifica colunas,
-    trata dados e cria coluna MOV.
+    Limpa e normaliza o DataFrame completo.
     """
     if df is None or df.empty:
         return None
     
-    # Passo 1: Detectar linha de cabeçalho
-    palavras_chave = ['DATA', 'DT', 'DATE', 'ENTRADA', 'SAIDA', 'DEBITO', 'CREDITO']
-    linha_cabecalho, colunas_cabecalho = encontrar_linha_cabecalho(df, palavras_chave)
+    # Passo 1: Encontrar linha de cabeçalho
+    linha_cabecalho, colunas_nomeadas = encontrar_linha_cabecalho_inteligente(df, palavras_chave_obrigatorias)
     
     if linha_cabecalho is None:
-        st.error(f"❌ Não foi possível encontrar o cabeçalho no arquivo de {tipo_arquivo}")
+        st.error(f"❌ Não foi possível encontrar o cabeçalho no arquivo de {tipo_arquivo}. Verifique se há uma coluna 'DATA'.")
         return None
     
-    # Passo 2: Reconstruir DataFrame com cabeçalho correto
-    df = df.iloc[linha_cabecalho + 1:].reset_index(drop=True)
-    df.columns = colunas_cabecalho
+    # Passo 2: Reconstruir DataFrame a partir da linha após o cabeçalho
+    # Pular linhas que são apenas formatação (como linhas com apenas um texto solto)
+    df_limpo = []
+    start_row = linha_cabecalho + 1
     
-    # Passo 3: Normalizar nomes das colunas
-    df.columns = [str(col).strip().upper().replace(' ', '_') for col in df.columns]
+    for idx in range(start_row, len(df)):
+        row = df.iloc[idx]
+        # Pula linhas vazias ou com apenas um valor não numérico (linhas de formatação)
+        valores_validos = [v for v in row.values if pd.notna(v) and str(v).strip()]
+        
+        # Linha de formatação: tem poucos valores e o primeiro é texto não numérico
+        if len(valores_validos) == 1 and isinstance(row.iloc[0], str) and not re.search(r'\d', row.iloc[0]):
+            continue
+        
+        # Linha válida - mantém
+        df_limpo.append(row.values)
     
-    # Passo 4: Detectar colunas específicas
-    try:
-        colunas = detectar_colunas(df)
-    except ValueError as e:
-        st.error(f"❌ {str(e)}")
+    # Criar novo DataFrame
+    df_normalizado = pd.DataFrame(df_limpo, columns=colunas_nomeadas[:len(df_limpo[0])] if df_limpo else colunas_nomeadas)
+    
+    # Passo 3: Renomear colunas padrão
+    df_normalizado.columns = [str(col).strip().upper().replace(' ', '_') for col in df_normalizado.columns]
+    
+    # Passo 4: Detectar colunas por palavras-chave
+    mapeamento = {}
+    
+    for col in df_normalizado.columns:
+        col_upper = col.upper()
+        if 'DATA' in col_upper or 'DT_' in col_upper:
+            mapeamento['DATA'] = col
+        elif 'ENTRADA' in col_upper or 'DEBITO' in col_upper or 'DÉBITO' in col_upper:
+            if 'ENTRADA' not in mapeamento:
+                mapeamento['ENTRADA'] = col
+        elif 'SAIDA' in col_upper or 'CREDITO' in col_upper or 'CRÉDITO' in col_upper:
+            if 'SAIDA' not in mapeamento:
+                mapeamento['SAIDA'] = col
+    
+    # Para razão que tem DÉBITO e CRÉDITO separados
+    if 'DEBITO' in df_normalizado.columns and 'CREDITO' in df_normalizado.columns:
+        mapeamento['ENTRADA'] = 'DEBITO'
+        mapeamento['SAIDA'] = 'CREDITO'
+    
+    # Validar se encontrou DATA
+    if 'DATA' not in mapeamento:
+        st.error(f"❌ Coluna DATA não encontrada em {tipo_arquivo}. Colunas disponíveis: {list(df_normalizado.columns)}")
         return None
     
-    # Passo 5: Renomear colunas para padrão
-    df = df.rename(columns={
-        colunas['DATA']: 'DATA',
-        colunas['ENTRADA']: 'ENTRADAS' if colunas['ENTRADA'] else 'ENTRADAS',
-        colunas['SAIDA']: 'SAIDAS' if colunas['SAIDA'] else 'SAIDAS'
-    })
+    # Passo 5: Renomear para padrão
+    if 'ENTRADA' in mapeamento:
+        df_normalizado = df_normalizado.rename(columns={mapeamento['ENTRADA']: 'ENTRADAS'})
     
-    # Passo 6: Garantir que as colunas existam
-    if 'ENTRADAS' not in df.columns:
-        df['ENTRADAS'] = 0
-    if 'SAIDAS' not in df.columns:
-        df['SAIDAS'] = 0
+    if 'SAIDA' in mapeamento:
+        df_normalizado = df_normalizado.rename(columns={mapeamento['SAIDA']: 'SAIDAS'})
     
-    # Passo 7: Tratar dados
+    # Garantir colunas existam
+    if 'ENTRADAS' not in df_normalizado.columns:
+        df_normalizado['ENTRADAS'] = 0
+    if 'SAIDAS' not in df_normalizado.columns:
+        df_normalizado['SAIDAS'] = 0
+    
+    # Passo 6: Tratar tipos de dados
     # Converter DATA
-    df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce', dayfirst=True)
+    df_normalizado['DATA'] = pd.to_datetime(df_normalizado[mapeamento['DATA']], errors='coerce', dayfirst=True)
     
     # Converter ENTRADAS e SAIDAS para numérico
-    df['ENTRADAS'] = pd.to_numeric(df['ENTRADAS'], errors='coerce').fillna(0)
-    df['SAIDAS'] = pd.to_numeric(df['SAIDAS'], errors='coerce').fillna(0)
+    def converter_valor(valor):
+        if pd.isna(valor):
+            return 0
+        if isinstance(valor, str):
+            # Remove pontos de milhar e substitui vírgula por ponto
+            valor = valor.replace('.', '').replace(',', '.')
+        try:
+            return float(valor)
+        except:
+            return 0
+    
+    df_normalizado['ENTRADAS'] = df_normalizado['ENTRADAS'].apply(converter_valor)
+    df_normalizado['SAIDAS'] = df_normalizado['SAIDAS'].apply(converter_valor)
     
     # Remover linhas sem DATA válida
-    df = df.dropna(subset=['DATA']).reset_index(drop=True)
+    df_normalizado = df_normalizado.dropna(subset=['DATA']).reset_index(drop=True)
     
-    # Passo 8: Criar coluna MOV (movimento líquido)
-    df['MOV'] = df['ENTRADAS'] - df['SAIDAS']
+    # Passo 7: Criar MOV (movimento líquido)
+    df_normalizado['MOV'] = df_normalizado['ENTRADAS'] - df_normalizado['SAIDAS']
     
-    # Passo 9: Adicionar identificador de origem
-    df['TP'] = tipo_arquivo.upper()
+    # Passo 8: Criar chave de conciliação
+    df_normalizado['CHAVE'] = df_normalizado['DATA'].dt.strftime('%Y-%m-%d') + '_' + df_normalizado['MOV'].round(2).astype(str)
     
-    # Passo 10: Criar chave de conciliação
-    df['CHAVE'] = df['DATA'].dt.strftime('%Y-%m-%d') + '_' + df['MOV'].round(2).astype(str)
+    # Passo 9: Adicionar origem
+    df_normalizado['TP'] = tipo_arquivo
     
-    return df
+    return df_normalizado
 
-def carregar_arquivo(uploaded_file, tipo_arquivo):
+# ============================================================================
+# FUNÇÕES DE CARREGAMENTO ESPECÍFICAS
+# ============================================================================
+
+def carregar_extrato(uploaded_file):
     """
-    Carrega arquivo Excel de forma resiliente.
+    Carrega o extrato da aba '2-Totais'
     """
     if uploaded_file is None:
         return None
     
     try:
-        # Tentar carregar com header=None para detectar cabeçalho manualmente
-        df = pd.read_excel(uploaded_file, header=None, dtype=str)
-        return normalizar_dataframe(df, tipo_arquivo)
+        # Carregar aba específica
+        df = pd.read_excel(uploaded_file, sheet_name='2-Totais', header=None, dtype=str)
+        return limpar_e_normalizar_dataframe(df, "EXTRATO", ['DATA'])
     except Exception as e:
-        st.error(f"❌ Erro ao carregar {tipo_arquivo}: {str(e)}")
+        st.error(f"❌ Erro ao carregar Extrato: {str(e)}")
+        
+        # Tentar listar abas disponíveis
+        xl = pd.ExcelFile(uploaded_file)
+        st.info(f"Abas disponíveis no arquivo: {xl.sheet_names}")
+        return None
+
+def carregar_razao(uploaded_file):
+    """
+    Carrega o razão da aba '3-Lançamentos Contábeis'
+    """
+    if uploaded_file is None:
+        return None
+    
+    try:
+        # Carregar aba específica
+        df = pd.read_excel(uploaded_file, sheet_name='3-Lançamentos Contábeis', header=None, dtype=str)
+        return limpar_e_normalizar_dataframe(df, "RAZAO", ['DATA'])
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar Razão: {str(e)}")
+        
+        # Tentar listar abas disponíveis
+        xl = pd.ExcelFile(uploaded_file)
+        st.info(f"Abas disponíveis no arquivo: {xl.sheet_names}")
         return None
 
 # ============================================================================
@@ -157,47 +205,47 @@ def carregar_arquivo(uploaded_file, tipo_arquivo):
 
 def conciliar_exato(df_extrato, df_razao):
     """
-    Conciliação exata baseada na chave (DATA + MOV).
-    Retorna DataFrames conciliados e não conciliados.
+    Conciliação exata baseada na chave (DATA + MOV)
     """
     if df_extrato is None or df_razao is None:
         return None, None, None, None
     
-    # Criar chaves únicas para conciliação 1-para-1
-    extrato_com_chave = df_extrato.copy()
-    razao_com_chave = df_razao.copy()
+    if df_extrato.empty or df_razao.empty:
+        return None, df_extrato, df_razao, None
     
-    # Contador para evitar duplicatas
-    extrato_com_chave['_contador'] = extrato_com_chave.groupby('CHAVE').cumcount()
-    razao_com_chave['_contador'] = razao_com_chave.groupby('CHAVE').cumcount()
+    # Preparar para merge
+    extrato_merge = df_extrato.copy()
+    razao_merge = df_razao.copy()
     
-    extrato_com_chave['CHAVE_UNICA'] = extrato_com_chave['CHAVE'] + '_' + extrato_com_chave['_contador'].astype(str)
-    razao_com_chave['CHAVE_UNICA'] = razao_com_chave['CHAVE'] + '_' + razao_com_chave['_contador'].astype(str)
+    # Adicionar contador para evitar duplicatas
+    extrato_merge['_contador'] = extrato_merge.groupby('CHAVE').cumcount()
+    razao_merge['_contador'] = razao_merge.groupby('CHAVE').cumcount()
     
-    # Merge para conciliação
+    extrato_merge['CHAVE_UNICA'] = extrato_merge['CHAVE'] + '_' + extrato_merge['_contador'].astype(str)
+    razao_merge['CHAVE_UNICA'] = razao_merge['CHAVE'] + '_' + razao_merge['_contador'].astype(str)
+    
+    # Merge
     conciliados = pd.merge(
-        extrato_com_chave, 
-        razao_com_chave,
+        extrato_merge, razao_merge,
         on='CHAVE_UNICA',
-        suffixes=('_extrato', '_razao'),
+        suffixes=('_EXTRATO', '_RAZAO'),
         how='inner'
     )
     
-    # Extrair não conciliados
-    extrato_nao_conciliado = extrato_com_chave[~extrato_com_chave['CHAVE_UNICA'].isin(conciliados['CHAVE_UNICA'])].copy()
-    razao_nao_conciliado = razao_com_chave[~razao_com_chave['CHAVE_UNICA'].isin(conciliados['CHAVE_UNICA'])].copy()
+    # Não conciliados
+    extrato_nao = extrato_merge[~extrato_merge['CHAVE_UNICA'].isin(conciliados['CHAVE_UNICA'])].copy()
+    razao_nao = razao_merge[~razao_merge['CHAVE_UNICA'].isin(conciliados['CHAVE_UNICA'])].copy()
     
     # Remover colunas auxiliares
-    for df in [conciliados, extrato_nao_conciliado, razao_nao_conciliado]:
+    for df in [conciliados, extrato_nao, razao_nao]:
         if df is not None and not df.empty:
             df.drop(columns=['_contador', 'CHAVE_UNICA'], inplace=True, errors='ignore')
     
-    return conciliados, extrato_nao_conciliado, razao_nao_conciliado
+    return conciliados, extrato_nao, razao_nao
 
 def sugerir_conciliacoes(df_extrato_nao, df_razao_nao):
     """
-    Algoritmo de scoring para sugerir conciliações possíveis.
-    Evita O(n²) usando merge baseado em data e valor aproximado.
+    Sugere conciliações baseadas em score (valor + data)
     """
     if df_extrato_nao is None or df_razao_nao is None:
         return pd.DataFrame()
@@ -207,167 +255,119 @@ def sugerir_conciliacoes(df_extrato_nao, df_razao_nao):
     
     sugestoes = []
     
-    # Para cada lançamento não conciliado do extrato, buscar possíveis matches no razão
-    for idx_extrato, row_extrato in df_extrato_nao.iterrows():
-        data_extrato = row_extrato['DATA']
-        mov_extrato = row_extrato['MOV']
+    # Para cada item não conciliado do extrato
+    for _, extrato_row in df_extrato_nao.iterrows():
+        data_extrato = extrato_row['DATA']
+        mov_extrato = extrato_row['MOV']
         
-        # Filtrar razão por data próxima (±2 dias) e valor próximo (±0.05)
-        mask_data = (df_razao_nao['DATA'] >= data_extrato - timedelta(days=2)) & \
-                    (df_razao_nao['DATA'] <= data_extrato + timedelta(days=2))
-        mask_valor = (df_razao_nao['MOV'] >= mov_extrato - 0.05) & \
-                     (df_razao_nao['MOV'] <= mov_extrato + 0.05)
-        
-        candidates = df_razao_nao[mask_data & mask_valor]
-        
-        for idx_razao, row_razao in candidates.iterrows():
+        # Buscar candidatos no razão
+        for _, razao_row in df_razao_nao.iterrows():
+            data_razao = razao_row['DATA']
+            mov_razao = razao_row['MOV']
+            
+            # Calcular diferenças
+            diff_valor = abs(mov_razao - mov_extrato)
+            diff_dias = abs((data_razao - data_extrato).days)
+            
             # Calcular score
             score = 0
             
-            # Score por valor
-            if row_razao['MOV'] == mov_extrato:
+            # Valor
+            if diff_valor == 0:
                 score += 50
-            elif abs(row_razao['MOV'] - mov_extrato) <= 0.05:
+            elif diff_valor <= 0.05:
                 score += 30
             
-            # Score por data
-            if row_razao['DATA'] == data_extrato:
+            # Data
+            if diff_dias == 0:
                 score += 50
-            elif abs((row_razao['DATA'] - data_extrato).days) <= 2:
+            elif diff_dias <= 2:
                 score += 30
             
             if score >= 60:
                 sugestoes.append({
                     'DATA_EXTRATO': data_extrato,
                     'MOV_EXTRATO': mov_extrato,
-                    'DESC_EXTRATO': row_extrato.get('DESCRICAO', 'N/A') if 'DESCRICAO' in df_extrato_nao.columns else 'N/A',
-                    'DATA_RAZAO': row_razao['DATA'],
-                    'MOV_RAZAO': row_razao['MOV'],
-                    'DESC_RAZAO': row_razao.get('DESCRICAO', 'N/A') if 'DESCRICAO' in df_razao_nao.columns else 'N/A',
+                    'DATA_RAZAO': data_razao,
+                    'MOV_RAZAO': mov_razao,
                     'SCORE': score,
-                    'DIF_VALOR': abs(row_razao['MOV'] - mov_extrato),
-                    'DIF_DIAS': abs((row_razao['DATA'] - data_extrato).days)
+                    'DIF_VALOR': diff_valor,
+                    'DIF_DIAS': diff_dias
                 })
     
     if sugestoes:
         df_sugestoes = pd.DataFrame(sugestoes)
-        df_sugestoes = df_sugestoes.sort_values('SCORE', ascending=False).drop_duplicates(
-            subset=['DATA_EXTRATO', 'MOV_EXTRATO'], keep='first'
-        )
+        df_sugestoes = df_sugestoes.sort_values('SCORE', ascending=False)
+        # Remover duplicatas
+        df_sugestoes = df_sugestoes.drop_duplicates(subset=['DATA_EXTRATO', 'MOV_EXTRATO'], keep='first')
         return df_sugestoes
     
     return pd.DataFrame()
 
 # ============================================================================
-# FUNÇÕES DE INTERFACE E EXPORTAÇÃO
-# ============================================================================
-
-def aplicar_filtro_periodo(df, data_inicio, data_fim):
-    """
-    Aplica filtro de período no DataFrame.
-    """
-    if df is None or df.empty:
-        return df
-    
-    mask = (df['DATA'] >= data_inicio) & (df['DATA'] <= data_fim)
-    return df[mask].copy()
-
-def exportar_resultados(conciliados, sugestoes, extrato_nao, razao_nao):
-    """
-    Exporta os resultados para Excel com múltiplas abas.
-    """
-    output = io.BytesIO()
-    
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        if conciliados is not None and not conciliados.empty:
-            conciliados.to_excel(writer, sheet_name='Conciliados', index=False)
-        
-        if sugestoes is not None and not sugestoes.empty:
-            sugestoes.to_excel(writer, sheet_name='Sugestoes', index=False)
-        
-        if extrato_nao is not None and not extrato_nao.empty:
-            extrato_nao.to_excel(writer, sheet_name='Extrato_nao_conciliado', index=False)
-        
-        if razao_nao is not None and not razao_nao.empty:
-            razao_nao.to_excel(writer, sheet_name='Razao_nao_conciliado', index=False)
-    
-    output.seek(0)
-    return output
-
-def formatar_valor(valor):
-    """
-    Formata valor para exibição.
-    """
-    if pd.isna(valor):
-        return "R$ 0,00"
-    return f"R$ {valor:,.2f}".replace(",", "v").replace(".", ",").replace("v", ".")
-
-# ============================================================================
-# INTERFACE PRINCIPAL STREAMLIT
+# INTERFACE STREAMLIT
 # ============================================================================
 
 def main():
     st.title("📊 Sistema de Conciliação Contábil")
     st.markdown("---")
     
-    # Sidebar para uploads
+    # Sidebar
     with st.sidebar:
-        st.header("📁 Upload dos Arquivos")
+        st.header("📁 Upload")
         
         extrato_file = st.file_uploader(
-            "📄 Extrato Bancário",
-            type=['xlsx', 'xls'],
-            help="Upload do arquivo de extrato bancário"
+            "📄 Extrato Bancário (aba '2-Totais')",
+            type=['xlsx', 'xls']
         )
         
         razao_file = st.file_uploader(
-            "📒 Razão Contábil",
-            type=['xlsx', 'xls'],
-            help="Upload do arquivo de razão contábil"
+            "📒 Razão Contábil (aba '3-Lançamentos Contábeis')",
+            type=['xlsx', 'xls']
         )
         
         st.markdown("---")
-        st.header("📅 Período de Análise")
+        st.header("📅 Período")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            data_inicio = st.date_input("Data Inicial", datetime.now() - timedelta(days=30))
-        with col2:
-            data_fim = st.date_input("Data Final", datetime.now())
+        data_inicio = st.date_input("Data Inicial", datetime(2026, 4, 1))
+        data_fim = st.date_input("Data Final", datetime(2026, 5, 1))
         
         st.markdown("---")
-        processar = st.button("🚀 Processar Conciliação", type="primary", use_container_width=True)
+        processar = st.button("🚀 Conciliar", type="primary", use_container_width=True)
     
-    # Processamento principal
+    # Processamento
     if processar and extrato_file and razao_file:
-        with st.spinner("🔄 Processando arquivos..."):
-            # Carregar e normalizar dados
-            df_extrato = carregar_arquivo(extrato_file, "EXTRATO")
-            df_razao = carregar_arquivo(razao_file, "RAZAO")
+        with st.spinner("🔄 Processando..."):
+            # Carregar
+            df_extrato = carregar_extrato(extrato_file)
+            df_razao = carregar_razao(razao_file)
             
             if df_extrato is not None and df_razao is not None:
-                # Aplicar filtro de período
-                df_extrato_filtrado = aplicar_filtro_periodo(df_extrato, data_inicio, data_fim)
-                df_razao_filtrado = aplicar_filtro_periodo(df_razao, data_inicio, data_fim)
+                # Filtrar por período
+                df_extrato = df_extrato[(df_extrato['DATA'] >= pd.Timestamp(data_inicio)) & 
+                                       (df_extrato['DATA'] <= pd.Timestamp(data_fim))]
+                df_razao = df_razao[(df_razao['DATA'] >= pd.Timestamp(data_inicio)) & 
+                                   (df_razao['DATA'] <= pd.Timestamp(data_fim))]
                 
-                # Executar conciliação
-                conciliados, extrato_nao, razao_nao = conciliar_exato(df_extrato_filtrado, df_razao_filtrado)
+                # Conciliação
+                conciliados, extrato_nao, razao_nao = conciliar_exato(df_extrato, df_razao)
                 sugestoes = sugerir_conciliacoes(extrato_nao, razao_nao)
                 
-                # Armazenar na sessão
+                # Salvar na sessão
                 st.session_state['conciliados'] = conciliados
                 st.session_state['sugestoes'] = sugestoes
                 st.session_state['extrato_nao'] = extrato_nao
                 st.session_state['razao_nao'] = razao_nao
-                st.session_state['df_extrato'] = df_extrato_filtrado
-                st.session_state['df_razao'] = df_razao_filtrado
+                st.session_state['df_extrato'] = df_extrato
+                st.session_state['df_razao'] = df_razao
                 st.session_state['processado'] = True
                 
-                st.success("✅ Conciliação concluída com sucesso!")
-            else:
-                st.error("❌ Erro ao processar os arquivos. Verifique o formato.")
+                st.success("✅ Conciliação concluída!")
+                
+                # Mostrar resumo
+                st.info(f"📊 Extrato: {len(df_extrato)} linhas | Razão: {len(df_razao)} linhas | Conciliados: {len(conciliados) if conciliados is not None else 0}")
     
-    # Exibir resultados se processados
+    # Exibir resultados
     if st.session_state.get('processado', False):
         conciliados = st.session_state.get('conciliados')
         sugestoes = st.session_state.get('sugestoes')
@@ -376,134 +376,50 @@ def main():
         df_extrato = st.session_state.get('df_extrato')
         df_razao = st.session_state.get('df_razao')
         
-        # Abas para resultados
+        # Abas
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "✅ Conciliados", "🧠 Sugestões", "⚠️ Extrato Não Conciliado", 
-            "⚠️ Razão Não Conciliado", "📊 Resumo"
+            "✅ Conciliados", "🧠 Sugestões", "⚠️ Extrato Não Conc.", 
+            "⚠️ Razão Não Conc.", "📊 Resumo"
         ])
         
         with tab1:
-            st.subheader("Lançamentos Conciliados")
             if conciliados is not None and not conciliados.empty:
-                st.dataframe(
-                    conciliados[['DATA_extrato', 'ENTRADAS_extrato', 'SAIDAS_extrato', 'MOV_extrato', 
-                                'DATA_razao', 'ENTRADAS_razao', 'SAIDAS_razao', 'MOV_razao']],
-                    use_container_width=True,
-                    height=400
-                )
-                st.metric("Total de itens conciliados", len(conciliados))
+                st.dataframe(conciliados[['DATA_EXTRATO', 'MOV_EXTRATO', 'DATA_RAZAO', 'MOV_RAZAO']])
+                st.metric("Total", len(conciliados))
             else:
-                st.info("Nenhum lançamento conciliado encontrado.")
+                st.info("Nenhum lançamento conciliado")
         
         with tab2:
-            st.subheader("Sugestões de Conciliação")
-            st.caption("Lançamentos com alta probabilidade de correspondência (score ≥ 60)")
-            
             if sugestoes is not None and not sugestoes.empty:
-                # Formatar para exibição
-                display_sugestoes = sugestoes.copy()
-                display_sugestoes['SCORE'] = display_sugestoes['SCORE'].astype(int)
-                
-                st.dataframe(
-                    display_sugestoes,
-                    use_container_width=True,
-                    height=400,
-                    column_config={
-                        "SCORE": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-                        "DIF_VALOR": st.column_config.NumberColumn("Diferença R$", format="R$ %.2f"),
-                        "DIF_DIAS": st.column_config.NumberColumn("Diferença Dias", format="%d dias")
-                    }
-                )
-                st.info(f"🧠 Encontradas {len(sugestoes)} sugestões de conciliação")
+                st.dataframe(sugestoes)
             else:
-                st.success("✅ Não há sugestões pendentes. Todas as diferenças são significativas.")
+                st.info("Nenhuma sugestão encontrada")
         
         with tab3:
-            st.subheader("Lançamentos do Extrato sem Conciliação")
             if extrato_nao is not None and not extrato_nao.empty:
-                st.dataframe(
-                    extrato_nao[['DATA', 'ENTRADAS', 'SAIDAS', 'MOV']],
-                    use_container_width=True,
-                    height=400
-                )
-                st.warning(f"⚠️ {len(extrato_nao)} lançamentos do extrato não conciliados")
-                st.metric("Valor total não conciliado", formatar_valor(extrato_nao['MOV'].sum()))
+                st.dataframe(extrato_nao[['DATA', 'MOV']])
+                st.metric("Total", len(extrato_nao))
             else:
-                st.success("✅ Todos os lançamentos do extrato foram conciliados!")
+                st.success("Todos conciliados!")
         
         with tab4:
-            st.subheader("Lançamentos do Razão sem Conciliação")
             if razao_nao is not None and not razao_nao.empty:
-                st.dataframe(
-                    razao_nao[['DATA', 'ENTRADAS', 'SAIDAS', 'MOV']],
-                    use_container_width=True,
-                    height=400
-                )
-                st.warning(f"⚠️ {len(razao_nao)} lançamentos do razão não conciliados")
-                st.metric("Valor total não conciliado", formatar_valor(razao_nao['MOV'].sum()))
+                st.dataframe(razao_nao[['DATA', 'MOV']])
+                st.metric("Total", len(razao_nao))
             else:
-                st.success("✅ Todos os lançamentos do razão foram conciliados!")
+                st.success("Todos conciliados!")
         
         with tab5:
-            st.subheader("Resumo da Conciliação")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                total_extrato = df_extrato['MOV'].sum() if df_extrato is not None else 0
-                st.metric("💰 Total Extrato", formatar_valor(total_extrato))
-            
-            with col2:
-                total_razao = df_razao['MOV'].sum() if df_razao is not None else 0
-                st.metric("📚 Total Razão", formatar_valor(total_razao))
-            
-            with col3:
-                total_conciliado = conciliados['MOV_extrato'].sum() if conciliados is not None and not conciliados.empty else 0
-                st.metric("✅ Total Conciliado", formatar_valor(total_conciliado))
-            
-            with col4:
-                diferenca = total_extrato - total_razao
-                st.metric(
-                    "📊 Diferença", 
-                    formatar_valor(diferenca),
-                    delta=f"{abs(diferenca):.2f}" if diferenca != 0 else None,
-                    delta_color="inverse" if diferenca != 0 else "off"
-                )
-            
-            st.markdown("---")
-            
-            # Métricas adicionais
             col1, col2, col3 = st.columns(3)
-            
             with col1:
-                taxa_cobertura = (len(conciliados) / max(len(df_extrato), 1)) * 100 if conciliados is not None else 0
-                st.progress(taxa_cobertura / 100)
-                st.caption(f"Taxa de cobertura: {taxa_cobertura:.1f}%")
-            
+                total_extrato = df_extrato['MOV'].sum()
+                st.metric("Total Extrato", f"R$ {total_extrato:,.2f}")
             with col2:
-                st.info(f"📊 Período analisado: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
-            
+                total_razao = df_razao['MOV'].sum()
+                st.metric("Total Razão", f"R$ {total_razao:,.2f}")
             with col3:
-                st.info(f"📈 Total de lançamentos: {len(df_extrato) if df_extrato is not None else 0} (Extrato) | {len(df_razao) if df_razao is not None else 0} (Razão)")
-        
-        # Botão de exportação
-        st.markdown("---")
-        col_export1, col_export2, col_export3 = st.columns([1, 2, 1])
-        
-        with col_export2:
-            if st.button("📥 Exportar Resultados para Excel", type="secondary", use_container_width=True):
-                excel_file = exportar_resultados(conciliados, sugestoes, extrato_nao, razao_nao)
-                st.download_button(
-                    label="💾 Baixar Arquivo Excel",
-                    data=excel_file,
-                    file_name=f"conciliacao_contabil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-    
-    elif processar:
-        if not extrato_file or not razao_file:
-            st.warning("⚠️ Por favor, faça upload dos dois arquivos (Extrato e Razão) antes de processar.")
+                diferenca = total_extrato - total_razao
+                st.metric("Diferença", f"R$ {diferenca:,.2f}")
 
 if __name__ == "__main__":
     main()
