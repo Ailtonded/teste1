@@ -1,7 +1,7 @@
 """
-Sistema de Conciliação Contábil - versão 2.7 (Correção Lógica Contábil)
+Sistema de Conciliação Contábil - versão 2.8 (Correção Tipos Data Editor)
 Autor: Desenvolvedor Sênior Python
-Descrição: Correção do mapeamento Razão (Débito=Entrada, Crédito=Saída) e ajuste de sugestões.
+Descrição: Correção de erro de tipo ao filtrar sugestões (cast explícito de colunas).
 """
 
 import streamlit as st
@@ -50,8 +50,8 @@ CONFIG = {
 
 KEYWORDS = {
     'data': ['DATA', 'DT', 'DTPAG', 'DT_MOV', 'MOVIMENTACAO', 'EMISSAO'],
-    'entrada': ['ENTRADA', 'ENTRADAS', 'DEBITO', 'DEBITOS', 'VR_ENTRADA', 'RECEITA'], # Nota: DEBITO em extrato é saída, mas aqui é genérico
-    'saida': ['SAIDA', 'SAIDAS', 'CREDITO', 'CREDITOS', 'VR_SAIDA', 'DESPESA'],       # Nota: CREDITO em extrato é entrada, mas aqui é genérico
+    'entrada': ['ENTRADA', 'ENTRADAS', 'DEBITO', 'DEBITOS', 'VR_ENTRADA', 'RECEITA'],
+    'saida': ['SAIDA', 'SAIDAS', 'CREDITO', 'CREDITOS', 'VR_SAIDA', 'DESPESA'],
     'documento': ['DOCUMENTO', 'DOC', 'NUMDOC', 'NUM_DOC', 'NR_DOC', 'NUMERO', 'LOTE'],
     'historico': ['HISTORICO', 'HIST', 'DESCRICAO', 'DESC', 'OBSERVACAO', 'OBS', 'COMPLEMENTO', 'OPERACAO'],
     'conta': ['CONTA', 'CTA', 'CONTA_CONTABIL', 'COD_CONTA']
@@ -162,17 +162,9 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
         df = df.loc[:, ~df.columns.astype(str).str.startswith('Unnamed')]
         df.columns = [normalizar_nome_coluna(col) for col in df.columns]
         
-        # =====================================================================
-        # CORREÇÃO LÓGICA CONTÁBIL PARA RAZÃO (Ativo Bancário)
-        # =====================================================================
         if nome_tipo == 'RAZAO':
-            # Em contabilidade de banco (Ativo):
-            # DÉBITO = Entrada de dinheiro (Aumenta saldo)
-            # CRÉDITO = Saída de dinheiro (Diminui saldo)
-            
             cols_norm = {normalizar_nome_coluna(c): c for c in df.columns}
             
-            # Mapear Débito -> ENTRADAS
             col_debito = None
             for cn, co in cols_norm.items():
                 if 'DEBITO' in cn: col_debito = co; break
@@ -180,7 +172,6 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
                 df = df.rename(columns={col_debito: 'ENTRADAS'})
                 logs.append(f"✅ '{col_debito}' → 'ENTRADAS' (Razão: Débito)")
             
-            # Mapear Crédito -> SAIDAS
             col_credito = None
             for cn, co in cols_norm.items():
                 if 'CREDITO' in cn: col_credito = co; break
@@ -188,7 +179,6 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
                 df = df.rename(columns={col_credito: 'SAIDAS'})
                 logs.append(f"✅ '{col_credito}' → 'SAIDAS' (Razão: Crédito)")
         
-        # Lógica padrão (Extrato ou fallback)
         mapeamento = {
             'data': ('DATA', detectar_coluna(df, 'data')),
             'entrada': ('ENTRADAS', detectar_coluna(df, 'entrada') if 'ENTRADAS' not in df.columns else None),
@@ -231,9 +221,6 @@ def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.
 
 def calcular_score_match(row1: pd.Series, row2: pd.Series) -> int:
     score = 0
-    
-    # CORREÇÃO: Usar diferença real, não abs(abs()).
-    # Isso penaliza matches de Entrada vs Saída (sinais opostos)
     diff_valor = abs(row1['MOV'] - row2['MOV'])
     
     if diff_valor == 0: score += 50
@@ -292,15 +279,11 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     
     if not extrato_nc.empty and not razao_nc.empty:
         razao_nc_idx = razao_nc.copy()
-        # Indexar por valor (considerando sinal agora para evitar sugestões erradas)
-        # Multiplicar por 100 e converter para int para indexação rápida
         razao_nc_idx['_v_int'] = (razao_nc_idx['MOV'] * 100).round().astype(int)
         
         for idx_e, row_e in extrato_nc.iterrows():
             v_int = int(round(row_e['MOV'] * 100))
             
-            # Busca candidatos com valor EXATO ou muito próximo (tolerancia 5 centavos)
-            # Note: se MOV é -100 (saida), busca -100. Não busca +100.
             candidatos = razao_nc_idx[
                 (razao_nc_idx['_v_int'] >= v_int - 5) & 
                 (razao_nc_idx['_v_int'] <= v_int + 5)
@@ -430,14 +413,33 @@ def main():
         
         df_display['DATA'] = df_display['DATA'].dt.strftime('%d/%m/%Y')
         
-        df_display = df_display.fillna('')
+        # =====================================================================
+        # CORREÇÃO: GARANTIR TIPOS DE DADOS COMPATÍVEIS COM DATA_EDITOR
+        # =====================================================================
+        
+        # 1. Preencher NaNs específicos
+        df_display['SELECAO'] = df_display['SELECAO'].fillna(False)
+        
+        # 2. Garantir tipos primitivos (evita erro de APIException)
+        df_display['SELECAO'] = df_display['SELECAO'].astype(bool)
+        
+        # 3. Garantir que colunas de ID sejam strings puras (substituindo None/NaN por vazio)
+        for col in ['ID_CONCILIACAO', 'ID_SUGESTAO']:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].fillna('').astype(str)
+                # Corrigir caso venha como 'None' string do processamento
+                df_display[col] = df_display[col].replace('None', '')
+        
+        # 4. Garantir colunas numéricas
         for col in ['ENTRADAS', 'SAIDAS', 'MOV']:
             if col in df_display.columns:
                 df_display[col] = pd.to_numeric(df_display[col], errors='coerce').fillna(0.0)
+        
+        # 5. Texto
+        for col in ['HISTORICO', 'DOCUMENTO', 'CONTA', 'TP', 'STATUS']:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].fillna('').astype(str)
 
-        if 'SELECAO' not in df_display.columns:
-            df_display['SELECAO'] = False
-            
         cols_ordem = ['SELECAO', 'STATUS', 'ID_CONCILIACAO', 'ID_SUGESTAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
         cols_existentes = [c for c in cols_ordem if c in df_display.columns]
         cols_existentes += [c for c in df_display.columns if c not in cols_existentes]
