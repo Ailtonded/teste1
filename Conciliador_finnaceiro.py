@@ -1,7 +1,7 @@
 """
-Sistema de Conciliação Contábil - versão 2.5 (Usabilidade e ID Sugestões)
+Sistema de Conciliação Contábil - versão 2.6 (Otimização de Espaçamento)
 Autor: Desenvolvedor Sênior Python
-Descrição: Adicionado ID_SUGESTAO, botão inverter seleção e totais filtrados.
+Descrição: Redução de espaçamento vertical para maximizar área do grid.
 """
 
 import streamlit as st
@@ -21,6 +21,32 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ============================================================================
+# NOVO: CSS PARA REDUZIR ESPAÇAMENTO E MAXIMIZAR GRID
+# ============================================================================
+st.markdown("""
+<style>
+    /* Remove padding superior e inferior do container principal */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 0rem !important;
+    }
+    /* Reduz espaçamento entre título e subtítulo */
+    h1 {
+        margin-bottom: 0rem !important;
+    }
+    /* Reduz espaçamento dos subtítulos */
+    h3 {
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.2rem !important;
+    }
+    /* Reduz espaçamento de textos e captions */
+    .stMarkdown, .stCaption {
+        margin-bottom: 0.2rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ============================================================================
 # CONSTANTES E CONFIGURAÇÕES
@@ -217,8 +243,6 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     
     df_extrato['ID_CONCILIACAO'] = None
     df_razao['ID_CONCILIACAO'] = None
-    
-    # NOVO: Inicializar ID_SUGESTAO
     df_extrato['ID_SUGESTAO'] = None
     df_razao['ID_SUGESTAO'] = None
     
@@ -247,7 +271,6 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     extrato_nc = df_extrato[df_extrato['STATUS'] == 'Não Conciliado']
     razao_nc = df_razao[df_razao['STATUS'] == 'Não Conciliado']
     
-    # NOVO: Contador para ID de Sugestão
     contador_sug_id = 0
     
     if not extrato_nc.empty and not razao_nc.empty:
@@ -264,15 +287,12 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
                     df_extrato.loc[idx_e, 'STATUS'] = 'Sugestão'
                     df_razao.loc[idx_r, 'STATUS'] = 'Sugestão'
                     
-                    # NOVO: Gerar ID de Sugestão
                     contador_sug_id += 1
                     novo_sug_id = f"SUG_{contador_sug_id}"
                     df_extrato.loc[idx_e, 'ID_SUGESTAO'] = novo_sug_id
                     df_razao.loc[idx_r, 'ID_SUGESTAO'] = novo_sug_id
-                    
                     break
     
-    # NOVO: Adicionado ID_SUGESTAO às colunas unificadas
     colunas_unificadas = ['ID', 'STATUS', 'ID_CONCILIACAO', 'ID_SUGESTAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
     for col in colunas_unificadas:
         if col not in df_extrato: df_extrato[col] = ''
@@ -300,7 +320,7 @@ def exportar_excel_unificado(df: pd.DataFrame) -> bytes:
 
 def main():
     st.title("🔄 Conciliação Contábil - Visão Unificada")
-    st.markdown("---")
+    # REMOVIDO: st.markdown("---") para economizar espaço vertical
     
     # Sidebar
     with st.sidebar:
@@ -366,8 +386,8 @@ def main():
         mask = (df_base['DATA'].dt.date >= data_ini) & (df_base['DATA'].dt.date <= data_fim)
         df_filtrado_periodo = df_base.loc[mask]
         
-        st.markdown(f"### 📊 Lançamentos no Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
-        st.caption(f"Exibindo {len(df_filtrado_periodo)} registros de um total de {len(df_base)}.")
+        # Otimizado: Título e Caption em bloco único
+        st.markdown(f"### 📊 Lançamentos no Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} <small style='color:gray;'>&nbsp;&nbsp;|&nbsp;&nbsp;Exibindo {len(df_filtrado_periodo)} de {len(df_base)}</small>", unsafe_allow_html=True)
         
         col_f1, col_f2 = st.columns([1, 1])
         
@@ -378,8 +398,6 @@ def main():
                 default=['Conciliado', 'Sugestão', 'Não Conciliado', 'Conciliado Manual']
             )
         
-        # REMOVIDO: Filtro por Origem (col_f2)
-        # Sempre considerar os dois lados
         filtro_tipo = ['EXTRATO', 'RAZAO']
         
         df_display = df_filtrado_periodo[
@@ -397,7 +415,6 @@ def main():
         if 'SELECAO' not in df_display.columns:
             df_display['SELECAO'] = False
             
-        # NOVO: Adicionado ID_SUGESTAO à ordem
         cols_ordem = ['SELECAO', 'STATUS', 'ID_CONCILIACAO', 'ID_SUGESTAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
         cols_existentes = [c for c in cols_ordem if c in df_display.columns]
         cols_existentes += [c for c in df_display.columns if c not in cols_existentes]
@@ -429,10 +446,6 @@ def main():
             key="data_editor_main"
         )
         
-        # =====================================================================
-        # VALIDAÇÃO E AÇÕES MANUAIS
-        # =====================================================================
-        
         st.markdown("---")
         st.subheader("Validação da Conciliação Manual")
         
@@ -462,11 +475,9 @@ def main():
         with col_val3:
             btn_desfazer = st.button("↩️ Desfazer Seleção", use_container_width=True)
             
-        # NOVO: Botão Inverter Seleção
         with col_val4:
             btn_inverter = st.button("🔃 Inverter Seleção", use_container_width=True)
 
-        # Lógica dos botões
         if btn_conciliar:
             if len(selecionados) < 2:
                 st.warning("Selecione pelo menos 2 linhas.")
@@ -506,28 +517,16 @@ def main():
                 st.success("Status alterado para 'Não Conciliado'.")
                 st.rerun()
         
-        # NOVO: Lógica Inverter Seleção
         if btn_inverter:
-            # O edited_df reflete o estado atual do grid (filtrado)
             indices_visiveis = edited_df.index
-            
-            # Inverte a lógica: True vira False, False vira True
-            # Importante: pegar o estado ATUAL do edited_df
             current_selection = edited_df['SELECAO']
             inverted_selection = ~current_selection
-            
-            # Atualizar o dataframe global apenas nos indices visiveis
             st.session_state['df_unificado'].loc[indices_visiveis, 'SELECAO'] = inverted_selection
             st.rerun()
-        
-        # =====================================================================
-        # NOVO: INFORMAÇÕES NA PARTE INFERIOR (FILTRADO)
-        # =====================================================================
         
         st.markdown("---")
         st.subheader("📊 Totais da Tela Atual (Filtrados)")
         
-        # Cálculos baseados no df_display (que reflete os filtros aplicados)
         total_deb_razao = df_display[df_display['TP'] == 'RAZAO']['ENTRADAS'].sum()
         total_cred_razao = df_display[df_display['TP'] == 'RAZAO']['SAIDAS'].sum()
         
@@ -546,7 +545,6 @@ def main():
             st.metric("Soma Débitos Financeiro", formatar_valor_para_exibicao(total_deb_extrato))
             st.metric("Soma Créditos Financeiro", formatar_valor_para_exibicao(total_cred_extrato))
 
-        # Resumo Geral
         st.markdown("---")
         st.markdown("### 📈 Resumo Geral (Período Inteiro)")
         df_resumo = st.session_state['df_unificado']
@@ -556,7 +554,6 @@ def main():
         c2.metric("Sugestões", f"{len(df_resumo[df_resumo['STATUS'] == 'Sugestão'])}")
         c3.metric("Pendentes", f"{len(df_resumo[df_resumo['STATUS'] == 'Não Conciliado'])}")
         
-        # Exportação
         st.markdown("---")
         if st.button("📥 Exportar Excel (Dados Completos)"):
             excel_data = exportar_excel_unificado(st.session_state['df_unificado'])
