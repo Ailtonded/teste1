@@ -1,7 +1,7 @@
 """
-Sistema de Conciliação Contábil - versão 2.4 (Correção Validação Manual)
+Sistema de Conciliação Contábil - versão 2.5 (Usabilidade e ID Sugestões)
 Autor: Desenvolvedor Sênior Python
-Descrição: Correção da lógica de validação para separar EXTRATO vs RAZÃO.
+Descrição: Adicionado ID_SUGESTAO, botão inverter seleção e totais filtrados.
 """
 
 import streamlit as st
@@ -218,6 +218,10 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
     df_extrato['ID_CONCILIACAO'] = None
     df_razao['ID_CONCILIACAO'] = None
     
+    # NOVO: Inicializar ID_SUGESTAO
+    df_extrato['ID_SUGESTAO'] = None
+    df_razao['ID_SUGESTAO'] = None
+    
     chaves_extrato = df_extrato['CHAVE'].value_counts().to_dict()
     chaves_razao = df_razao['CHAVE'].value_counts().to_dict()
     chaves_comuns = set(df_extrato['CHAVE']).intersection(set(df_razao['CHAVE']))
@@ -241,7 +245,10 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
         df_razao.loc[idx_r, 'ID_CONCILIACAO'] = novo_id
     
     extrato_nc = df_extrato[df_extrato['STATUS'] == 'Não Conciliado']
-    razao_nc = df_razao[df_extrato['STATUS'] == 'Não Conciliado']
+    razao_nc = df_razao[df_razao['STATUS'] == 'Não Conciliado']
+    
+    # NOVO: Contador para ID de Sugestão
+    contador_sug_id = 0
     
     if not extrato_nc.empty and not razao_nc.empty:
         razao_nc_idx = razao_nc.copy()
@@ -256,9 +263,17 @@ def executar_conciliacao_unificada(df_extrato, df_razao):
                 if score >= CONFIG['score_minimo_sugestao']:
                     df_extrato.loc[idx_e, 'STATUS'] = 'Sugestão'
                     df_razao.loc[idx_r, 'STATUS'] = 'Sugestão'
+                    
+                    # NOVO: Gerar ID de Sugestão
+                    contador_sug_id += 1
+                    novo_sug_id = f"SUG_{contador_sug_id}"
+                    df_extrato.loc[idx_e, 'ID_SUGESTAO'] = novo_sug_id
+                    df_razao.loc[idx_r, 'ID_SUGESTAO'] = novo_sug_id
+                    
                     break
     
-    colunas_unificadas = ['ID', 'STATUS', 'ID_CONCILIACAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
+    # NOVO: Adicionado ID_SUGESTAO às colunas unificadas
+    colunas_unificadas = ['ID', 'STATUS', 'ID_CONCILIACAO', 'ID_SUGESTAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
     for col in colunas_unificadas:
         if col not in df_extrato: df_extrato[col] = ''
         if col not in df_razao: df_razao[col] = ''
@@ -363,12 +378,9 @@ def main():
                 default=['Conciliado', 'Sugestão', 'Não Conciliado', 'Conciliado Manual']
             )
         
-        with col_f2:
-            filtro_tipo = st.multiselect(
-                "Filtrar por Origem:",
-                options=['EXTRATO', 'RAZAO'],
-                default=['EXTRATO', 'RAZAO']
-            )
+        # REMOVIDO: Filtro por Origem (col_f2)
+        # Sempre considerar os dois lados
+        filtro_tipo = ['EXTRATO', 'RAZAO']
         
         df_display = df_filtrado_periodo[
             df_filtrado_periodo['STATUS'].isin(filtro_status) & 
@@ -385,7 +397,8 @@ def main():
         if 'SELECAO' not in df_display.columns:
             df_display['SELECAO'] = False
             
-        cols_ordem = ['SELECAO', 'STATUS', 'ID_CONCILIACAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
+        # NOVO: Adicionado ID_SUGESTAO à ordem
+        cols_ordem = ['SELECAO', 'STATUS', 'ID_CONCILIACAO', 'ID_SUGESTAO', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
         cols_existentes = [c for c in cols_ordem if c in df_display.columns]
         cols_existentes += [c for c in df_display.columns if c not in cols_existentes]
         
@@ -399,6 +412,7 @@ def main():
             "MOV": st.column_config.NumberColumn("Movimento", format="R$ %.2f"),
             "STATUS": st.column_config.TextColumn("Status"),
             "ID_CONCILIACAO": st.column_config.TextColumn("ID Conciliação"),
+            "ID_SUGESTAO": st.column_config.TextColumn("ID Sugestão"),
             "TP": st.column_config.TextColumn("Tipo"),
             "CONTA": st.column_config.TextColumn("Conta"),
             "HISTORICO": st.column_config.TextColumn("Histórico"),
@@ -411,12 +425,12 @@ def main():
             column_config=column_config,
             use_container_width=True,
             hide_index=True,
-            disabled=['DATA', 'MOV', 'STATUS', 'TP', 'ENTRADAS', 'SAIDAS', 'CHAVE', 'ID_CONCILIACAO'], 
+            disabled=['DATA', 'MOV', 'STATUS', 'TP', 'ENTRADAS', 'SAIDAS', 'CHAVE', 'ID_CONCILIACAO', 'ID_SUGESTAO'], 
             key="data_editor_main"
         )
         
         # =====================================================================
-        # CORREÇÃO: CÁLCULO SEPARADO EXTRATO vs RAZÃO (SEM USAR MOV)
+        # VALIDAÇÃO E AÇÕES MANUAIS
         # =====================================================================
         
         st.markdown("---")
@@ -424,22 +438,18 @@ def main():
         
         selecionados = edited_df[edited_df['SELECAO'] == True]
         
-        # 1. Separar por origem
         sel_extrato = selecionados[selecionados['TP'] == 'EXTRATO']
         sel_razao = selecionados[selecionados['TP'] == 'RAZAO']
         
-        # 2. Calcular totais de ENTRADAS e SAIDAS para cada grupo
         total_entrada_extrato = sel_extrato['ENTRADAS'].sum()
         total_saida_extrato = sel_extrato['SAIDAS'].sum()
         
         total_entrada_razao = sel_razao['ENTRADAS'].sum()
         total_saida_razao = sel_razao['SAIDAS'].sum()
         
-        # 3. Aplicar fórmula exata solicitada
-        # SALDO = (ENTRADAS_EXTRATO - ENTRADAS_RAZAO) + (SAIDAS_EXTRATO - SAIDAS_RAZAO)
         saldo_conciliacao = (total_entrada_extrato - total_entrada_razao) + (total_saida_extrato - total_saida_razao)
         
-        col_val1, col_val2, col_val3 = st.columns([2, 1, 1])
+        col_val1, col_val2, col_val3, col_val4 = st.columns([2, 1, 1, 1])
         
         with col_val1:
             st.markdown(f"### Saldo da conciliação: **{formatar_valor_para_exibicao(saldo_conciliacao)}**")
@@ -448,14 +458,15 @@ def main():
         
         with col_val2:
             btn_conciliar = st.button("✅ Conciliar Selecionados", type="primary", use_container_width=True)
-            
+        
         with col_val3:
             btn_desfazer = st.button("↩️ Desfazer Seleção", use_container_width=True)
+            
+        # NOVO: Botão Inverter Seleção
+        with col_val4:
+            btn_inverter = st.button("🔃 Inverter Seleção", use_container_width=True)
 
-        # =====================================================================
-        # AÇÕES MANUAIS
-        # =====================================================================
-        
+        # Lógica dos botões
         if btn_conciliar:
             if len(selecionados) < 2:
                 st.warning("Selecione pelo menos 2 linhas.")
@@ -464,7 +475,6 @@ def main():
                 if 'EXTRATO' not in tipos_sel or 'RAZAO' not in tipos_sel:
                     st.warning("Selecione pelo menos 1 item do EXTRATO e 1 do RAZÃO.")
                 else:
-                    # Validação com o novo cálculo
                     if saldo_conciliacao != 0:
                         st.error("A soma dos lançamentos deve ser zero para conciliar")
                     else:
@@ -496,7 +506,48 @@ def main():
                 st.success("Status alterado para 'Não Conciliado'.")
                 st.rerun()
         
-        # Resumo
+        # NOVO: Lógica Inverter Seleção
+        if btn_inverter:
+            # O edited_df reflete o estado atual do grid (filtrado)
+            indices_visiveis = edited_df.index
+            
+            # Inverte a lógica: True vira False, False vira True
+            # Importante: pegar o estado ATUAL do edited_df
+            current_selection = edited_df['SELECAO']
+            inverted_selection = ~current_selection
+            
+            # Atualizar o dataframe global apenas nos indices visiveis
+            st.session_state['df_unificado'].loc[indices_visiveis, 'SELECAO'] = inverted_selection
+            st.rerun()
+        
+        # =====================================================================
+        # NOVO: INFORMAÇÕES NA PARTE INFERIOR (FILTRADO)
+        # =====================================================================
+        
+        st.markdown("---")
+        st.subheader("📊 Totais da Tela Atual (Filtrados)")
+        
+        # Cálculos baseados no df_display (que reflete os filtros aplicados)
+        total_deb_razao = df_display[df_display['TP'] == 'RAZAO']['ENTRADAS'].sum()
+        total_cred_razao = df_display[df_display['TP'] == 'RAZAO']['SAIDAS'].sum()
+        
+        total_deb_extrato = df_display[df_display['TP'] == 'EXTRATO']['ENTRADAS'].sum()
+        total_cred_extrato = df_display[df_display['TP'] == 'EXTRATO']['SAIDAS'].sum()
+        
+        t_col1, t_col2 = st.columns(2)
+        
+        with t_col1:
+            st.markdown("**RAZÃO**")
+            st.metric("Soma Débitos Razão", formatar_valor_para_exibicao(total_deb_razao))
+            st.metric("Soma Créditos Razão", formatar_valor_para_exibicao(total_cred_razao))
+            
+        with t_col2:
+            st.markdown("**EXTRATO**")
+            st.metric("Soma Débitos Financeiro", formatar_valor_para_exibicao(total_deb_extrato))
+            st.metric("Soma Créditos Financeiro", formatar_valor_para_exibicao(total_cred_extrato))
+
+        # Resumo Geral
+        st.markdown("---")
         st.markdown("### 📈 Resumo Geral (Período Inteiro)")
         df_resumo = st.session_state['df_unificado']
         
