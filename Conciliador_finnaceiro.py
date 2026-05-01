@@ -1,455 +1,485 @@
 """
-Sistema de Conciliação Contábil - Versão Simplificada
-Funcionalidades: Conciliação automática + manual, filtros dinâmicos
+Sistema de Conciliação Contábil - versão 2.0 (Visão Unificada)
+Autor: Desenvolvedor Sênior Python
+Descrição: Conciliação automática e manual em interface unificada
 """
 
 import streamlit as st
 import pandas as pd
-import re
+import numpy as np
 from io import BytesIO
 from datetime import datetime
+from typing import Optional, Tuple, List, Dict
+import re
 
 # ============================================================================
-# CONFIGURAÇÃO
+# CONFIGURAÇÃO DA PÁGINA
 # ============================================================================
-st.set_page_config(page_title="Conciliação Contábil", page_icon="🔄", layout="wide")
+st.set_page_config(
+    page_title="Conciliação Contábil Unificada",
+    page_icon="🔄",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Palavras-chave para detectar colunas
+# ============================================================================
+# CONSTANTES E CONFIGURAÇÕES
+# ============================================================================
+CONFIG = {
+    'score_valor_igual': 50,
+    'score_valor_proximo': 30,
+    'score_data_igual': 50,
+    'score_data_proxima': 30,
+    'score_minimo_sugestao': 60,
+    'tolerancia_valor': 0.05,
+    'tolerancia_dias': 2,
+    'casas_decimais': 2
+}
+
 KEYWORDS = {
-    'data': ['DATA', 'DT', 'DTPAG', 'EMISSAO'],
-    'entrada': ['ENTRADA', 'CREDITO', 'RECEITA'],
-    'saida': ['SAIDA', 'DEBITO', 'DESPESA'],
-    'historico': ['HISTORICO', 'DESCRICAO', 'OBS']
+    'data': ['DATA', 'DT', 'DTPAG', 'DT_MOV', 'MOVIMENTACAO', 'EMISSAO'],
+    'entrada': ['ENTRADA', 'CREDITO', 'CREDITOS', 'VR_ENTRADA', 'RECEITA', 'ENTRADAS'],
+    'saida': ['SAIDA', 'DEBITO', 'DEBITOS', 'VR_SAIDA', 'DESPESA', 'SAIDAS'],
+    'documento': ['DOCUMENTO', 'DOC', 'NUMDOC', 'NUM_DOC', 'NR_DOC', 'NUMERO', 'LOTE'],
+    'historico': ['HISTORICO', 'HIST', 'DESCRICAO', 'DESC', 'OBSERVACAO', 'OBS', 'COMPLEMENTO', 'OPERACAO'],
+    'conta': ['CONTA', 'CTA', 'CONTA_CONTABIL', 'COD_CONTA']
+}
+
+ABAS_ESPERADAS = {
+    'EXTRATO': ['2-Totais', 'Totais', '2 - Totais', 'EXTRATO', 'MOVIMENTO'],
+    'RAZAO': ['3-Lançamentos Contábeis', '3-Lancamentos Contabeis', 'Lançamentos Contábeis', 
+              'Lancamentos Contabeis', '3-Lançamentos', '3-Lancamentos', 'RAZAO', 'LANCAMENTOS']
 }
 
 # ============================================================================
-# FUNÇÕES PRINCIPAIS
+# FUNÇÕES UTILITÁRIAS
 # ============================================================================
 
-def normalizar_texto(texto):
-    """Remove acentos e deixa maiúsculo"""
-    if pd.isna(texto):
-        return ""
+def normalizar_texto(texto: str) -> str:
+    if pd.isna(texto): return ""
     texto = str(texto).upper().strip()
-    texto = texto.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
-    texto = texto.replace('Ã', 'A').replace('Õ', 'O').replace('Ç', 'C')
+    mapeamento = {'Á': 'A', 'À': 'A', 'Ã': 'A', 'Â': 'A', 'Ä': 'A', 'É': 'E', 'È': 'E', 
+                  'Ê': 'E', 'Ë': 'E', 'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I', 'Ó': 'O', 
+                  'Ò': 'O', 'Õ': 'O', 'Ô': 'O', 'Ö': 'O', 'Ú': 'U', 'Ù': 'U', 'Û': 'U', 
+                  'Ü': 'U', 'Ç': 'C', 'Ñ': 'N'}
+    for acento, sem_acento in mapeamento.items():
+        texto = texto.replace(acento, sem_acento)
     return texto
 
-def detectar_coluna(df, tipo):
-    """Encontra a coluna correta baseado nas palavras-chave"""
-    for col in df.columns:
-        col_norm = normalizar_texto(str(col))
-        for palavra in KEYWORDS[tipo]:
-            if palavra in col_norm:
-                return col
+def normalizar_nome_coluna(coluna: str) -> str:
+    if pd.isna(coluna): return "COLUNA_VAZIA"
+    coluna = normalizar_texto(str(coluna))
+    coluna = re.sub(r'[^A-Z0-9]', '_', coluna)
+    coluna = re.sub(r'_+', '_', coluna)
+    return coluna.strip('_') if coluna.strip('_') else "COLUNA_SEM_NOME"
+
+def encontrar_aba_correta(xls_file, tipo: str) -> Optional[str]:
+    abas_disponiveis = xls_file.sheet_names
+    abas_esperadas = ABAS_ESPERADAS.get(tipo, [])
+    abas_normalizadas = {normalizar_texto(aba): aba for aba in abas_disponiveis}
+    for aba_esperada in abas_esperadas:
+        aba_norm = normalizar_texto(aba_esperada)
+        if aba_norm in abas_normalizadas: return abas_normalizadas[aba_norm]
+        for aba_disp_norm, aba_original in abas_normalizadas.items():
+            if aba_norm in aba_disp_norm or aba_disp_norm in aba_norm: return aba_original
     return None
 
-def converter_valor(valor):
-    """Converte texto para número"""
-    if pd.isna(valor):
-        return 0.0
-    if isinstance(valor, (int, float)):
-        return float(valor)
-    
+def detectar_linha_cabecalho(df: pd.DataFrame) -> Optional[int]:
+    keywords_cabecalho = ['DATA', 'VALOR', 'ENTRADA', 'SAIDA', 'DEBITO', 'CREDITO', 'CONTA']
+    for idx, row in df.iterrows():
+        valores = [str(v).upper() for v in row.values if pd.notna(v)]
+        matches = sum(1 for v in valores for kw in keywords_cabecalho if kw in v)
+        if matches >= 2: return idx
+    return None
+
+def detectar_coluna(df: pd.DataFrame, tipo: str) -> Optional[str]:
+    if tipo not in KEYWORDS: return None
+    keywords = KEYWORDS[tipo]
+    colunas_normalizadas = {col: normalizar_nome_coluna(col) for col in df.columns}
+    for col_original, col_normalizada in colunas_normalizadas.items():
+        for keyword in keywords:
+            if keyword in col_normalizada: return col_original
+    return None
+
+def converter_valor_monetario(valor) -> float:
+    if pd.isna(valor): return 0.0
+    if isinstance(valor, (int, float)): return float(valor)
     valor_str = str(valor).strip()
-    negativo = valor_str.startswith('(') and valor_str.endswith(')')
+    is_negativo = valor_str.startswith('(') and valor_str.endswith(')')
     valor_str = re.sub(r'[R$\s\(\)]', '', valor_str)
-    
-    # Trata formato brasileiro (1.000,50)
-    if ',' in valor_str and '.' in valor_str:
-        valor_str = valor_str.replace('.', '').replace(',', '.')
-    elif ',' in valor_str:
-        valor_str = valor_str.replace(',', '.')
-    
+    if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.')
+    elif ',' in valor_str: valor_str = valor_str.replace(',', '.')
     try:
         resultado = float(valor_str)
-        return -resultado if negativo else resultado
-    except:
-        return 0.0
+        return -resultado if is_negativo else resultado
+    except ValueError: return 0.0
 
-def carregar_arquivo(arquivo, nome):
-    """Carrega e processa o arquivo Excel automaticamente"""
-    if arquivo is None:
-        return None, []
-    
+def formatar_data_para_exibicao(data) -> str:
+    if pd.isna(data): return ""
+    try: return data.strftime('%d/%m/%Y')
+    except: return str(data)
+
+def formatar_valor_para_exibicao(valor) -> str:
+    if pd.isna(valor): return "R$ 0,00"
+    try: return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except: return str(valor)
+
+def processar_arquivo_excel(uploaded_file, nome_tipo: str) -> Tuple[Optional[pd.DataFrame], List[str]]:
     logs = []
     try:
-        # Tenta encontrar a aba correta
-        xls = pd.ExcelFile(arquivo)
-        aba_encontrada = None
+        xls_file = pd.ExcelFile(uploaded_file)
+        logs.append(f"📁 {nome_tipo}: Arquivo carregado")
         
-        # Procura a aba pelo nome esperado
-        for aba in xls.sheet_names:
-            if '2-Totais' in aba or '3-Lançamentos' in aba:
-                aba_encontrada = aba
-                break
-        
-        if not aba_encontrada:
-            aba_encontrada = xls.sheet_names[0]
-            logs.append(f"⚠️ Usando primeira aba: {aba_encontrada}")
+        aba_correta = encontrar_aba_correta(xls_file, nome_tipo)
+        if aba_correta is None:
+            aba_correta = xls_file.sheet_names[0]
+            logs.append(f"⚠️ Usando aba: '{aba_correta}'")
         else:
-            logs.append(f"✅ Aba encontrada: {aba_encontrada}")
+            logs.append(f"✅ Aba '{aba_correta}' selecionada")
         
-        # Lê o arquivo
-        df = pd.read_excel(arquivo, sheet_name=aba_encontrada)
-        logs.append(f"📊 {len(df)} linhas carregadas")
+        uploaded_file.seek(0)
+        df_raw = pd.read_excel(uploaded_file, sheet_name=aba_correta, header=None, dtype=str)
         
-        # Detecta colunas
-        col_data = detectar_coluna(df, 'data')
-        col_entrada = detectar_coluna(df, 'entrada')
-        col_saida = detectar_coluna(df, 'saida')
-        col_hist = detectar_coluna(df, 'historico')
-        
-        if not col_data:
-            logs.append("❌ Coluna de DATA não encontrada")
+        linha_cabecalho = detectar_linha_cabecalho(df_raw)
+        if linha_cabecalho is None:
+            logs.append(f"❌ Cabeçalho não detectado")
             return None, logs
         
-        # Renomeia colunas
-        df = df.rename(columns={col_data: 'DATA'})
+        uploaded_file.seek(0)
+        df = pd.read_excel(uploaded_file, sheet_name=aba_correta, header=linha_cabecalho)
+        df = df.loc[:, ~df.columns.astype(str).str.startswith('Unnamed')]
+        df.columns = [normalizar_nome_coluna(col) for col in df.columns]
         
-        if col_entrada:
-            df = df.rename(columns={col_entrada: 'ENTRADAS'})
-        else:
-            df['ENTRADAS'] = 0
+        # Detectar e mapear colunas
+        mapeamento = {
+            'data': ('DATA', detectar_coluna(df, 'data')),
+            'entrada': ('ENTRADAS', detectar_coluna(df, 'entrada')),
+            'saida': ('SAIDAS', detectar_coluna(df, 'saida')),
+            'historico': ('HISTORICO', detectar_coluna(df, 'historico')),
+            'documento': ('DOCUMENTO', detectar_coluna(df, 'documento')),
+            'conta': ('CONTA', detectar_coluna(df, 'conta'))
+        }
         
-        if col_saida:
-            df = df.rename(columns={col_saida: 'SAIDAS'})
-        else:
-            df['SAIDAS'] = 0
+        for key, (novo_nome, col_orig) in mapeamento.items():
+            if col_orig:
+                df = df.rename(columns={col_orig: novo_nome})
+                logs.append(f"✅ '{col_orig}' → '{novo_nome}'")
+            else:
+                if key in ['data']: 
+                    logs.append(f"❌ Coluna obrigatória {key} não encontrada")
+                    return None, logs
+                df[novo_nome] = '' if key != 'entrada' and key != 'saida' else 0.0
+                logs.append(f"⚠️ {novo_nome} não detectado, criado vazio/zero")
         
-        if col_hist:
-            df = df.rename(columns={col_hist: 'HISTORICO'})
-        else:
-            df['HISTORICO'] = ''
-        
-        # Converte dados
+        # Conversões
         df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce', dayfirst=True)
-        df['ENTRADAS'] = df['ENTRADAS'].apply(converter_valor)
-        df['SAIDAS'] = df['SAIDAS'].apply(converter_valor)
-        df['MOV'] = (df['ENTRADAS'] - df['SAIDAS']).round(2)
-        
-        # Remove linhas sem movimento
-        df = df[df['MOV'] != 0]
         df = df.dropna(subset=['DATA'])
         
-        # Adiciona origem e chave
-        df['ORIGEM'] = nome
-        df['CHAVE'] = df['DATA'].dt.strftime('%Y%m%d') + '_' + df['MOV'].astype(str)
+        df['ENTRADAS'] = df['ENTRADAS'].apply(converter_valor_monetario).fillna(0)
+        df['SAIDAS'] = df['SAIDAS'].apply(converter_valor_monetario).fillna(0)
         
-        logs.append(f"✅ {len(df)} registros válidos")
+        df['MOV'] = (df['ENTRADAS'] - df['SAIDAS']).round(CONFIG['casas_decimais'])
+        df['TP'] = nome_tipo
+        df['CONTA'] = df.get('CONTA', '')
+        
+        # Chave para conciliação automática
+        df['CHAVE'] = df['DATA'].dt.strftime('%Y-%m-%d') + '_' + df['MOV'].round(2).astype(str)
+        
+        # Remover movimento zero
+        df = df[df['MOV'] != 0]
+        
+        logs.append(f"✅ {len(df)} registros processados")
         return df, logs
         
     except Exception as e:
         logs.append(f"❌ Erro: {str(e)}")
         return None, logs
 
-def fazer_conciliacao_auto(df_extrato, df_razao):
-    """Conciliação automática por DATA + VALOR"""
-    # Marca registros já conciliados
-    df_extrato['CONCILIADO'] = False
-    df_razao['CONCILIADO'] = False
+def calcular_score_match(row1: pd.Series, row2: pd.Series) -> int:
+    score = 0
+    diff_valor = abs(abs(row1['MOV']) - abs(row2['MOV']))
+    if diff_valor == 0: score += 50
+    elif diff_valor <= CONFIG['tolerancia_valor']: score += 30
     
-    # Encontra matches exatos
-    chaves_extrato = set(df_extrato['CHAVE'])
-    chaves_razao = set(df_razao['CHAVE'])
-    chaves_comuns = chaves_extrato.intersection(chaves_razao)
-    
-    matches = []
-    for chave in chaves_comuns:
-        # Pega um de cada lado (primeiro match)
-        extrato_match = df_extrato[df_extrato['CHAVE'] == chave].iloc[0]
-        razao_match = df_razao[df_razao['CHAVE'] == chave].iloc[0]
-        
-        matches.append({
-            'DATA': extrato_match['DATA'],
-            'VALOR': extrato_match['MOV'],
-            'HISTORICO_EXTRATO': extrato_match.get('HISTORICO', ''),
-            'HISTORICO_RAZAO': razao_match.get('HISTORICO', ''),
-            'STATUS': '✅ Conciliado Auto',
-            'CHAVE': chave,
-            'ID_EXTRATO': extrato_match.name,
-            'ID_RAZAO': razao_match.name
-        })
-        
-        # Marca como conciliado
-        df_extrato.loc[extrato_match.name, 'CONCILIADO'] = True
-        df_razao.loc[razao_match.name, 'CONCILIADO'] = True
-    
-    return pd.DataFrame(matches), df_extrato, df_razao
-
-def gerar_sugestoes(df_extrato, df_razao):
-    """Gera sugestões para valores próximos"""
-    sugestoes = []
-    
-    extrato_nc = df_extrato[~df_extrato['CONCILIADO']].copy()
-    razao_nc = df_razao[~df_razao['CONCILIADO']].copy()
-    
-    for _, extrato_row in extrato_nc.iterrows():
-        for _, razao_row in razao_nc.iterrows():
-            # Verifica se valores são próximos (diferença <= 0.10)
-            diferenca = abs(extrato_row['MOV'] - razao_row['MOV'])
-            if diferenca <= 0.10:
-                sugestoes.append({
-                    'DATA_EXTRATO': extrato_row['DATA'],
-                    'VALOR_EXTRATO': extrato_row['MOV'],
-                    'HISTORICO_EXTRATO': extrato_row.get('HISTORICO', ''),
-                    'DATA_RAZAO': razao_row['DATA'],
-                    'VALOR_RAZAO': razao_row['MOV'],
-                    'HISTORICO_RAZAO': razao_row.get('HISTORICO', ''),
-                    'DIFERENCA': diferenca,
-                    'ID_EXTRATO': extrato_row.name,
-                    'ID_RAZAO': razao_row.name
-                })
-    
-    return pd.DataFrame(sugestoes)
-
-def formatar_data(data):
-    """Formata data para exibição"""
-    if pd.isna(data):
-        return ""
-    return data.strftime('%d/%m/%Y') if hasattr(data, 'strftime') else str(data)
-
-def formatar_valor(valor):
-    """Formata valor para exibição"""
-    if pd.isna(valor):
-        return "R$ 0,00"
-    return f"R$ {valor:,.2f}".replace('.', 'X').replace(',', '.').replace('X', ',')
+    if pd.notna(row1['DATA']) and pd.notna(row2['DATA']):
+        diff_dias = abs((row1['DATA'] - row2['DATA']).days)
+        if diff_dias == 0: score += 50
+        elif diff_dias <= CONFIG['tolerancia_dias']: score += 30
+    return score
 
 # ============================================================================
-# INTERFACE PRINCIPAL
+# LÓGICA DE CONCILIAÇÃO E UNIFICAÇÃO
+# ============================================================================
+
+def executar_conciliacao_unificada(df_extrato, df_razao):
+    """Executa a conciliação e retorna um DataFrame unificado com status."""
+    
+    # Preparar IDs únicos para rastreamento
+    df_extrato = df_extrato.copy()
+    df_razao = df_razao.copy()
+    df_extrato['ID'] = ['EX_' + str(i) for i in range(len(df_extrato))]
+    df_razao['ID'] = ['RZ_' + str(i) for i in range(len(df_razao))]
+    
+    # 1. Status inicial
+    df_extrato['STATUS'] = 'Não Conciliado'
+    df_razao['STATUS'] = 'Não Conciliado'
+    
+    # 2. Conciliação Automática (Exata)
+    chaves_extrato = df_extrato['CHAVE'].value_counts().to_dict()
+    chaves_razao = df_razao['CHAVE'].value_counts().to_dict()
+    chaves_comuns = set(df_extrato['CHAVE']).intersection(set(df_razao['CHAVE']))
+    
+    ids_conciliados_ex = []
+    ids_conciliados_rz = []
+    
+    for chave in chaves_comuns:
+        qtd_e = chaves_extrato.get(chave, 0)
+        qtd_r = chaves_razao.get(chave, 0)
+        matches = min(qtd_e, qtd_r)
+        
+        idx_e = df_extrato[df_extrato['CHAVE'] == chave].index[:matches]
+        idx_r = df_razao[df_razao['CHAVE'] == chave].index[:matches]
+        
+        df_extrato.loc[idx_e, 'STATUS'] = 'Conciliado'
+        df_razao.loc[idx_r, 'STATUS'] = 'Conciliado'
+        
+        # Guardar pares conciliados (opcional, para futuro "desfazer")
+    
+    # 3. Sugestões
+    # Marcar linhas que têm sugestões potenciais mas não foram conciliadas
+    extrato_nc = df_extrato[df_extrato['STATUS'] == 'Não Conciliado']
+    razao_nc = df_razao[df_razao['STATUS'] == 'Não Conciliado']
+    
+    # Otimização: indexar por valor para buscar sugestões
+    ids_com_sugestao = set()
+    
+    if not extrato_nc.empty and not razao_nc.empty:
+        # Criar índice simples de valor para busca rápida
+        razao_nc_idx = razao_nc.copy()
+        razao_nc_idx['_v_int'] = (razao_nc_idx['MOV'].abs() * 100).astype(int)
+        extrato_nc_idx = extrato_nc.copy()
+        extrato_nc_idx['_v_int'] = (extrato_nc_idx['MOV'].abs() * 100).astype(int)
+        
+        for idx_e, row_e in extrato_nc_idx.iterrows():
+            v_int = row_e['_v_int']
+            # Buscar razão com valor próximo
+            candidatos = razao_nc_idx[(razao_nc_idx['_v_int'] >= v_int - 5) & (razao_nc_idx['_v_int'] <= v_int + 5)]
+            
+            for idx_r in candidatos.index:
+                row_r = razao_nc_idx.loc[idx_r]
+                score = calcular_score_match(row_e, row_r)
+                if score >= CONFIG['score_minimo_sugestao']:
+                    ids_com_sugestao.add(row_e['ID'])
+                    ids_com_sugestao.add(razao_nc_idx.loc[idx_r, 'ID'])
+                    break # Encontrou uma sugestão boa, marca e passa para o próximo
+    
+    # Atualizar status de sugestão
+    df_extrato.loc[df_extrato['ID'].isin(ids_com_sugestao), 'STATUS'] = 'Sugestão'
+    df_razao.loc[df_razao['ID'].isin(ids_com_sugestao), 'STATUS'] = 'Sugestão'
+    
+    # 4. Unificar DataFrames
+    colunas_unificadas = ['ID', 'STATUS', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV', 'CHAVE']
+    
+    # Garantir que todas as colunas existam
+    for col in colunas_unificadas:
+        if col not in df_extrato: df_extrato[col] = ''
+        if col not in df_razao: df_razao[col] = ''
+    
+    df_final = pd.concat([
+        df_extrato[colunas_unificadas],
+        df_razao[colunas_unificadas]
+    ], ignore_index=True)
+    
+    # Adicionar coluna de seleção para o usuário
+    df_final['SELECAO'] = False
+    
+    return df_final
+
+def exportar_excel_unificado(df: pd.DataFrame) -> bytes:
+    output = BytesIO()
+    # Remover colunas técnicas para exportação
+    df_exp = df.drop(columns=['SELECAO'], errors='ignore')
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_exp.to_excel(writer, sheet_name='Conciliacao_Unificada', index=False)
+    output.seek(0)
+    return output.getvalue()
+
+# ============================================================================
+# INTERFACE STREAMLIT
 # ============================================================================
 
 def main():
-    st.title("🔄 Conciliação Contábil")
+    st.title("🔄 Conciliação Contábil - Visão Unificada")
     st.markdown("---")
     
-    # Sidebar com ajuda
+    # Sidebar
     with st.sidebar:
-        st.header("📋 Ajuda")
-        st.markdown("""
-        1. **Envie o arquivo do EXTRATO** (aba esperada: `2-Totais`)
-        2. **Envie o arquivo do RAZÃO** (aba esperada: `3-Lançamentos`)
-        3. **Clique em "Realizar Conciliação"**
-        4. **Use os filtros** para visualizar os dados
-        5. **Marque os checkboxes** para conciliar manualmente
-        """)
+        st.header("📋 Uploads e Filtros")
+        st.markdown("**1. Carregar Arquivos**")
+        arquivo_extrato = st.file_uploader("Extrato (Aba 2-Totais)", type=['xlsx', 'xls'], key="up_extrato")
+        arquivo_razao = st.file_uploader("Razão (Aba 3-Lançamentos)", type=['xlsx', 'xls'], key="up_razao")
+        
         st.markdown("---")
-        st.caption("Sistema simplificado de conciliação")
+        st.markdown("**Sobre o Sistema:**")
+        st.markdown("✅ Automático: DATA + VALOR exatos")
+        st.markdown("🧠 Sugestão: Similaridade > 60pts")
+        st.markdown("✋ Manual: Seleção do usuário")
     
-    # Upload dos arquivos
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📥 Extrato Bancário")
-        arquivo_extrato = st.file_uploader("Arquivo Excel", type=['xlsx', 'xls'], key="extrato")
-    
-    with col2:
-        st.subheader("📥 Razão Contábil")
-        arquivo_razao = st.file_uploader("Arquivo Excel", type=['xlsx', 'xls'], key="razao")
-    
-    # Botão de processamento
-    processar = st.button("🔄 Realizar Conciliação", type="primary", use_container_width=True)
-    
-    if processar and arquivo_extrato and arquivo_razao:
-        with st.spinner("Carregando arquivos..."):
-            df_extrato, logs_extrato = carregar_arquivo(arquivo_extrato, "EXTRATO")
-            df_razao, logs_razao = carregar_arquivo(arquivo_razao, "RAZAO")
-        
-        # Exibe logs
-        with st.expander("📋 Logs de processamento"):
-            if logs_extrato:
-                st.info("**EXTRATO:**\n" + "\n".join(logs_extrato))
-            if logs_razao:
-                st.info("**RAZÃO:**\n" + "\n".join(logs_razao))
-        
-        if df_extrato is not None and df_razao is not None:
-            with st.spinner("Conciliando..."):
-                # Conciliação automática
-                df_conciliados, df_extrato, df_razao = fazer_conciliacao_auto(df_extrato, df_razao)
+    # Processamento Inicial
+    if arquivo_extrato and arquivo_razao:
+        if 'df_unificado' not in st.session_state or st.session_state.get('processar_novamente', False):
+            with st.spinner("Processando arquivos..."):
+                df_extrato, _ = processar_arquivo_excel(arquivo_extrato, "EXTRATO")
+                df_razao, _ = processar_arquivo_excel(arquivo_razao, "RAZAO")
                 
-                # Sugestões
-                df_sugestoes = gerar_sugestoes(df_extrato, df_razao)
-                
-                # Monta lista completa de não conciliados
-                nao_conciliados = []
-                
-                # Adiciona não conciliados do extrato
-                for _, row in df_extrato[~df_extrato['CONCILIADO']].iterrows():
-                    nao_conciliados.append({
-                        'DATA': row['DATA'],
-                        'VALOR': row['MOV'],
-                        'HISTORICO': row.get('HISTORICO', ''),
-                        'ORIGEM': 'EXTRATO',
-                        'STATUS': '❌ Não Conciliado',
-                        'ID': row.name,
-                        'TIPO': 'extrato'
-                    })
-                
-                # Adiciona não conciliados do razão
-                for _, row in df_razao[~df_razao['CONCILIADO']].iterrows():
-                    nao_conciliados.append({
-                        'DATA': row['DATA'],
-                        'VALOR': row['MOV'],
-                        'HISTORICO': row.get('HISTORICO', ''),
-                        'ORIGEM': 'RAZÃO',
-                        'STATUS': '❌ Não Conciliado',
-                        'ID': row.name,
-                        'TIPO': 'razao'
-                    })
-                
-                df_nao_conciliados = pd.DataFrame(nao_conciliados)
-                
-                # Prepara sugestões com checkbox
-                if not df_sugestoes.empty:
-                    sugestoes_com_check = []
-                    for _, row in df_sugestoes.iterrows():
-                        sugestoes_com_check.append({
-                            '☑️ Conciliar': False,
-                            'DATA EXTRATO': formatar_data(row['DATA_EXTRATO']),
-                            'VALOR EXTRATO': formatar_valor(row['VALOR_EXTRATO']),
-                            'HISTÓRICO EXTRATO': row['HISTORICO_EXTRATO'][:50],
-                            'DATA RAZÃO': formatar_data(row['DATA_RAZÃO']),
-                            'VALOR RAZÃO': formatar_valor(row['VALOR_RAZAO']),
-                            'HISTÓRICO RAZÃO': row['HISTORICO_RAZAO'][:50],
-                            'DIFERENÇA': formatar_valor(row['DIFERENCA']),
-                            'ID_EXTRATO': row['ID_EXTRATO'],
-                            'ID_RAZAO': row['ID_RAZAO']
-                        })
-                    df_sugestoes_display = pd.DataFrame(sugestoes_com_check)
+                if df_extrato is not None and df_razao is not None:
+                    df_unificado = executar_conciliacao_unificada(df_extrato, df_razao)
+                    st.session_state['df_unificado'] = df_unificado
+                    st.session_state['processar_novamente'] = False
                 else:
-                    df_sugestoes_display = pd.DataFrame()
-                
-                # Salva na sessão
-                st.session_state['df_conciliados'] = df_conciliados
-                st.session_state['df_sugestoes'] = df_sugestoes_display
-                st.session_state['df_nao_conciliados'] = df_nao_conciliados
-                st.session_state['df_extrato_raw'] = df_extrato
-                st.session_state['df_razao_raw'] = df_razao
-                st.session_state['conciliado'] = True
-                
-                st.success("✅ Conciliação realizada!")
-    
-    # ============================================================================
-    # EXIBIÇÃO DOS RESULTADOS
-    # ============================================================================
-    
-    if st.session_state.get('conciliado', False):
-        st.markdown("---")
+                    st.error("Erro ao processar arquivos. Verifique os logs.")
+                    return
+
+    # Main Area
+    if 'df_unificado' in st.session_state:
+        df_base = st.session_state['df_unificado'].copy()
         
-        # Cards de resumo
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("✅ Conciliados Auto", len(st.session_state['df_conciliados']))
-        with col2:
-            st.metric("💡 Sugestões", len(st.session_state['df_sugestoes']))
-        with col3:
-            st.metric("⚠️ Não Conciliados", len(st.session_state['df_nao_conciliados']))
-        with col4:
-            total = len(st.session_state['df_conciliados']) + len(st.session_state['df_sugestoes']) + len(st.session_state['df_nao_conciliados'])
-            st.metric("📊 Total", total)
+        # 1. Filtros Superiores
+        col_f1, col_f2, col_f3, col_f4 = st.columns([2, 2, 2, 2])
         
-        st.markdown("---")
+        with col_f1:
+            filtro_status = st.multiselect(
+                "Filtrar por Status:",
+                options=['Conciliado', 'Sugestão', 'Não Conciliado'],
+                default=['Conciliado', 'Sugestão', 'Não Conciliado']
+            )
         
-        # Filtro principal
-        st.subheader("🔍 Filtros")
-        tipo_filtro = st.radio(
-            "Exibir:",
-            ["📋 Todos os lançamentos", "✅ Apenas Conciliados", "💡 Apenas Sugestões", "⚠️ Apenas Não Conciliados"],
-            horizontal=True
+        with col_f2:
+            filtro_tipo = st.multiselect(
+                "Filtrar por Origem:",
+                options=['EXTRATO', 'RAZAO'],
+                default=['EXTRATO', 'RAZAO']
+            )
+        
+        with col_f3:
+            # Filtro rápido para ver o que sobrou
+            if st.button("Mostrar Pendentes", use_container_width=True):
+                filtro_status = ['Não Conciliado', 'Sugestão']
+                st.session_state['filtro_status_pendentes'] = filtro_status
+        
+        # Aplicar Filtros
+        df_filtrado = df_base[
+            df_base['STATUS'].isin(filtro_status) & 
+            df_base['TP'].isin(filtro_tipo)
+        ].copy()
+        
+        # 2. Tabela de Edição (Data Editor)
+        st.markdown(f"### 📊 Lançamentos ({len(df_filtrado)} exibidos)")
+        
+        # Configuração das colunas
+        column_config = {
+            "SELECAO": st.column_config.CheckboxColumn("Selecionar", default=False),
+            "ID": None, # Ocultar ID técnico
+            "DATA": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+            "ENTRADAS": st.column_config.NumberColumn("Entradas", format="R$ %.2f"),
+            "SAIDAS": st.column_config.NumberColumn("Saídas", format="R$ %.2f"),
+            "MOV": st.column_config.NumberColumn("Movimento", format="R$ %.2f"),
+            "STATUS": st.column_config.TextColumn("Status"),
+            "TP": st.column_config.TextColumn("Tipo"),
+            "CONTA": st.column_config.TextColumn("Conta"),
+            "HISTORICO": st.column_config.TextColumn("Histórico/Operação"),
+            "DOCUMENTO": st.column_config.TextColumn("Documento"),
+            "CHAVE": None # Ocultar chave técnica
+        }
+        
+        # Reordenar colunas para exibição
+        cols_ordem = ['SELECAO', 'STATUS', 'TP', 'CONTA', 'DATA', 'HISTORICO', 'DOCUMENTO', 'ENTRADAS', 'SAIDAS', 'MOV']
+        # Filtrar apenas colunas que existem
+        cols_existentes = [c for c in cols_ordem if c in df_filtrado.columns]
+        df_display = df_filtrado[cols_existentes]
+        
+        edited_df = st.data_editor(
+            df_display,
+            column_config=column_config,
+            use_container_width=True,
+            hide_index=True,
+            disabled=['DATA', 'MOV', 'STATUS', 'TP'], # Impede edição de dados brutos
+            key="data_editor_main"
         )
         
+        # 3. Ações de Conciliação Manual
         st.markdown("---")
+        col_a1, col_a2, col_a3 = st.columns([1, 1, 4])
         
-        # ========================================================================
-        # CONCILIADOS
-        # ========================================================================
-        if tipo_filtro in ["📋 Todos os lançamentos", "✅ Apenas Conciliados"]:
-            st.subheader("✅ Lançamentos Conciliados Automaticamente")
-            if not st.session_state['df_conciliados'].empty:
-                df_display = st.session_state['df_conciliados'].copy()
-                df_display['DATA'] = df_display['DATA'].apply(formatar_data)
-                df_display['VALOR'] = df_display['VALOR'].apply(formatar_valor)
-                st.dataframe(df_display.drop(columns=['CHAVE', 'ID_EXTRATO', 'ID_RAZAO'], errors='ignore'), 
-                           use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum lançamento conciliado")
-        
-        # ========================================================================
-        # SUGESTÕES (com checkbox para conciliação manual)
-        # ========================================================================
-        if tipo_filtro in ["📋 Todos os lançamentos", "💡 Apenas Sugestões"]:
-            st.subheader("💡 Sugestões de Conciliação (Marque para conciliar manualmente)")
-            
-            if not st.session_state['df_sugestoes'].empty:
-                # Exibe com checkboxes
-                df_sug = st.session_state['df_sugestoes'].copy()
+        with col_a1:
+            if st.button("✅ Conciliar Selecionados", type="primary", use_container_width=True):
+                # Identificar linhas selecionadas
+                selecionados = edited_df[edited_df['SELECAO'] == True]
                 
-                # Usa st.data_editor para permitir marcação
-                edited_df = st.data_editor(
-                    df_sug,
-                    column_config={
-                        "☑️ Conciliar": st.column_config.CheckboxColumn("Conciliar", default=False),
-                        "DATA EXTRATO": st.column_config.TextColumn("Data Extrato"),
-                        "VALOR EXTRATO": st.column_config.TextColumn("Valor Extrato"),
-                        "DATA RAZÃO": st.column_config.TextColumn("Data Razão"),
-                        "VALOR RAZÃO": st.column_config.TextColumn("Valor Razão"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                    key="sugestoes_editor"
-                )
-                
-                # Botão para confirmar conciliação manual
-                selecionados = edited_df[edited_df['☑️ Conciliar'] == True]
-                
-                if not selecionados.empty:
-                    if st.button(f"✅ Conciliar {len(selecionados)} selecionado(s)", type="primary"):
-                        st.success(f"{len(selecionados)} lançamento(s) conciliado(s) manualmente!")
-                        # Aqui você pode implementar a lógica para salvar as conciliações manuais
-                        # Limpa os selecionados após conciliar
+                if len(selecionados) < 2:
+                    st.warning("Selecione pelo menos 2 linhas para conciliar manualmente.")
+                else:
+                    # Validar se tem pelo menos 1 de cada lado
+                    tipos_sel = selecionados['TP'].unique()
+                    if 'EXTRATO' not in tipos_sel or 'RAZAO' not in tipos_sel:
+                        st.warning("Selecione pelo menos 1 item do EXTRATO e 1 do RAZÃO.")
+                    else:
+                        # Atualizar o DataFrame principal na sessão
+                        # Encontrar índices no DF original baseado no ID (precisamos recuperar o ID)
+                        # O data_editor remove colunas ocultas, mas mantém a ordem/índice original se não resetarmos
+                        
+                        # Como 'ID' foi ocultado, vamos usar o índice do df_display que corresponde ao df_filtrado
+                        # Mas o data_editor retorna o DF modificado.
+                        
+                        # Abordagem segura: Recuperar IDs pelo índice original
+                        # O df_filtrado tem o índice do df_base.
+                        
+                        indices_selecionados = selecionados.index
+                        st.session_state['df_unificado'].loc[indices_selecionados, 'STATUS'] = 'Conciliado Manual'
+                        st.session_state['df_unificado'].loc[indices_selecionados, 'SELECAO'] = False
+                        
+                        st.success(f"{len(selecionados)} itens conciliados manualmente com sucesso!")
                         st.rerun()
-            else:
-                st.info("Nenhuma sugestão disponível")
-        
-        # ========================================================================
-        # NÃO CONCILIADOS (com checkbox para conciliação manual)
-        # ========================================================================
-        if tipo_filtro in ["📋 Todos os lançamentos", "⚠️ Apenas Não Conciliados"]:
-            st.subheader("⚠️ Lançamentos Não Conciliados")
-            
-            if not st.session_state['df_nao_conciliados'].empty:
-                df_nc = st.session_state['df_nao_conciliados'].copy()
-                df_nc['DATA'] = df_nc['DATA'].apply(formatar_data)
-                df_nc['VALOR'] = df_nc['VALOR'].apply(formatar_valor)
-                
-                # Adiciona checkbox para conciliação manual
-                df_nc.insert(0, '☑️ Conciliar', False)
-                
-                edited_nc = st.data_editor(
-                    df_nc,
-                    column_config={
-                        "☑️ Conciliar": st.column_config.CheckboxColumn("Conciliar", default=False),
-                        "DATA": st.column_config.TextColumn("Data"),
-                        "VALOR": st.column_config.TextColumn("Valor"),
-                        "HISTORICO": st.column_config.TextColumn("Histórico", width="large"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                    key="nao_conciliados_editor"
-                )
-                
-                selecionados_nc = edited_nc[edited_nc['☑️ Conciliar'] == True]
-                
-                if not selecionados_nc.empty:
-                    if st.button(f"✅ Conciliar {len(selecionados_nc)} selecionado(s) manualmente", key="btn_manual"):
-                        st.success(f"{len(selecionados_nc)} lançamento(s) conciliado(s) manualmente!")
-                        st.rerun()
-            else:
-                st.success("🎉 Todos os lançamentos foram conciliados!")
 
-# ============================================================================
-# EXECUÇÃO
-# ============================================================================
+        with col_a2:
+            if st.button("↩️ Desfazer Conciliação", use_container_width=True):
+                selecionados = edited_df[edited_df['SELECAO'] == True]
+                if len(selecionados) > 0:
+                    indices_selecionados = selecionados.index
+                    st.session_state['df_unificado'].loc[indices_selecionados, 'STATUS'] = 'Não Conciliado'
+                    st.success("Status alterado para 'Não Conciliado'.")
+                    st.rerun()
+                else:
+                    st.warning("Selecione linhas para desfazer a conciliação.")
+        
+        # 4. Resumo e Exportação
+        st.markdown("### 📈 Resumo Atualizado")
+        df_resumo = st.session_state['df_unificado']
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Conciliado", f"{len(df_resumo[df_resumo['STATUS'].isin(['Conciliado', 'Conciliado Manual'])])}")
+        c2.metric("Sugestões", f"{len(df_resumo[df_resumo['STATUS'] == 'Sugestão'])}")
+        c3.metric("Pendentes", f"{len(df_resumo[df_resumo['STATUS'] == 'Não Conciliado'])}")
+        
+        # Diferença financeira
+        conciliados = df_resumo[df_resumo['STATUS'].isin(['Conciliado', 'Conciliado Manual'])]
+        total_extrato = conciliados[conciliados['TP']=='EXTRATO']['MOV'].sum()
+        total_razao = conciliados[conciliados['TP']=='RAZAO']['MOV'].sum()
+        c4.metric("Diferença Conciliada", formatar_valor_para_exibicao(abs(total_extrato - total_razao)))
+        
+        # Exportação
+        st.markdown("---")
+        if st.button("📥 Exportar Excel"):
+            excel_data = exportar_excel_unificado(st.session_state['df_unificado'])
+            st.download_button(
+                label="Clique para baixar",
+                data=excel_data,
+                file_name=f"conciliacao_unificada_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+    else:
+        st.info("👆 Faça o upload dos arquivos na barra lateral para iniciar.")
 
 if __name__ == "__main__":
     main()
