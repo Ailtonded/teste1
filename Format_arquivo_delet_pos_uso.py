@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime, timedelta
 
 # Configuração da página
@@ -37,8 +38,12 @@ with st.sidebar:
         st.session_state.aba = "balancete"
     if st.button("DRE"):
         st.session_state.aba = "dre"
+    
+    st.divider()
+    if st.button("Backup"):
+        st.session_state.aba = "backup"
 
-# --- ABA 1: CADASTRO DE CONTAS (ATUALIZADO) ---
+# --- ABA 1: CADASTRO DE CONTAS ---
 if st.session_state.aba == "contas":
     st.title("Cadastro de Contas")
 
@@ -99,7 +104,7 @@ if st.session_state.aba == "contas":
             tipo_idx = 0 if dados_iniciais["Tipo"] == "Sintética" else 1
             tipo = c1.selectbox("Tipo", tipo_options, index=tipo_idx)
 
-            # NOVO: Selectbox de Categoria
+            # Selectbox de Categoria
             cat_options = ["Ativo", "Passivo", "Receita", "Despesa"]
             cat_idx = cat_options.index(dados_iniciais["Categoria"]) if dados_iniciais["Categoria"] in cat_options else 0
             categoria = c1.selectbox("Categoria *", cat_options, index=cat_idx)
@@ -443,7 +448,7 @@ elif st.session_state.aba == "balancete":
         else:
             st.error("Balancete com diferença!")
 
-# --- ABA 4: DRE (NOVO) ---
+# --- ABA 4: DRE ---
 elif st.session_state.aba == "dre":
     st.title("Demonstração do Resultado do Exercício (DRE)")
     
@@ -460,40 +465,27 @@ elif st.session_state.aba == "dre":
     elif not st.session_state.lancamentos:
         st.warning("Nenhum lançamento encontrado.")
     else:
-        # Dicionário para acumular valores das contas de resultado
-        # Estrutura: { 'Codigo': {'Descricao': '', 'Categoria': '', 'Valor': 0.0} }
         contas_resultado = {}
         
-        # Processar lançamentos
         for l in st.session_state.lancamentos:
             if f_data_ini <= l['data'] <= f_data_fim:
                 for item in l['itens']:
                     conta_cod = item['Conta']
-                    
-                    # Verifica se a conta existe e é Receita ou Despesa
-                    # Busca info da conta no df
                     info_conta = st.session_state.df.loc[st.session_state.df['Código'] == conta_cod]
                     
                     if not info_conta.empty:
                         categoria = info_conta.iloc[0]['Categoria']
                         
-                        # Apenas processa Receitas e Despesas
                         if categoria in ["Receita", "Despesa"]:
-                            
                             valor = item['Valor']
                             tipo_lanc = item['Tipo']
                             
-                            # Inicializa se não existir
                             if conta_cod not in contas_resultado:
                                 contas_resultado[conta_cod] = {
                                     'Descricao': info_conta.iloc[0]['Descrição'],
                                     'Categoria': categoria,
                                     'Valor': 0.0
                                 }
-                            
-                            # Lógica Contábil DRE:
-                            # RECEITA: Crédito (+) / Débito (-)
-                            # DESPESA: Débito (+) / Crédito (-)
                             
                             if categoria == "Receita":
                                 if tipo_lanc == "Crédito":
@@ -507,14 +499,12 @@ elif st.session_state.aba == "dre":
                                 else:
                                     contas_resultado[conta_cod]['Valor'] -= valor
         
-        # Preparar listas para exibição
         lista_receitas = []
         lista_despesas = []
         total_receitas = 0.0
         total_despesas = 0.0
         
         for cod, dados in contas_resultado.items():
-            # Ignora contas com saldo zerado (opcional)
             if dados['Valor'] != 0:
                 linha = {
                     "Código": cod,
@@ -530,7 +520,6 @@ elif st.session_state.aba == "dre":
                     lista_despesas.append(linha)
                     total_despesas += dados['Valor']
         
-        # Exibir RECEITAS
         st.subheader("RECEITAS")
         if lista_receitas:
             df_rec = pd.DataFrame(lista_receitas)
@@ -542,9 +531,8 @@ elif st.session_state.aba == "dre":
         else:
             st.write("Nenhuma receita no período.")
         
-        st.write("") # Espaço
+        st.write("")
         
-        # Exibir DESPESAS
         st.subheader("DESPESAS")
         if lista_despesas:
             df_desp = pd.DataFrame(lista_despesas)
@@ -558,13 +546,82 @@ elif st.session_state.aba == "dre":
         
         st.divider()
         
-        # Resultado Final
         resultado = total_receitas - total_despesas
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Receitas", f"R$ {total_receitas:,.2f}")
         c2.metric("Total Despesas", f"R$ {total_despesas:,.2f}")
         
-        # Destaque para o resultado (verde se lucro, vermelho se prejuízo)
         delta_color = "normal" if resultado >= 0 else "inverse"
         c3.metric("Resultado do Período", f"R$ {resultado:,.2f}", delta_color=delta_color)
+
+# --- ABA 5: BACKUP (NOVO) ---
+elif st.session_state.aba == "backup":
+    st.title("Backup e Restauração")
+    
+    st.markdown("Utilize esta aba para salvar seus dados localmente ou restaurar um backup anterior.")
+    
+    st.divider()
+    
+    # --- 1. EXPORTAR (BACKUP) ---
+    st.subheader("1. Gerar Backup")
+    
+    # Prepara os dados para exportação
+    dados_exportacao = {
+        "contas": st.session_state.df.to_dict(orient='records'),
+        "lancamentos": st.session_state.lancamentos,
+        "next_id": st.session_state.next_id
+    }
+    
+    # Converte para JSON
+    json_str = json.dumps(dados_exportacao, indent=4, default=str)
+    
+    st.download_button(
+        label="📥 Baixar backup_contabil.json",
+        file_name="backup_contabil.json",
+        mime="application/json",
+        data=json_str,
+        use_container_width=True
+    )
+    
+    st.divider()
+    
+    # --- 2. IMPORTAR (RESTAURAÇÃO) ---
+    st.subheader("2. Restaurar Backup")
+    
+    arquivo_upload = st.file_uploader("Selecione o arquivo .json", type="json", key="upload_backup")
+    
+    if arquivo_upload is not None:
+        try:
+            # Lê o arquivo
+            string_dados = arquivo_upload.read().decode('utf-8')
+            dados_importados = json.loads(string_dados)
+            
+            # Validação simples das chaves
+            if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
+                
+                # Botão de confirmação para restaurar
+                if st.button("⚠️ Restaurar Dados", type="primary"):
+                    # Atualiza Contas (converte lista para DataFrame)
+                    st.session_state.df = pd.DataFrame(dados_importados['contas'])
+                    
+                    # Atualiza Lançamentos
+                    st.session_state.lancamentos = dados_importados['lancamentos']
+                    
+                    # Atualiza Next ID
+                    st.session_state.next_id = dados_importados['next_id']
+                    
+                    # Converte strings de data de volta para date objects se necessário
+                    # (O streamlit date_input geralmente lida com strings YYYY-MM-DD, mas é bom garantir)
+                    for l in st.session_state.lancamentos:
+                        if isinstance(l['data'], str):
+                            l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
+                            
+                    st.success("✅ Dados restaurados com sucesso!")
+                    st.rerun()
+                    
+            else:
+                st.error("❌ Arquivo inválido. O JSON deve conter as chaves: 'contas', 'lancamentos' e 'next_id'.")
+                
+        except Exception as e:
+            st.error(f"❌ Erro ao ler o arquivo: {e}")
