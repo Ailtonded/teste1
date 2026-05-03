@@ -43,34 +43,41 @@ if "modo" not in st.session_state:
 if "edit_id" not in st.session_state:
     st.session_state.edit_id = None
 
-# --- MENU LATERAL (REFACTORED) ---
+# --- MENU LATERAL (UI REFINADA) ---
 with st.sidebar:
-    st.title("⚡ Menu Principal")
+    st.title("⚡ Sistema Contábil")
     
     menu_opcoes = [
-        "Cadastro de Contas", 
-        "Lançamentos", 
-        "Balancete", 
-        "DRE", 
-        "Backup"
+        "📚 Cadastro de Contas", 
+        "💰 Lançamentos", 
+        "📊 Balancete", 
+        "📈 DRE", 
+        "💾 Backup"
     ]
     
-    selected = st.radio(
-        "Navegação", 
-        menu_opcoes, 
-        label_visibility="collapsed"
-    )
+    selected = st.radio("Navegação", menu_opcoes, label_visibility="collapsed")
 
 # --- LÓGICA DE NAVEGAÇÃO ---
-if selected == "Cadastro de Contas":
-    # --- CABEÇALHO ---
+if selected == "📚 Cadastro de Contas":
+    # --- CABEÇALHO AJUSTADO ---
     st.title("📒 Cadastro de Contas")
-    st.markdown("Gerencie o Plano de Contas (Ativo, Passivo, Receitas, Despesas).")
+    st.caption("Gerencie o plano de contas (Ativo, Passivo, Receitas, Despesas).")
 
-    # --- AÇÕES ---
+    # --- MÉTRICAS (DASHBOARD) ---
+    if not st.session_state.df.empty:
+        col_m1, col_m2, col_m3 = st.columns(3)
+        total_contas = len(st.session_state.df)
+        analiticas = len(st.session_state.df[st.session_state.df['Tipo'] == 'Analítica'])
+        sinteticas = total_contas - analiticas
+        col_m1.metric("Total de Contas", total_contas)
+        col_m2.metric("Analíticas", analiticas)
+        col_m3.metric("Sintéticas", sinteticas)
+    
+    st.divider()
+
+    # --- AÇÕES ALINHADAS ---
     col1, col2, col3, _ = st.columns([1, 1, 1, 6])
     
-    # Usamos session_state para controlar o fluxo sem poluir a tela
     if col1.button("➕ Incluir", use_container_width=True):
         st.session_state.modo = "incluir"
         
@@ -80,29 +87,29 @@ if selected == "Cadastro de Contas":
     if col3.button("🗑️ Deletar", use_container_width=True):
         st.session_state.modo = "deletar"
 
-    st.divider()
-
-    # --- TABELA ---
-    st.subheader("Contas Cadastradas")
-    
-    # Configuração visual da tabela
-    df_display = st.session_state.df.style.format({"Categoria": lambda x: x if pd.notna(x) else "-"})
-    
-    selecao = st.dataframe(
-        st.session_state.df, 
-        use_container_width=True, 
-        hide_index=True, 
-        on_select="rerun", 
-        key="tabela_contas",
-        column_config={
-            "Código": st.column_config.TextColumn("Código", width="small"),
-            "Descrição": st.column_config.TextColumn("Descrição", width="medium"),
-            "Tipo": st.column_config.TextColumn("Tipo", width="small"),
-            "Categoria": st.column_config.TextColumn("Categoria", width="small")
-        }
-    )
-    
-    linhas_selecionadas = selecao.selection["rows"]
+    # --- CONTAINER PRINCIPAL ---
+    with st.container():
+        st.subheader("Contas Cadastradas")
+        
+        # Estado vazio tratado
+        if st.session_state.df.empty:
+            st.info("📭 Nenhuma conta cadastrada ainda. Clique em **Incluir** para começar.")
+            linhas_selecionadas = []
+        else:
+            selecao = st.dataframe(
+                st.session_state.df, 
+                use_container_width=True, 
+                hide_index=True, 
+                on_select="rerun", 
+                key="tabela_contas",
+                column_config={
+                    "Código": st.column_config.TextColumn("Código", width="small"),
+                    "Descrição": st.column_config.TextColumn("Descrição", width="medium"),
+                    "Tipo": st.column_config.TextColumn("Tipo", width="small"),
+                    "Categoria": st.column_config.Textcolumn("Categoria", width="small")
+                }
+            )
+            linhas_selecionadas = selecao.selection["rows"]
 
     # --- LÓGICA DE AÇÕES ---
     if st.session_state.modo == "deletar":
@@ -115,7 +122,7 @@ if selected == "Cadastro de Contas":
                 st.session_state.df.drop(idx, inplace=True)
                 st.session_state.df.reset_index(drop=True, inplace=True)
                 st.session_state.modo = None
-                st.success("✅ Conta removida com sucesso!")
+                st.toast(f"✅ Conta '{conta_nome}' removida!", icon="✅")
                 st.rerun()
         else:
             st.toast("⚠️ Selecione uma linha na tabela para deletar.", icon="⚠️")
@@ -164,7 +171,6 @@ if selected == "Cadastro de Contas":
                     if not codigo or not descricao:
                         st.error("❌ Código e Descrição são obrigatórios.")
                     else:
-                        # Validação duplicidade
                         duplicado = False
                         if st.session_state.modo == "incluir" and codigo in st.session_state.df["Código"].values:
                             duplicado = True
@@ -184,12 +190,12 @@ if selected == "Cadastro de Contas":
                                 st.session_state.df.loc[idx_edit] = nova_linha
                             
                             st.session_state.modo = None
-                            st.success("✅ Operação realizada com sucesso!")
+                            st.toast("✅ Operação realizada com sucesso!", icon="✅")
                             st.rerun()
 
-elif selected == "Lançamentos":
+elif selected == "💰 Lançamentos":
     st.title("💸 Lançamentos Contábeis")
-    st.markdown("Registre movimentações de débito e crédito.")
+    st.caption("Registre movimentações de débito e crédito.")
 
     col1, col2, col3, _ = st.columns([1, 1, 1, 6])
     if col1.button("➕ Incluir", key="btn_inc_lanc", use_container_width=True):
@@ -204,7 +210,7 @@ elif selected == "Lançamentos":
 
     st.divider()
 
-    # Preparação da Visualização
+    # Preparação
     rows_view = []
     total_debitos_geral = 0.0
     total_creditos_geral = 0.0
@@ -215,51 +221,48 @@ elif selected == "Lançamentos":
         valor_lanc = sum([x['Valor'] for x in l['itens'] if x['Tipo'] == 'Débito'])
         
         total_debitos_geral += valor_lanc
-        total_creditos_geral += valor_lanc # Já validado que são iguais
+        total_creditos_geral += valor_lanc
         
         rows_view.append({
-            "ID": l['id'],
-            "Data": l['data'].strftime("%d/%m/%Y"),
-            "Histórico": l['historico'],
-            "Débitos": ", ".join(debitos),
-            "Créditos": ", ".join(creditos),
-            "Valor": valor_lanc
+            "ID": l['id'], "Data": l['data'].strftime("%d/%m/%Y"), "Histórico": l['historico'],
+            "Débitos": ", ".join(debitos), "Créditos": ", ".join(creditos), "Valor": valor_lanc
         })
         
     df_view = pd.DataFrame(rows_view)
 
-    # Métricas no Topo
-    if not df_view.empty:
-        m1, m2 = st.columns(2)
-        m1.metric("Total Débitos (Período)", f"R$ {total_debitos_geral:,.2f}")
-        m2.metric("Total Créditos (Período)", f"R$ {total_creditos_geral:,.2f}")
-        st.divider()
+    # Métricas
+    m1, m2 = st.columns(2)
+    m1.metric("Total Débitos (Período)", f"R$ {total_debitos_geral:,.2f}")
+    m2.metric("Total Créditos (Período)", f"R$ {total_creditos_geral:,.2f}")
+    
+    st.divider()
 
-    # Tabela
-    if df_view.empty:
-        st.info("ℹ️ Nenhum lançamento encontrado. Clique em **Incluir** para começar.")
-        if st.session_state.modo in ["deletar", "editar"]: st.session_state.modo = None
-    else:
+    with st.container():
         st.subheader("Lançamentos Recentes")
-        selecao_lanc = st.dataframe(
-            df_view, 
-            use_container_width=True, 
-            hide_index=True, 
-            on_select="rerun", 
-            selection_mode="single-row",
-            key="sel_lanc",
-            column_config={"Valor": st.column_config.NumberColumn("Valor", format="R$ %,.2f")}
-        )
-        linhas_sel_lanc = selecao_lanc.selection["rows"]
+        
+        if df_view.empty:
+            st.info("📭 Nenhum lançamento encontrado. Clique em **Incluir** para começar.")
+            if st.session_state.modo in ["deletar", "editar"]: st.session_state.modo = None
+        else:
+            selecao_lanc = st.dataframe(
+                df_view, 
+                use_container_width=True, 
+                hide_index=True, 
+                on_select="rerun", 
+                selection_mode="single-row",
+                key="sel_lanc",
+                column_config={"Valor": st.column_config.NumberColumn("Valor", format="R$ %,.2f")}
+            )
+            linhas_sel_lanc = selecao_lanc.selection["rows"]
 
-        # Ações
         if st.session_state.modo == "deletar":
             if linhas_sel_lanc:
                 id_sel = df_view.iloc[linhas_sel_lanc[0]]['ID']
-                if st.button("Confirmar Exclusão do Lançamento", type="primary"):
+                st.warning("⚠️ Confirma a exclusão deste lançamento?")
+                if st.button("Confirmar Exclusão", type="primary"):
                     st.session_state.lancamentos = [x for x in st.session_state.lancamentos if x['id'] != id_sel]
                     st.session_state.modo = None
-                    st.success("✅ Lançamento deletado!")
+                    st.toast("✅ Lançamento deletado!", icon="✅")
                     st.rerun()
             else:
                 st.toast("⚠️ Selecione um lançamento.", icon="⚠️")
@@ -284,9 +287,7 @@ elif selected == "Lançamentos":
             if st.session_state.modo == "editar" and st.session_state.edit_id is not None:
                 for l in st.session_state.lancamentos:
                     if l['id'] == st.session_state.edit_id:
-                        data_padrao = l['data']
-                        hist_padrao = l['historico']
-                        itens_padrao = l['itens']
+                        data_padrao, hist_padrao, itens_padrao = l['data'], l['historico'], l['itens']
                         break
 
             with st.form("form_lancamento"):
@@ -294,7 +295,7 @@ elif selected == "Lançamentos":
                 data_lanc = c1.date_input("Data", value=data_padrao)
                 historico = c2.text_input("Histórico", value=hist_padrao, placeholder="Descrição da operação")
                 
-                st.markdown("**Entrada de Valores (Partida Dobrada)**")
+                st.markdown("**Entrada de Valores**")
                 
                 df_itens = pd.DataFrame(itens_padrao)
                 if df_itens.empty:
@@ -309,10 +310,7 @@ elif selected == "Lançamentos":
                         "Conta": st.column_config.SelectboxColumn("Conta", options=lista_contas, required=True),
                         "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f", min_value=0.0, required=True)
                     },
-                    num_rows="dynamic",
-                    hide_index=True,
-                    use_container_width=True,
-                    key="editor_lanc"
+                    num_rows="dynamic", hide_index=True, use_container_width=True, key="editor_lanc"
                 )
                 
                 total_debito = editor_result[editor_result['Tipo'] == 'Débito']['Valor'].sum()
@@ -322,9 +320,8 @@ elif selected == "Lançamentos":
                 col_t1.metric("Total Débitos", f"R$ {total_debito:,.2f}")
                 col_t2.metric("Total Créditos", f"R$ {total_credito:,.2f}")
                 
-                # Validação visual antes do submit
                 if total_debito != total_credito:
-                    st.error(f"⚠️ Diferença: R$ {abs(total_debito - total_credito):,.2f} (Débitos devem ser iguais aos Créditos)")
+                    st.error(f"⚠️ Diferença: R$ {abs(total_debito - total_credito):,.2f}")
                 
                 st.divider()
                 col_btn, _ = st.columns([1, 5])
@@ -338,43 +335,33 @@ elif selected == "Lançamentos":
                     
                     df_check = editor_result.dropna(how='all')
                     if df_check.empty or df_check.isnull().values.any():
-                        st.error("❌ Preencha todos os campos corretamente.")
+                        st.error("❌ Preencha todos os campos.")
                         valido = False
                     
                     tipos = df_check['Tipo'].unique()
                     if "Débito" not in tipos or "Crédito" not in tipos:
-                        st.error("❌ Lançamento deve conter ao menos um Débito e um Crédito.")
+                        st.error("❓ Lançamento deve conter Débito e Crédito.")
                         valido = False
 
                     if valido:
                         lista_itens = df_check.to_dict('records')
                         
                         if st.session_state.modo == "incluir":
-                            novo = {
-                                "id": st.session_state.next_id,
-                                "data": data_lanc,
-                                "historico": historico,
-                                "itens": lista_itens
-                            }
+                            novo = {"id": st.session_state.next_id, "data": data_lanc, "historico": historico, "itens": lista_itens}
                             st.session_state.lancamentos.append(novo)
                             st.session_state.next_id += 1
                         else:
                             for i, l in enumerate(st.session_state.lancamentos):
                                 if l['id'] == st.session_state.edit_id:
-                                    st.session_state.lancamentos[i] = {
-                                        "id": st.session_state.edit_id,
-                                        "data": data_lanc,
-                                        "historico": historico,
-                                        "itens": lista_itens
-                                    }
+                                    st.session_state.lancamentos[i] = {"id": st.session_state.edit_id, "data": data_lanc, "historico": historico, "itens": lista_itens}
                                     break
                         
                         st.session_state.modo = None
                         st.session_state.edit_id = None
-                        st.success("✅ Lançamento salvo com sucesso!")
+                        st.toast("✅ Lançamento salvo!", icon="✅")
                         st.rerun()
 
-elif selected == "Balancete":
+elif selected == "📊 Balancete":
     st.title("📊 Balancete de Verificação")
     
     col_f1, col_f2 = st.columns(2)
@@ -394,21 +381,15 @@ elif selected == "Balancete":
                 for item in l['itens']:
                     conta = item['Conta']
                     if conta in saldos:
-                        if item['Tipo'] == "Débito":
-                            saldos[conta]['Debito'] += item['Valor']
-                        else:
-                            saldos[conta]['Credito'] += item['Valor']
+                        if item['Tipo'] == "Débito": saldos[conta]['Debito'] += item['Valor']
+                        else: saldos[conta]['Credito'] += item['Valor']
         
-        # Cálculo hierárquico
         codigos_ordenados = sorted(st.session_state.df['Código'].unique(), key=lambda x: x.count('.'), reverse=True)
         
         for cod_pai in codigos_ordenados:
             if st.session_state.df.loc[st.session_state.df['Código'] == cod_pai, 'Tipo'].values[0] == "Sintética":
-                prefixo = cod_pai + "."
-                nivel_pai = cod_pai.count('.')
-                
+                prefixo, nivel_pai = cod_pai + ".", cod_pai.count('.')
                 filhas = [c for c in saldos if c.startswith(prefixo) and c.count('.') == nivel_pai + 1]
-                
                 saldos[cod_pai]['Debito'] = sum([saldos[f]['Debito'] for f in filhas])
                 saldos[cod_pai]['Credito'] = sum([saldos[f]['Credito'] for f in filhas])
         
@@ -418,33 +399,24 @@ elif selected == "Balancete":
         for cod in sorted(st.session_state.df['Código'].unique()):
             row = st.session_state.df.loc[st.session_state.df['Código'] == cod].iloc[0]
             val_d, val_c = saldos[cod]['Debito'], saldos[cod]['Credito']
-            
-            lista_balancete.append({
-                "Código": cod, "Descrição": row['Descrição'], "Tipo": row['Tipo'],
-                "Débito": val_d, "Crédito": val_c, "Saldo": val_d - val_c
-            })
+            lista_balancete.append({"Código": cod, "Descrição": row['Descrição'], "Débito": val_d, "Crédito": val_c, "Saldo": val_d - val_c})
             total_geral_d += val_d
             total_geral_c += val_c
             
         df_balancete = pd.DataFrame(lista_balancete)
         
-        st.dataframe(
-            df_balancete.style.format({"Débito": "R$ {:,.2f}", "Crédito": "R$ {:,.2f}", "Saldo": "R$ {:,.2f}"}),
-            use_container_width=True, hide_index=True
-        )
+        st.dataframe(df_balancete.style.format({"Débito": "R$ {:,.2f}", "Crédito": "R$ {:,.2f}", "Saldo": "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
         
         st.divider()
         col_t1, col_t2 = st.columns(2)
         col_t1.metric("Total Débitos", f"R$ {total_geral_d:,.2f}")
         col_t2.metric("Total Créditos", f"R$ {total_geral_c:,.2f}")
         
-        if abs(total_geral_d - total_geral_c) < 0.01:
-            st.success("✅ Balancete validado (D = C)")
-        else:
-            st.error("❌ Balancete com diferença!")
+        if abs(total_geral_d - total_geral_c) < 0.01: st.success("✅ Balancete validado (D = C)")
+        else: st.error("❌ Balancete com diferença!")
 
-elif selected == "DRE":
-    st.title("📈 Demonstração do Resultado do Exercício (DRE)")
+elif selected == "📈 DRE":
+    st.title("📈 Demonstração do Resultado do Exercício")
     
     col_f1, col_f2 = st.columns(2)
     hoje = datetime.now().date()
@@ -466,13 +438,11 @@ elif selected == "DRE":
                     
                     if not info.empty and info.iloc[0]['Categoria'] in ["Receita", "Despesa"]:
                         cat = info.iloc[0]['Categoria']
-                        valor = item['Valor']
-                        tipo_lanc = item['Tipo']
+                        valor, tipo_lanc = item['Valor'], item['Tipo']
                         
                         if conta_cod not in contas_resultado:
                             contas_resultado[conta_cod] = {'Descricao': info.iloc[0]['Descrição'], 'Categoria': cat, 'Valor': 0.0}
                         
-                        # Lógica: Receita Credito +, Despesa Debito +
                         if (cat == "Receita" and tipo_lanc == "Crédito") or (cat == "Despesa" and tipo_lanc == "Débito"):
                             contas_resultado[conta_cod]['Valor'] += valor
                         else:
@@ -494,17 +464,13 @@ elif selected == "DRE":
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("Receitas")
-            if lista_rec:
-                st.dataframe(pd.DataFrame(lista_rec).style.format({"Valor": "R$ {:,.2f}"}), hide_index=True)
-            else:
-                st.write("*Sem receitas no período*")
+            if lista_rec: st.dataframe(pd.DataFrame(lista_rec).style.format({"Valor": "R$ {:,.2f}"}), hide_index=True, use_container_width=True)
+            else: st.caption("*Sem receitas no período*")
                 
         with c2:
             st.subheader("Despesas")
-            if lista_desp:
-                st.dataframe(pd.DataFrame(lista_desp).style.format({"Valor": "R$ {:,.2f}"}), hide_index=True)
-            else:
-                st.write("*Sem despesas no período*")
+            if lista_desp: st.dataframe(pd.DataFrame(lista_desp).style.format({"Valor": "R$ {:,.2f}"}), hide_index=True, use_container_width=True)
+            else: st.caption("*Sem despesas no período*")
         
         st.divider()
         resultado = total_rec - total_desp
@@ -516,7 +482,7 @@ elif selected == "DRE":
         cor_resultado = "normal" if resultado >= 0 else "inverse"
         m3.metric("Resultado Líquido", f"R$ {resultado:,.2f}", delta_color=cor_resultado)
 
-elif selected == "Backup":
+elif selected == "💾 Backup":
     st.title("🔒 Backup e Segurança")
     
     tab1, tab2 = st.tabs(["📤 Exportar", "📥 Restaurar"])
@@ -525,23 +491,14 @@ elif selected == "Backup":
         st.subheader("Gerar Backup Criptografado")
         senha_exp = st.text_input("Definir Senha", type="password", key="senha_exp")
         
-        if st.button("Preparar Arquivo", disabled=not senha_exp):
-            dados = {
-                "contas": st.session_state.df.to_dict(orient='records'),
-                "lancamentos": st.session_state.lancamentos,
-                "next_id": st.session_state.next_id
-            }
+        if st.button("Preparar Arquivo", disabled=not senha_exp, use_container_width=True):
+            dados = {"contas": st.session_state.df.to_dict(orient='records'), "lancamentos": st.session_state.lancamentos, "next_id": st.session_state.next_id}
             json_str = json.dumps(dados, indent=4, default=str)
             dados_cripto = criptografar(json_str, senha_exp)
             
             if dados_cripto:
-                st.download_button(
-                    label="📥 Baixar backup_contabil.enc",
-                    data=dados_cripto,
-                    file_name="backup_contabil.enc",
-                    mime="application/octet-stream",
-                    use_container_width=True
-                )
+                st.download_button("📥 Baixar backup_contabil.enc", data=dados_cripto, file_name="backup_contabil.enc", mime="application/octet-stream", use_container_width=True)
+                st.toast("✅ Backup gerado!", icon="✅")
             else:
                 st.error("❌ Erro ao gerar backup.")
 
@@ -560,16 +517,15 @@ elif selected == "Backup":
                     if all(k in dados for k in ["contas", "lancamentos", "next_id"]):
                         st.success("✅ Arquivo válido e descriptografado!")
                         
-                        if st.button("⚠️ Restaurar Dados", type="primary"):
+                        if st.button("⚠️ Restaurar Dados", type="primary", use_container_width=True):
                             st.session_state.df = pd.DataFrame(dados['contas'])
                             st.session_state.lancamentos = dados['lancamentos']
                             st.session_state.next_id = dados['next_id']
                             
                             for l in st.session_state.lancamentos:
-                                if isinstance(l['data'], str):
-                                    l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
+                                if isinstance(l['data'], str): l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
                             
-                            st.success("✅ Dados restaurados com sucesso!")
+                            st.toast("✅ Dados restaurados!", icon="✅")
                             st.rerun()
                     else:
                         st.error("❌ Estrutura do arquivo inválida.")
