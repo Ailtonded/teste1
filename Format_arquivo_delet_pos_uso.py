@@ -145,27 +145,107 @@ if st.session_state.aba == "contas":
                         st.session_state.modo = None
                         st.rerun()
 
-# --- ABA 2: LANÇAMENTOS ---
+# --- ABA 2: LANÇAMENTOS (PADRÃO VISUAL ATUALIZADO) ---
 elif st.session_state.aba == "lanc":
     st.title("Lançamentos")
 
-    expanded_state = True if st.session_state.edit_id is not None else False
-    
-    with st.expander("Cadastrar Novo Lançamento", expanded=expanded_state):
+    # 1. BOTÕES DE AÇÃO (Mesmo padrão da aba Contas)
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 6])
+    if col1.button("Incluir", key="btn_inc_lanc"):
+        st.session_state.modo = "incluir"
+        st.session_state.edit_id = None # Limpa edição anterior
         
+    if col2.button("Editar", key="btn_edit_lanc"):
+        st.session_state.modo = "editar"
+
+    if col3.button("Deletar", key="btn_del_lanc"):
+        st.session_state.modo = "deletar"
+
+    st.divider()
+
+    # Preparação da tabela de visualização
+    rows_view = []
+    hoje = datetime.now().date()
+    f_data_ini = hoje - timedelta(days=365)
+    f_data_fim = hoje
+    
+    for l in st.session_state.lancamentos:
+        debitos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Débito']
+        creditos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Crédito']
+        total = sum([x['Valor'] for x in l['itens'] if x['Tipo'] == 'Débito'])
+        
+        rows_view.append({
+            "ID": l['id'],
+            "Data": l['data'].strftime("%d/%m/%Y"),
+            "Histórico": l['historico'],
+            "Débitos": ", ".join(debitos),
+            "Créditos": ", ".join(creditos),
+            "Valor Total": total
+        })
+        
+    df_view = pd.DataFrame(rows_view)
+
+    # Exibição da tabela (sempre visível)
+    if df_view.empty:
+        st.info("Nenhum lançamento cadastrado.")
+        # Mesmo vazio, mantemos o modo para evitar erros, mas não mostramos a tabela
+        if st.session_state.modo == "deletar":
+            st.warning("Nada para deletar.")
+            st.session_state.modo = None
+        if st.session_state.modo == "editar":
+            st.warning("Nada para editar.")
+            st.session_state.modo = None
+    else:
+        selecao_lanc = st.dataframe(
+            df_view, 
+            use_container_width=True, 
+            hide_index=True, 
+            on_select="rerun", 
+            selection_mode="single-row",
+            key="sel_lanc"
+        )
+        linhas_sel_lanc = selecao_lanc.selection["rows"]
+
+        # --- LÓGICA DELETAR ---
+        if st.session_state.modo == "deletar":
+            if linhas_sel_lanc:
+                idx_sel = linhas_sel_lanc[0]
+                id_selecionado = df_view.iloc[idx_sel]['ID']
+                st.session_state.lancamentos = [x for x in st.session_state.lancamentos if x['id'] != id_selecionado]
+                st.success("Lançamento deletado!")
+                st.session_state.modo = None
+                st.rerun()
+            else:
+                st.warning("Selecione uma linha para deletar.")
+                st.session_state.modo = None
+
+        # --- LÓGICA EDITAR (Verifica seleção) ---
+        if st.session_state.modo == "editar":
+            if linhas_sel_lanc:
+                idx_sel = linhas_sel_lanc[0]
+                st.session_state.edit_id = df_view.iloc[idx_sel]['ID']
+            else:
+                st.warning("Selecione uma linha na tabela para editar.")
+                st.session_state.modo = None
+
+    # --- FORMULÁRIO (Incluir ou Editar) ---
+    # Aparece logo abaixo dos botões/tabela, igual a aba de contas
+    if st.session_state.modo in ["incluir", "editar"]:
+        
+        # Carregar dados se for edição
         data_padrao = datetime.now().date()
         hist_padrao = ""
         itens_padrao = []
         
-        if st.session_state.edit_id is not None:
-            st.info(f"Editando Lançamento ID: {st.session_state.edit_id}")
+        if st.session_state.modo == "editar" and st.session_state.edit_id is not None:
+            # Busca dados originais
             for l in st.session_state.lancamentos:
                 if l['id'] == st.session_state.edit_id:
                     data_padrao = l['data']
                     hist_padrao = l['historico']
                     itens_padrao = l['itens']
                     break
-        
+
         with st.form("form_lancamento"):
             col1, col2 = st.columns([1, 3])
             data_lanc = col1.date_input("Data", value=data_padrao)
@@ -207,6 +287,7 @@ elif st.session_state.aba == "lanc":
             btn_cancelar = col_btn[1].form_submit_button("Cancelar")
             
             if btn_cancelar:
+                st.session_state.modo = None
                 st.session_state.edit_id = None
                 st.rerun()
                 
@@ -233,7 +314,7 @@ elif st.session_state.aba == "lanc":
                 if valido:
                     lista_itens = df_check.to_dict('records')
                     
-                    if st.session_state.edit_id is None:
+                    if st.session_state.modo == "incluir":
                         novo = {
                             "id": st.session_state.next_id,
                             "data": data_lanc,
@@ -244,6 +325,7 @@ elif st.session_state.aba == "lanc":
                         st.session_state.next_id += 1
                         st.success("Lançamento salvo!")
                     else:
+                        # Atualiza existente
                         for i, l in enumerate(st.session_state.lancamentos):
                             if l['id'] == st.session_state.edit_id:
                                 st.session_state.lancamentos[i]['data'] = data_lanc
@@ -251,82 +333,10 @@ elif st.session_state.aba == "lanc":
                                 st.session_state.lancamentos[i]['itens'] = lista_itens
                                 break
                         st.success("Lançamento atualizado!")
-                        st.session_state.edit_id = None
                     
+                    st.session_state.modo = None
+                    st.session_state.edit_id = None
                     st.rerun()
-
-    st.divider()
-
-    st.subheader("Lançamentos Gravados")
-    
-    col_f1, col_f2 = st.columns(2)
-    hoje = datetime.now().date()
-    f_data_ini = col_f1.date_input("Data Inicial (>=)", value=hoje - timedelta(days=30), key="f_ini")
-    f_data_fim = col_f2.date_input("Data Final (<=)", value=hoje, key="f_fim")
-    
-    col_ac1, col_ac2, col_ac3 = st.columns([1, 1, 6])
-    if col_ac1.button("Editar Selecionado"):
-        if "sel_lanc" in st.session_state and st.session_state.sel_lanc and st.session_state.sel_lanc['selection']['rows']:
-            idx_sel = st.session_state.sel_lanc['selection']['rows'][0]
-            temp_rows = []
-            for l in st.session_state.lancamentos:
-                if f_data_ini <= l['data'] <= f_data_fim:
-                    temp_rows.append({"ID": l['id']})
-            
-            if temp_rows:
-                df_temp_ids = pd.DataFrame(temp_rows)
-                id_selecionado = df_temp_ids.iloc[idx_sel]['ID']
-                st.session_state.edit_id = id_selecionado
-                st.rerun()
-        else:
-            st.warning("Selecione uma linha.")
-            
-    if col_ac2.button("Deletar Selecionado"):
-        if "sel_lanc" in st.session_state and st.session_state.sel_lanc and st.session_state.sel_lanc['selection']['rows']:
-            idx_sel = st.session_state.sel_lanc['selection']['rows'][0]
-            temp_rows = []
-            for l in st.session_state.lancamentos:
-                if f_data_ini <= l['data'] <= f_data_fim:
-                    temp_rows.append({"ID": l['id']})
-            
-            if temp_rows:
-                df_temp_ids = pd.DataFrame(temp_rows)
-                id_selecionado = df_temp_ids.iloc[idx_sel]['ID']
-                st.session_state.lancamentos = [x for x in st.session_state.lancamentos if x['id'] != id_selecionado]
-                st.success("Deletado!")
-                st.rerun()
-        else:
-            st.warning("Selecione uma linha.")
-
-    rows_view = []
-    for l in st.session_state.lancamentos:
-        if f_data_ini <= l['data'] <= f_data_fim:
-            debitos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Débito']
-            creditos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Crédito']
-            total = sum([x['Valor'] for x in l['itens'] if x['Tipo'] == 'Débito'])
-            
-            rows_view.append({
-                "ID": l['id'],
-                "Data": l['data'].strftime("%d/%m/%Y"),
-                "Histórico": l['historico'],
-                "Débitos": ", ".join(debitos),
-                "Créditos": ", ".join(creditos),
-                "Valor Total": total
-            })
-            
-    df_view = pd.DataFrame(rows_view)
-    
-    if df_view.empty:
-        st.info("Nenhum lançamento encontrado.")
-    else:
-        st.dataframe(
-            df_view, 
-            use_container_width=True, 
-            hide_index=True, 
-            on_select="rerun", 
-            selection_mode="single-row",
-            key="sel_lanc"
-        )
 
 # --- ABA 3: BALANCETE ---
 elif st.session_state.aba == "balancete":
@@ -589,7 +599,7 @@ elif st.session_state.aba == "backup":
                         if isinstance(l['data'], str):
                             l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
                             
-                    st.success("✅ Dados restaurados com sucesso!1")
+                    st.success("✅ Dados restaurados com sucesso!")
                     st.rerun()
                     
             else:
