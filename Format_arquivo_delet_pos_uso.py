@@ -15,7 +15,6 @@ def criptografar(texto: str, senha: str) -> str:
     try:
         chave = gerar_chave(senha)
         dados = texto.encode('utf-8')
-        # XOR byte a byte
         dados_cripto = bytes([d ^ chave[i % len(chave)] for i, d in enumerate(dados)])
         return base64.b64encode(dados_cripto).decode('utf-8')
     except Exception:
@@ -35,7 +34,8 @@ def descriptografar(texto_cripto: str, senha: str) -> str | None:
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # --- INICIALIZAÇÃO DOS DADOS ---
-if "df" not in st.session_state:
+# Verificação robusta para garantir que df é sempre um DataFrame
+if "df" not in st.session_state or not isinstance(st.session_state.df, pd.DataFrame):
     st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior", "Categoria"])
 
 if "lancamentos" not in st.session_state:
@@ -126,12 +126,14 @@ if st.session_state.aba == "contas":
 
             descricao = c2.text_input("Descrição *", value=dados_iniciais["Descrição"])
             
+            # Obtém lista de superiores com segurança
             lista_superiores = sorted(st.session_state.df["Código"].unique().tolist())
             if st.session_state.modo == "editar" and codigo in lista_superiores:
                 lista_superiores.remove(codigo)
                 
             conta_sup = c2.selectbox("Conta Superior", [None] + lista_superiores, index=0 if not dados_iniciais["Conta Superior"] else ([None] + lista_superiores).index(dados_iniciais["Conta Superior"]))
             
+            # Botões de submit (CORREÇÃO DO ERRO)
             salvar = st.form_submit_button("Salvar")
             cancelar = st.form_submit_button("Cancelar")
             
