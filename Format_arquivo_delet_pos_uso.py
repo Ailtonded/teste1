@@ -34,7 +34,6 @@ def descriptografar(texto_cripto: str, senha: str) -> str | None:
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # --- INICIALIZAÇÃO DOS DADOS ---
-# Verificação robusta para garantir que df é sempre um DataFrame
 if "df" not in st.session_state or not isinstance(st.session_state.df, pd.DataFrame):
     st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior", "Categoria"])
 
@@ -49,21 +48,24 @@ if "aba" not in st.session_state:
 if "edit_id" not in st.session_state:
     st.session_state.edit_id = None
 
-# --- MENU LATERAL ---
+# --- MENU LATERAL (AJUSTADO) ---
 with st.sidebar:
     st.title("Menu")
-    if st.button("Cadastros"):
+
+    if st.button("Cadastro de Contas"):
         st.session_state.aba = "contas"
-    if st.button("   → Contas"):
-        st.session_state.aba = "contas"
+
     if st.button("Lançamentos"):
         st.session_state.aba = "lanc"
+
     if st.button("Balancete"):
         st.session_state.aba = "balancete"
+
     if st.button("DRE"):
         st.session_state.aba = "dre"
     
     st.divider()
+
     if st.button("Backup"):
         st.session_state.aba = "backup"
 
@@ -126,14 +128,12 @@ if st.session_state.aba == "contas":
 
             descricao = c2.text_input("Descrição *", value=dados_iniciais["Descrição"])
             
-            # Obtém lista de superiores com segurança
             lista_superiores = sorted(st.session_state.df["Código"].unique().tolist())
             if st.session_state.modo == "editar" and codigo in lista_superiores:
                 lista_superiores.remove(codigo)
                 
             conta_sup = c2.selectbox("Conta Superior", [None] + lista_superiores, index=0 if not dados_iniciais["Conta Superior"] else ([None] + lista_superiores).index(dados_iniciais["Conta Superior"]))
             
-            # Botões de submit (CORREÇÃO DO ERRO)
             salvar = st.form_submit_button("Salvar")
             cancelar = st.form_submit_button("Cancelar")
             
