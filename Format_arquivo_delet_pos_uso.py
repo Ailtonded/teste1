@@ -539,7 +539,7 @@ elif st.session_state.aba == "dre":
         delta_color = "normal" if resultado >= 0 else "inverse"
         c3.metric("Resultado do Período", f"R$ {resultado:,.2f}", delta_color=delta_color)
 
-# --- ABA 5: BACKUP (SEM CRIPTOGRAFIA) ---
+# --- ABA 5: BACKUP (SIMPLES) ---
 elif st.session_state.aba == "backup":
     st.title("Backup e Restauração")
     
