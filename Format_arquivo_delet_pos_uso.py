@@ -6,11 +6,12 @@ from datetime import datetime, timedelta
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 # --- INICIALIZAÇÃO DOS DADOS ---
-# Inicializa contas
+# Inicializa contas com o novo campo 'Categoria'
 if "df" not in st.session_state:
-    st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior"])
+    # DataFrame inclui 'Categoria'
+    st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior", "Categoria"])
 
-# Inicializa lançamentos (lista de dicionários)
+# Inicializa lançamentos
 if "lancamentos" not in st.session_state:
     st.session_state.lancamentos = []
     st.session_state.next_id = 1
@@ -34,8 +35,10 @@ with st.sidebar:
         st.session_state.aba = "lanc"
     if st.button("Balancete"):
         st.session_state.aba = "balancete"
+    if st.button("DRE"):
+        st.session_state.aba = "dre"
 
-# --- ABA 1: CADASTRO DE CONTAS (PRESERVADO) ---
+# --- ABA 1: CADASTRO DE CONTAS (ATUALIZADO) ---
 if st.session_state.aba == "contas":
     st.title("Cadastro de Contas")
 
@@ -69,25 +72,38 @@ if st.session_state.aba == "contas":
             st.warning("Selecione uma linha para deletar.")
             st.session_state.modo = None
 
-    # MODO EDITAR (Verifica seleção)
+    # MODO EDITAR
     if st.session_state.modo == "editar" and not linhas_selecionadas:
         st.warning("Selecione uma linha na tabela para editar.")
         st.session_state.modo = None
 
     # FORMULÁRIO (Incluir ou Editar)
     if st.session_state.modo in ["incluir", "editar"]:
-        dados_iniciais = {"Código": "", "Descrição": "", "Tipo": "Sintética", "Conta Superior": None}
+        # Valores padrão (compatibilidade com dados antigos que não tem Categoria)
+        dados_iniciais = {"Código": "", "Descrição": "", "Tipo": "Sintética", "Conta Superior": None, "Categoria": "Ativo"}
         idx_edit = 0
         
         if st.session_state.modo == "editar" and linhas_selecionadas:
             idx_edit = linhas_selecionadas[0]
             dados_iniciais = st.session_state.df.loc[idx_edit].to_dict()
+            # Garante valor padrão para categoria se for NaN (dados antigos)
+            if pd.isna(dados_iniciais.get("Categoria")):
+                dados_iniciais["Categoria"] = "Ativo"
 
         with st.form("form_conta"):
             c1, c2 = st.columns(2)
             codigo = c1.text_input("Código *", value=dados_iniciais["Código"])
-            tipo = c1.selectbox("Tipo", ["Sintética", "Analítica"], index=0 if dados_iniciais["Tipo"] == "Sintética" else 1)
             
+            # Selectbox de Tipo
+            tipo_options = ["Sintética", "Analítica"]
+            tipo_idx = 0 if dados_iniciais["Tipo"] == "Sintética" else 1
+            tipo = c1.selectbox("Tipo", tipo_options, index=tipo_idx)
+
+            # NOVO: Selectbox de Categoria
+            cat_options = ["Ativo", "Passivo", "Receita", "Despesa"]
+            cat_idx = cat_options.index(dados_iniciais["Categoria"]) if dados_iniciais["Categoria"] in cat_options else 0
+            categoria = c1.selectbox("Categoria *", cat_options, index=cat_idx)
+
             descricao = c2.text_input("Descrição *", value=dados_iniciais["Descrição"])
             
             lista_superiores = sorted(st.session_state.df["Código"].unique().tolist())
@@ -119,7 +135,13 @@ if st.session_state.aba == "contas":
                     if duplicado:
                         st.error("Código já cadastrado.")
                     else:
-                        nova_linha = {"Código": codigo, "Descrição": descricao, "Tipo": tipo, "Conta Superior": conta_sup}
+                        nova_linha = {
+                            "Código": codigo, 
+                            "Descrição": descricao, 
+                            "Tipo": tipo, 
+                            "Conta Superior": conta_sup,
+                            "Categoria": categoria
+                        }
                         
                         if st.session_state.modo == "incluir":
                             st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([nova_linha])], ignore_index=True)
@@ -131,22 +153,19 @@ if st.session_state.aba == "contas":
                         st.session_state.modo = None
                         st.rerun()
 
-# --- ABA 2: LANÇAMENTOS (COM EXPANDER) ---
+# --- ABA 2: LANÇAMENTOS ---
 elif st.session_state.aba == "lanc":
     st.title("Lançamentos")
 
     # --- 1. ÁREA DE CADASTRO (DENTRO DO EXPANDER) ---
-    # Se estiver editando, o expander deve vir aberto
     expanded_state = True if st.session_state.edit_id is not None else False
     
     with st.expander("Cadastrar Novo Lançamento", expanded=expanded_state):
         
-        # Estado inicial do formulário
         data_padrao = datetime.now().date()
         hist_padrao = ""
         itens_padrao = []
         
-        # Se estiver em modo edição, carrega dados
         if st.session_state.edit_id is not None:
             st.info(f"Editando Lançamento ID: {st.session_state.edit_id}")
             for l in st.session_state.lancamentos:
@@ -156,7 +175,6 @@ elif st.session_state.aba == "lanc":
                     itens_padrao = l['itens']
                     break
         
-        # Formulário
         with st.form("form_lancamento"):
             col1, col2 = st.columns([1, 3])
             data_lanc = col1.date_input("Data", value=data_padrao)
@@ -164,7 +182,6 @@ elif st.session_state.aba == "lanc":
             
             st.markdown("**Itens do Lançamento**")
             
-            # Grid Editável
             df_itens = pd.DataFrame(itens_padrao)
             if df_itens.empty:
                 df_itens = pd.DataFrame({"Tipo": ["", ""], "Conta": ["", ""], "Valor": [0.0, 0.0]})
@@ -184,7 +201,6 @@ elif st.session_state.aba == "lanc":
                 key="editor_lanc"
             )
             
-            # Cálculo dos totais
             total_debito = editor_result[editor_result['Tipo'] == 'Débito']['Valor'].sum()
             total_credito = editor_result[editor_result['Tipo'] == 'Crédito']['Valor'].sum()
             
@@ -195,7 +211,6 @@ elif st.session_state.aba == "lanc":
             if total_debito != total_credito:
                 st.error("⚠️ As somas de Débito e Crédito devem ser iguais para salvar.")
             
-            # Botões
             col_btn = st.columns([1, 1, 4])
             btn_salvar = col_btn[0].form_submit_button("Salvar", type="primary")
             btn_cancelar = col_btn[1].form_submit_button("Cancelar")
@@ -251,27 +266,18 @@ elif st.session_state.aba == "lanc":
 
     st.divider()
 
-    # --- 2. GRID DE VISUALIZAÇÃO (FORA DO EXPANDER) ---
+    # --- 2. GRID DE VISUALIZAÇÃO ---
     st.subheader("Lançamentos Gravados")
     
-    # Filtros
     col_f1, col_f2 = st.columns(2)
     hoje = datetime.now().date()
     f_data_ini = col_f1.date_input("Data Inicial (>=)", value=hoje - timedelta(days=30), key="f_ini")
     f_data_fim = col_f2.date_input("Data Final (<=)", value=hoje, key="f_fim")
     
-    # Botões de Ação
     col_ac1, col_ac2, col_ac3 = st.columns([1, 1, 6])
     if col_ac1.button("Editar Selecionado"):
         if "sel_lanc" in st.session_state and st.session_state.sel_lanc and st.session_state.sel_lanc['selection']['rows']:
-            # Pega o ID da linha selecionada
             idx_sel = st.session_state.sel_lanc['selection']['rows'][0]
-            # Como o dataframe de visualização é filtrado, precisamos mapear o ID correto
-            # Simplificação: o dataframe de visualição tem coluna ID
-            # O indice da seleção é o indice do df_view, não o ID.
-            # Para simplificar, vamos recriar a lógica de visualização aqui para pegar o ID
-            
-            # Reconstrói view para pegar o ID correto
             temp_rows = []
             for l in st.session_state.lancamentos:
                 if f_data_ini <= l['data'] <= f_data_fim:
@@ -288,7 +294,6 @@ elif st.session_state.aba == "lanc":
     if col_ac2.button("Deletar Selecionado"):
         if "sel_lanc" in st.session_state and st.session_state.sel_lanc and st.session_state.sel_lanc['selection']['rows']:
             idx_sel = st.session_state.sel_lanc['selection']['rows'][0]
-            # Lógica similar ao editar para encontrar o ID
             temp_rows = []
             for l in st.session_state.lancamentos:
                 if f_data_ini <= l['data'] <= f_data_fim:
@@ -303,7 +308,6 @@ elif st.session_state.aba == "lanc":
         else:
             st.warning("Selecione uma linha.")
 
-    # Preparar dados para exibição
     rows_view = []
     for l in st.session_state.lancamentos:
         if f_data_ini <= l['data'] <= f_data_fim:
@@ -334,11 +338,10 @@ elif st.session_state.aba == "lanc":
             key="sel_lanc"
         )
 
-# --- ABA 3: BALANCETE (NOVO) ---
+# --- ABA 3: BALANCETE ---
 elif st.session_state.aba == "balancete":
     st.title("Balancete de Verificação")
     
-    # Filtros
     col_f1, col_f2 = st.columns(2)
     hoje = datetime.now().date()
     f_data_ini = col_f1.date_input("Data Inicial", value=hoje - timedelta(days=365), key="b_ini")
@@ -349,12 +352,10 @@ elif st.session_state.aba == "balancete":
     if st.session_state.df.empty:
         st.warning("Nenhuma conta cadastrada.")
     else:
-        # 1. Inicializar dicionário de saldos
         saldos = {}
         for cod in st.session_state.df['Código']:
             saldos[cod] = {"Debito": 0.0, "Credito": 0.0}
         
-        # 2. Calcular valores das contas ANALÍTICAS (diretamente dos lançamentos)
         for l in st.session_state.lancamentos:
             if f_data_ini <= l['data'] <= f_data_fim:
                 for item in l['itens']:
@@ -362,36 +363,22 @@ elif st.session_state.aba == "balancete":
                     valor = item['Valor']
                     tipo = item['Tipo']
                     
-                    # Verifica se a conta existe no cadastro (segurança)
                     if conta in saldos:
                         if tipo == "Débito":
                             saldos[conta]['Debito'] += valor
                         else:
                             saldos[conta]['Credito'] += valor
         
-        # 3. Calcular valores das contas SINTÉTICAS (hierarquia)
-        # Ordenar códigos do maior nível para o menor (inverso)
-        # Nível = quantidade de pontos + 1
         codigos_ordenados = sorted(
             st.session_state.df['Código'].unique(), 
             key=lambda x: x.count('.'), 
             reverse=True
         )
         
-        # Mapear contas para encontrar filhas
-        # Para cada conta, somar os valores das filhas DIRETAS
-        
         for cod_pai in codigos_ordenados:
-            # Encontra o tipo da conta
             tipo_conta = st.session_state.df.loc[st.session_state.df['Código'] == cod_pai, 'Tipo'].values[0]
             
             if tipo_conta == "Sintética":
-                # Zera valores atuais (para garantir soma limpa, embora analíticas já tenham valor)
-                # Para sintéticas, vamos calcular "bottom-up"
-                
-                # Lógica para encontrar filhas diretas:
-                # Filhas começam com cod_pai + "." e tem apenas um nível a mais
-                
                 filhas_diretas = []
                 nivel_pai = cod_pai.count('.')
                 prefixo_pai = cod_pai + "."
@@ -402,7 +389,6 @@ elif st.session_state.aba == "balancete":
                         if nivel_filha == nivel_pai + 1:
                             filhas_diretas.append(cod_filha)
                 
-                # Somar valores das filhas
                 soma_d = 0.0
                 soma_c = 0.0
                 for filha in filhas_diretas:
@@ -412,16 +398,13 @@ elif st.session_state.aba == "balancete":
                 saldos[cod_pai]['Debito'] = soma_d
                 saldos[cod_pai]['Credito'] = soma_c
         
-        # 4. Montar DataFrame de visualização
         lista_balancete = []
         total_geral_d = 0.0
         total_geral_c = 0.0
         
-        # Ordenar por código para exibição
         codigos_exibicao = sorted(st.session_state.df['Código'].unique())
         
         for cod in codigos_exibicao:
-            # Pega descrição e tipo
             row_conta = st.session_state.df.loc[st.session_state.df['Código'] == cod].iloc[0]
             desc = row_conta['Descrição']
             tipo = row_conta['Tipo']
@@ -430,26 +413,20 @@ elif st.session_state.aba == "balancete":
             val_c = saldos[cod]['Credito']
             saldo = val_d - val_c
             
-            # Adicionar linha
             lista_balancete.append({
                 "Código": cod,
                 "Descrição": desc,
                 "Tipo": tipo,
-                "Débito": val_d if val_d > 0 else 0.0, # Mostrar 0 ou valor
+                "Débito": val_d if val_d > 0 else 0.0,
                 "Crédito": val_c if val_c > 0 else 0.0,
                 "Saldo": saldo
             })
             
-            # Totalizar (apenas para visualização, se necessário)
-            # Em balancete, o total geral soma tudo (incluindo sintéticas se não for filtrado)
-            # Para balancete correto, somamos apenas as contas de nível mais alto (raízes) ou todas se quisermos o total movimentado.
-            # Aqui vamos somar tudo para conferência do duplo registro (Total Déb == Total Cred)
             total_geral_d += val_d
             total_geral_c += val_c
             
         df_balancete = pd.DataFrame(lista_balancete)
         
-        # Exibir
         st.dataframe(
             df_balancete.style.format({"Débito": "R$ {:,.2f}", "Crédito": "R$ {:,.2f}", "Saldo": "R$ {:,.2f}"}),
             use_container_width=True,
@@ -465,3 +442,129 @@ elif st.session_state.aba == "balancete":
             st.success("Balancete OK (D = C)")
         else:
             st.error("Balancete com diferença!")
+
+# --- ABA 4: DRE (NOVO) ---
+elif st.session_state.aba == "dre":
+    st.title("Demonstração do Resultado do Exercício (DRE)")
+    
+    # Filtros
+    col_f1, col_f2 = st.columns(2)
+    hoje = datetime.now().date()
+    f_data_ini = col_f1.date_input("Data Inicial", value=hoje - timedelta(days=365), key="dre_ini")
+    f_data_fim = col_f2.date_input("Data Final", value=hoje, key="dre_fim")
+    
+    st.divider()
+    
+    if st.session_state.df.empty:
+        st.warning("Nenhuma conta cadastrada.")
+    elif not st.session_state.lancamentos:
+        st.warning("Nenhum lançamento encontrado.")
+    else:
+        # Dicionário para acumular valores das contas de resultado
+        # Estrutura: { 'Codigo': {'Descricao': '', 'Categoria': '', 'Valor': 0.0} }
+        contas_resultado = {}
+        
+        # Processar lançamentos
+        for l in st.session_state.lancamentos:
+            if f_data_ini <= l['data'] <= f_data_fim:
+                for item in l['itens']:
+                    conta_cod = item['Conta']
+                    
+                    # Verifica se a conta existe e é Receita ou Despesa
+                    # Busca info da conta no df
+                    info_conta = st.session_state.df.loc[st.session_state.df['Código'] == conta_cod]
+                    
+                    if not info_conta.empty:
+                        categoria = info_conta.iloc[0]['Categoria']
+                        
+                        # Apenas processa Receitas e Despesas
+                        if categoria in ["Receita", "Despesa"]:
+                            
+                            valor = item['Valor']
+                            tipo_lanc = item['Tipo']
+                            
+                            # Inicializa se não existir
+                            if conta_cod not in contas_resultado:
+                                contas_resultado[conta_cod] = {
+                                    'Descricao': info_conta.iloc[0]['Descrição'],
+                                    'Categoria': categoria,
+                                    'Valor': 0.0
+                                }
+                            
+                            # Lógica Contábil DRE:
+                            # RECEITA: Crédito (+) / Débito (-)
+                            # DESPESA: Débito (+) / Crédito (-)
+                            
+                            if categoria == "Receita":
+                                if tipo_lanc == "Crédito":
+                                    contas_resultado[conta_cod]['Valor'] += valor
+                                else:
+                                    contas_resultado[conta_cod]['Valor'] -= valor
+                            
+                            elif categoria == "Despesa":
+                                if tipo_lanc == "Débito":
+                                    contas_resultado[conta_cod]['Valor'] += valor
+                                else:
+                                    contas_resultado[conta_cod]['Valor'] -= valor
+        
+        # Preparar listas para exibição
+        lista_receitas = []
+        lista_despesas = []
+        total_receitas = 0.0
+        total_despesas = 0.0
+        
+        for cod, dados in contas_resultado.items():
+            # Ignora contas com saldo zerado (opcional)
+            if dados['Valor'] != 0:
+                linha = {
+                    "Código": cod,
+                    "Descrição": dados['Descricao'],
+                    "Categoria": dados['Categoria'],
+                    "Valor": dados['Valor']
+                }
+                
+                if dados['Categoria'] == "Receita":
+                    lista_receitas.append(linha)
+                    total_receitas += dados['Valor']
+                else:
+                    lista_despesas.append(linha)
+                    total_despesas += dados['Valor']
+        
+        # Exibir RECEITAS
+        st.subheader("RECEITAS")
+        if lista_receitas:
+            df_rec = pd.DataFrame(lista_receitas)
+            st.dataframe(
+                df_rec.style.format({"Valor": "R$ {:,.2f}"}),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.write("Nenhuma receita no período.")
+        
+        st.write("") # Espaço
+        
+        # Exibir DESPESAS
+        st.subheader("DESPESAS")
+        if lista_despesas:
+            df_desp = pd.DataFrame(lista_despesas)
+            st.dataframe(
+                df_desp.style.format({"Valor": "R$ {:,.2f}"}),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.write("Nenhuma despesa no período.")
+        
+        st.divider()
+        
+        # Resultado Final
+        resultado = total_receitas - total_despesas
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Receitas", f"R$ {total_receitas:,.2f}")
+        c2.metric("Total Despesas", f"R$ {total_despesas:,.2f}")
+        
+        # Destaque para o resultado (verde se lucro, vermelho se prejuízo)
+        delta_color = "normal" if resultado >= 0 else "inverse"
+        c3.metric("Resultado do Período", f"R$ {resultado:,.2f}", delta_color=delta_color)
