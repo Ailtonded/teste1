@@ -11,16 +11,18 @@ if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior"])
 
 # Inicializa lançamentos (lista de dicionários)
-# Estrutura: {'id': int, 'data': date, 'historico': str, 'linhas': list[dict]}
+# Estrutura: {'id': int, 'data': date, 'historico': str, 'itens': list}
 if "lancamentos" not in st.session_state:
     st.session_state.lancamentos = []
     st.session_state.next_id = 1
 
-# Variáveis de controle de interface
+# Variáveis de controle
 if "modo" not in st.session_state:
     st.session_state.modo = None
 if "aba" not in st.session_state:
     st.session_state.aba = "contas"
+if "edit_id" not in st.session_state:
+    st.session_state.edit_id = None
 
 # --- MENU LATERAL ---
 with st.sidebar:
@@ -132,228 +134,192 @@ if st.session_state.aba == "contas":
 elif st.session_state.aba == "lanc":
     st.title("Lançamentos")
 
-    # 1. FILTROS
-    col_f1, col_f2, col_f3 = st.columns([2, 2, 4])
-    hoje = datetime.now().date()
-    data_ini = col_f1.date_input("Data Inicial", value=hoje - timedelta(days=30))
-    data_fim = col_f2.date_input("Data Final", value=hoje)
-
-    st.divider()
-
-    # 2. BOTÕES DE AÇÃO
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 6])
-    if col1.button("Incluir", key="btn_inc_lanc"):
-        st.session_state.modo = "incluir"
-        # Limpa dados de edição anteriores
-        if "edit_lanc_id" in st.session_state:
-            del st.session_state.edit_lanc_id
-        
-    if col2.button("Editar", key="btn_edit_lanc"):
-        st.session_state.modo = "editar"
-
-    if col3.button("Deletar", key="btn_del_lanc"):
-        st.session_state.modo = "deletar"
-
-    st.divider()
-
-    # Prepara DataFrame para visualização
-    # Converte a lista de lançamentos para um DataFrame plano para exibição
-    rows = []
-    for lanc in st.session_state.lancamentos:
-        rows.append({
-            "ID": lanc['id'],
-            "Data": lanc['data'],
-            "Histórico": lanc['historico'],
-            "Linhas": f"{len(lanc['linhas'])} itens"
-        })
+    # --- 1. ÁREA DE CADASTRO (TOPO) ---
+    st.subheader("Cadastrar Novo Lançamento")
     
-    df_view_lanc = pd.DataFrame(rows)
-    if not df_view_lanc.empty:
-        df_view_lanc["Data"] = pd.to_datetime(df_view_lanc["Data"])
-        mask = (df_view_lanc["Data"].dt.date >= data_ini) & (df_view_lanc["Data"].dt.date <= data_fim)
-        df_view_lanc = df_view_lanc.loc[mask]
-        # Converter de volta para string para exibição limpa
-        df_view_lanc["Data"] = df_view_lanc["Data"].dt.strftime("%d/%m/%Y")
-
-    # 3. TABELA DE VISUALIZAÇÃO
-    # Exibe ID, Data, Histórico e Resumo
-    selecao_lanc = st.dataframe(
-        df_view_lanc[["ID", "Data", "Histórico", "Linhas"]] if not df_view_lanc.empty else pd.DataFrame(columns=["ID", "Data", "Histórico", "Linhas"]), 
-        use_container_width=True, 
-        hide_index=True, 
-        on_select="rerun", 
-        key="tabela_lanc"
-    )
-    linhas_sel_lanc = selecao_lanc.selection["rows"]
-
-    # Lógica Deletar
-    if st.session_state.modo == "deletar":
-        if linhas_sel_lanc:
-            # Pega o ID real pelo índice da view filtrada
-            id_del = df_view_lanc.iloc[linhas_sel_lanc[0]]["ID"]
-            # Filtra a lista original removendo o ID
-            st.session_state.lancamentos = [x for x in st.session_state.lancamentos if x['id'] != id_del]
-            st.success("Lançamento deletado!")
-            st.session_state.modo = None
-            st.rerun()
-        else:
-            st.warning("Selecione um lançamento para deletar.")
-            st.session_state.modo = None
-
-    # Lógica Editar (verifica seleção)
-    if st.session_state.modo == "editar":
-        if linhas_sel_lanc:
-            # Guarda o ID que está sendo editado
-            id_edit = df_view_lanc.iloc[linhas_sel_lanc[0]]["ID"]
-            st.session_state.edit_lanc_id = id_edit
-        else:
-            st.warning("Selecione um lançamento para editar.")
-            st.session_state.modo = None
-
-    # FORMULÁRIO DE LANÇAMENTOS (INCLUIR / EDITAR)
-    if st.session_state.modo in ["incluir", "editar"]:
-        titulo_form = "Novo Lançamento"
-        dados_form = {"data": hoje, "historico": ""}
-        linhas_iniciais = []
-
-        # Se for edição, carrega dados
-        if st.session_state.modo == "editar" and "edit_lanc_id" in st.session_state:
-            titulo_form = "Editar Lançamento"
-            # Busca dados originais
-            for l in st.session_state.lancamentos:
-                if l['id'] == st.session_state.edit_lanc_id:
-                    dados_form = l
-                    linhas_iniciais = l['linhas']
-                    break
+    # Estado inicial do formulário
+    data_padrao = datetime.now().date()
+    hist_padrao = ""
+    itens_padrao = [] # Lista vazia
+    
+    # Se estiver em modo edição, carrega dados
+    if st.session_state.edit_id is not None:
+        st.info(f"Editando Lançamento ID: {st.session_state.edit_id} (Alterações ainda não salvas)")
+        # Busca dados
+        for l in st.session_state.lancamentos:
+            if l['id'] == st.session_state.edit_id:
+                data_padrao = l['data']
+                hist_padrao = l['historico']
+                itens_padrao = l['itens']
+                break
+    
+    # Formulário
+    with st.form("form_lancamento"):
+        col1, col2 = st.columns([1, 3])
+        data_lanc = col1.date_input("Data", value=data_padrao)
+        historico = col2.text_input("Histórico", value=hist_padrao)
         
-        with st.form("form_lanc"):
-            col_cab = st.columns([2, 6])
-            data_lanc = col_cab[0].date_input("Data", value=dados_form['data'])
-            historico = col_cab[1].text_input("Histórico", value=dados_form['historico'])
-
-            st.subheader("Itens do Lançamento")
+        st.markdown("**Itens do Lançamento**")
+        
+        # Grid Editável (st.data_editor)
+        # Prepara dataframe para o editor
+        df_itens = pd.DataFrame(itens_padrao)
+        if df_itens.empty:
+            df_itens = pd.DataFrame({"Tipo": ["", ""], "Conta": ["", ""], "Valor": [0.0, 0.0]})
             
-            # GRID EDITÁVEL
-            # Define colunas
-            column_config = {
-                "Tipo": st.column_config.SelectboxColumn(
-                    options=["Débito", "Crédito"],
-                    required=True,
-                    width="small"
-                ),
-                "Conta": st.column_config.SelectboxColumn(
-                    options=sorted(st.session_state.df["Código"].unique().tolist()),
-                    required=True,
-                    width="medium"
-                ),
-                "Valor": st.column_config.NumberColumn(
-                    format="R$ %.2f",
-                    required=True,
-                    min_value=0.0,
-                    width="medium"
-                )
-            }
-
-            # Dataframe temporário para o editor
-            df_editor = pd.DataFrame(linhas_iniciais)
-            if df_editor.empty:
-                # Cria linhas vazias padrão para começar
-                df_editor = pd.DataFrame({"Tipo": ["", ""], "Conta": ["", ""], "Valor": [0.0, 0.0]})
-
-            # Exibe o editor
-            df_itens = st.data_editor(
-                df_editor,
-                column_config=column_config,
-                num_rows="dynamic", # Permite adicionar/remover linhas
-                use_container_width=True,
-                hide_index=True,
-                key="editor_grid"
-            )
-
-            # Cálculo dos totais
-            total_debito = df_itens[df_itens['Tipo'] == 'Débito']['Valor'].sum()
-            total_credito = df_itens[df_itens['Tipo'] == 'Crédito']['Valor'].sum()
-
-            # Exibe totais
-            col_tot1, col_tot2, col_tot3 = st.columns([2, 2, 4])
-            col_tot1.metric("Total Débito", f"R$ {total_debito:,.2f}")
-            col_tot2.metric("Total Crédito", f"R$ {total_credito:,.2f}")
-
-            # Validação visual
+        # Configuração das colunas
+        lista_contas = sorted(st.session_state.df["Código"].unique().tolist())
+        
+        editor_result = st.data_editor(
+            df_itens,
+            column_config={
+                "Tipo": st.column_config.SelectboxColumn("Tipo", options=["Débito", "Crédito"], required=True),
+                "Conta": st.column_config.SelectboxColumn("Conta", options=lista_contas, required=True),
+                "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f", min_value=0.0, required=True)
+            },
+            num_rows="dynamic",
+            hide_index=True,
+            use_container_width=True,
+            key="editor_lanc"
+        )
+        
+        # Cálculo dos totais
+        total_debito = editor_result[editor_result['Tipo'] == 'Débito']['Valor'].sum()
+        total_credito = editor_result[editor_result['Tipo'] == 'Crédito']['Valor'].sum()
+        
+        col_t1, col_t2 = st.columns(2)
+        col_t1.metric("Total Débitos", f"R$ {total_debito:,.2f}")
+        col_t2.metric("Total Créditos", f"R$ {total_credito:,.2f}")
+        
+        # Aviso visual
+        if total_debito != total_credito:
+            st.error("⚠️ As somas de Débito e Crédito devem ser iguais para salvar.")
+        
+        # Botões
+        col_btn = st.columns([1, 1, 4])
+        btn_salvar = col_btn[0].form_submit_button("Salvar", type="primary")
+        btn_cancelar = col_btn[1].form_submit_button("Cancelar")
+        
+        if btn_cancelar:
+            st.session_state.edit_id = None
+            st.rerun()
+            
+        if btn_salvar:
+            # Validações
+            valido = True
+            
             if total_debito != total_credito:
-                col_tot1.error("Diferente!")
-                col_tot2.error("Diferente!")
+                valido = False
+                st.error("Débitos diferente de Créditos.")
             
-            st.divider()
+            # Verifica preenchimento
+            # Remove linhas totalmente vazias
+            df_check = editor_result.dropna(how='all')
+            
+            if df_check.empty:
+                valido = False
+                st.error("Nenhum item informado.")
+            else:
+                # Verifica se tem campo vazio na linha preenchida
+                if df_check.isnull().values.any():
+                    valido = False
+                    st.error("Preencha todos os campos das linhas.")
+                
+                # Verifica se tem pelo menos 1 debito e 1 credito
+                tipos = df_check['Tipo'].unique()
+                if "Débito" not in tipos or "Crédito" not in tipos:
+                    valido = False
+                    st.error("Lançamento deve ter pelo menos um Débito e um Crédito.")
 
-            # Botões do form
-            salvar = st.form_submit_button("Salvar", type="primary")
-            cancelar = st.form_submit_button("Cancelar")
-
-            if cancelar:
-                # Limpa estado
-                st.session_state.modo = None
-                if "edit_lanc_id" in st.session_state:
-                    del st.session_state.edit_lanc_id
+            if valido:
+                lista_itens = df_check.to_dict('records')
+                
+                if st.session_state.edit_id is None:
+                    # NOVO LANÇAMENTO
+                    novo = {
+                        "id": st.session_state.next_id,
+                        "data": data_lanc,
+                        "historico": historico,
+                        "itens": lista_itens
+                    }
+                    st.session_state.lancamentos.append(novo)
+                    st.session_state.next_id += 1
+                    st.success("Lançamento salvo!")
+                else:
+                    # ATUALIZAR EXISTENTE
+                    for i, l in enumerate(st.session_state.lancamentos):
+                        if l['id'] == st.session_state.edit_id:
+                            st.session_state.lancamentos[i]['data'] = data_lanc
+                            st.session_state.lancamentos[i]['historico'] = historico
+                            st.session_state.lancamentos[i]['itens'] = lista_itens
+                            break
+                    st.success("Lançamento atualizado!")
+                    st.session_state.edit_id = None
+                
                 st.rerun()
 
-            if salvar:
-                # VALIDAÇÃO FINAL
-                erro = False
-                
-                # 1. Valida Soma
-                if total_debito != total_credito:
-                    st.error("❌ Erro: A soma dos Débitos deve ser igual a soma dos Créditos.")
-                    erro = True
-                
-                # 2. Valida preenchimento
-                # Remove linhas completamente vazias
-                df_valid = df_itens.dropna(how='all')
-                # Verifica se sobrou algo
-                if df_valid.empty:
-                    st.error("❌ Erro: Adicione pelo menos uma linha de débito e uma de crédito.")
-                    erro = True
-                else:
-                    # Verifica campos nulos nas linhas preenchidas parcialmente
-                    if df_valid[['Tipo', 'Conta', 'Valor']].isnull().values.any():
-                        st.error("❌ Erro: Preencha todos os campos (Tipo, Conta, Valor) em todas as linhas.")
-                        erro = True
-                
-                # 3. Validação de partidas dobradas (lógica simples)
-                tipos_presentes = df_valid['Tipo'].unique()
-                if len(df_valid) > 0 and ("Débito" not in tipos_presentes or "Crédito" not in tipos_presentes):
-                    st.error("❌ Erro: O lançamento deve conter pelo menos um débito e um crédito.")
-                    erro = True
+    st.divider()
 
-                if not erro:
-                    # Prepara lista de linhas
-                    novas_linhas = df_valid.to_dict('records')
-                    
-                    if st.session_state.modo == "incluir":
-                        novo = {
-                            "id": st.session_state.next_id,
-                            "data": data_lanc,
-                            "historico": historico,
-                            "linhas": novas_linhas
-                        }
-                        st.session_state.lancamentos.append(novo)
-                        st.session_state.next_id += 1
-                        st.success("Lançamento salvo com sucesso!")
-                    else:
-                        # Atualiza existente
-                        for i, l in enumerate(st.session_state.lancamentos):
-                            if l['id'] == st.session_state.edit_lanc_id:
-                                st.session_state.lancamentos[i] = {
-                                    "id": st.session_state.edit_lanc_id,
-                                    "data": data_lanc,
-                                    "historico": historico,
-                                    "linhas": novas_linhas
-                                }
-                                break
-                        st.success("Lançamento atualizado com sucesso!")
-                    
-                    # Limpa estado e recarrega
-                    st.session_state.modo = None
-                    if "edit_lanc_id" in st.session_state:
-                        del st.session_state.edit_lanc_id
-                    st.rerun()
+    # --- 2. GRID DE VISUALIZAÇÃO (ABAIXO) ---
+    st.subheader("Lançamentos Gravados")
+    
+    # Filtros
+    col_f1, col_f2 = st.columns(2)
+    hoje = datetime.now().date()
+    f_data_ini = col_f1.date_input("Data Inicial (>=)", value=hoje - timedelta(days=30), key="f_ini")
+    f_data_fim = col_f2.date_input("Data Final (<=)", value=hoje, key="f_fim")
+    
+    # Botões de Ação do Grid
+    col_ac1, col_ac2, col_ac3 = st.columns([1, 1, 6])
+    if col_ac1.button("Editar Selecionado"):
+        if "sel_lanc" in st.session_state and st.session_state.sel_lanc:
+            st.session_state.edit_id = st.session_state.sel_lanc['selection']['rows'][0]
+            st.rerun()
+        else:
+            st.warning("Selecione uma linha.")
+            
+    if col_ac2.button("Deletar Selecionado"):
+        if "sel_lanc" in st.session_state and st.session_state.sel_lanc:
+            id_del = st.session_state.sel_lanc['selection']['rows'][0]
+            st.session_state.lancamentos = [x for x in st.session_state.lancamentos if x['id'] != id_del]
+            st.success("Deletado!")
+            st.rerun()
+        else:
+            st.warning("Selecione uma linha.")
+
+    # Preparar dados para exibição
+    # A exibição será simplificada: mostra o cabeçalho. 
+    # Para visualizar os itens detalhados, o usuário usa o botão Editar.
+    
+    rows_view = []
+    for l in st.session_state.lancamentos:
+        # Filtro por data
+        if f_data_ini <= l['data'] <= f_data_fim:
+            # Para exibir débitos/créditos de forma simples na tabela, podemos concatenar
+            debitos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Débito']
+            creditos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Crédito']
+            
+            total = sum([x['Valor'] for x in l['itens'] if x['Tipo'] == 'Débito'])
+            
+            rows_view.append({
+                "ID": l['id'],
+                "Data": l['data'].strftime("%d/%m/%Y"),
+                "Histórico": l['historico'],
+                "Débitos": ", ".join(debitos),
+                "Créditos": ", ".join(creditos),
+                "Valor Total": total
+            })
+            
+    df_view = pd.DataFrame(rows_view)
+    
+    if df_view.empty:
+        st.info("Nenhum lançamento encontrado.")
+    else:
+        st.dataframe(
+            df_view, 
+            use_container_width=True, 
+            hide_index=True, 
+            on_select="rerun", 
+            selection_mode="single-row",
+            key="sel_lanc"
+        )
