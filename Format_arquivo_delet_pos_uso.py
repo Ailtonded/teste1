@@ -2,22 +2,30 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
+# BIBLIOTECAS PARA CRIPTOGRAFIA
+# É necessário instalar: pip install cryptography
+from cryptography.fernet import Fernet
+import base64
+import hashlib
 
 # Configuração da página
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
+# --- FUNÇÃO AUXILIAR PARA CRIPTOGRAFIA ---
+def gerar_chave(senha):
+    # Gera uma chave de 32 bytes a partir da senha usando SHA256
+    hash_obj = hashlib.sha256(senha.encode())
+    chave = base64.urlsafe_b64encode(hash_obj.digest())
+    return chave
+
 # --- INICIALIZAÇÃO DOS DADOS ---
-# Inicializa contas com o novo campo 'Categoria'
 if "df" not in st.session_state:
-    # DataFrame inclui 'Categoria'
     st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior", "Categoria"])
 
-# Inicializa lançamentos
 if "lancamentos" not in st.session_state:
     st.session_state.lancamentos = []
     st.session_state.next_id = 1
 
-# Variáveis de controle
 if "modo" not in st.session_state:
     st.session_state.modo = None
 if "aba" not in st.session_state:
@@ -47,7 +55,6 @@ with st.sidebar:
 if st.session_state.aba == "contas":
     st.title("Cadastro de Contas")
 
-    # 1. BOTÕES DE AÇÃO
     col1, col2, col3, col4 = st.columns([1, 1, 1, 6])
     if col1.button("Incluir"):
         st.session_state.modo = "incluir"
@@ -60,11 +67,9 @@ if st.session_state.aba == "contas":
 
     st.divider()
 
-    # 2. LÓGICA E FORMULÁRIO
     selecao = st.dataframe(st.session_state.df, use_container_width=True, hide_index=True, on_select="rerun", key="tabela_contas")
     linhas_selecionadas = selecao.selection["rows"]
 
-    # MODO DELETAR
     if st.session_state.modo == "deletar":
         if linhas_selecionadas:
             idx = linhas_selecionadas[0]
@@ -77,21 +82,17 @@ if st.session_state.aba == "contas":
             st.warning("Selecione uma linha para deletar.")
             st.session_state.modo = None
 
-    # MODO EDITAR
     if st.session_state.modo == "editar" and not linhas_selecionadas:
         st.warning("Selecione uma linha na tabela para editar.")
         st.session_state.modo = None
 
-    # FORMULÁRIO (Incluir ou Editar)
     if st.session_state.modo in ["incluir", "editar"]:
-        # Valores padrão (compatibilidade com dados antigos que não tem Categoria)
         dados_iniciais = {"Código": "", "Descrição": "", "Tipo": "Sintética", "Conta Superior": None, "Categoria": "Ativo"}
         idx_edit = 0
         
         if st.session_state.modo == "editar" and linhas_selecionadas:
             idx_edit = linhas_selecionadas[0]
             dados_iniciais = st.session_state.df.loc[idx_edit].to_dict()
-            # Garante valor padrão para categoria se for NaN (dados antigos)
             if pd.isna(dados_iniciais.get("Categoria")):
                 dados_iniciais["Categoria"] = "Ativo"
 
@@ -99,12 +100,10 @@ if st.session_state.aba == "contas":
             c1, c2 = st.columns(2)
             codigo = c1.text_input("Código *", value=dados_iniciais["Código"])
             
-            # Selectbox de Tipo
             tipo_options = ["Sintética", "Analítica"]
             tipo_idx = 0 if dados_iniciais["Tipo"] == "Sintética" else 1
             tipo = c1.selectbox("Tipo", tipo_options, index=tipo_idx)
 
-            # Selectbox de Categoria
             cat_options = ["Ativo", "Passivo", "Receita", "Despesa"]
             cat_idx = cat_options.index(dados_iniciais["Categoria"]) if dados_iniciais["Categoria"] in cat_options else 0
             categoria = c1.selectbox("Categoria *", cat_options, index=cat_idx)
@@ -162,7 +161,6 @@ if st.session_state.aba == "contas":
 elif st.session_state.aba == "lanc":
     st.title("Lançamentos")
 
-    # --- 1. ÁREA DE CADASTRO (DENTRO DO EXPANDER) ---
     expanded_state = True if st.session_state.edit_id is not None else False
     
     with st.expander("Cadastrar Novo Lançamento", expanded=expanded_state):
@@ -271,7 +269,6 @@ elif st.session_state.aba == "lanc":
 
     st.divider()
 
-    # --- 2. GRID DE VISUALIZAÇÃO ---
     st.subheader("Lançamentos Gravados")
     
     col_f1, col_f2 = st.columns(2)
@@ -398,7 +395,7 @@ elif st.session_state.aba == "balancete":
                 soma_c = 0.0
                 for filha in filhas_diretas:
                     soma_d += saldos[filha]['Debito']
-                    soma_c += saldos[filha]['Credito']
+                    soma_c += salhas[filha]['Credito']
                 
                 saldos[cod_pai]['Debito'] = soma_d
                 saldos[cod_pai]['Credito'] = soma_c
@@ -452,7 +449,6 @@ elif st.session_state.aba == "balancete":
 elif st.session_state.aba == "dre":
     st.title("Demonstração do Resultado do Exercício (DRE)")
     
-    # Filtros
     col_f1, col_f2 = st.columns(2)
     hoje = datetime.now().date()
     f_data_ini = col_f1.date_input("Data Inicial", value=hoje - timedelta(days=365), key="dre_ini")
@@ -555,73 +551,104 @@ elif st.session_state.aba == "dre":
         delta_color = "normal" if resultado >= 0 else "inverse"
         c3.metric("Resultado do Período", f"R$ {resultado:,.2f}", delta_color=delta_color)
 
-# --- ABA 5: BACKUP (NOVO) ---
+# --- ABA 5: BACKUP CRIPTOGRAFADO (ATUALIZADO) ---
 elif st.session_state.aba == "backup":
-    st.title("Backup e Restauração")
+    st.title("Backup e Restauração Segura")
     
-    st.markdown("Utilize esta aba para salvar seus dados localmente ou restaurar um backup anterior.")
+    st.markdown("Os backups são protegidos por senha e criptografados.")
     
     st.divider()
     
-    # --- 1. EXPORTAR (BACKUP) ---
-    st.subheader("1. Gerar Backup")
+    # --- 1. EXPORTAR BACKUP CRIPTOGRAFADO ---
+    st.subheader("1. Gerar Backup Criptografado")
     
-    # Prepara os dados para exportação
+    senha_export = st.text_input("Definir Senha do Backup", type="password", key="senha_exp")
+    
+    # Botão para gerar o download (a lógica acontece ao clicar)
+    # Preparamos os dados
     dados_exportacao = {
         "contas": st.session_state.df.to_dict(orient='records'),
         "lancamentos": st.session_state.lancamentos,
         "next_id": st.session_state.next_id
     }
-    
-    # Converte para JSON
     json_str = json.dumps(dados_exportacao, indent=4, default=str)
     
-    st.download_button(
-        label="📥 Baixar backup_contabil.json",
-        file_name="backup_contabil.json",
-        mime="application/json",
-        data=json_str,
-        use_container_width=True
-    )
-    
+    # Botão de download condicional
+    if not senha_export:
+        st.button("📥 Baixar backup_contabil.enc", disabled=True)
+        st.warning("Digite uma senha para gerar o backup.")
+    else:
+        try:
+            # Gera chave e criptografa
+            chave = gerar_chave(senha_export)
+            fernet = Fernet(chave)
+            bytes_dados = json_str.encode('utf-8')
+            dados_criptografados = fernet.encrypt(bytes_dados)
+            
+            st.download_button(
+                label="📥 Baixar backup_contabil.enc",
+                data=dados_criptografados,
+                file_name="backup_contabil.enc",
+                mime="application/octet-stream",
+                use_container_width=True
+            )
+            st.info("ℹ️ Guarde a senha em segurança. Sem ela, não é possível restaurar o backup.")
+            
+        except Exception as e:
+            st.error(f"Erro ao criptografar: {e}")
+
     st.divider()
     
-    # --- 2. IMPORTAR (RESTAURAÇÃO) ---
+    # --- 2. IMPORTAR BACKUP CRIPTOGRAFADO ---
     st.subheader("2. Restaurar Backup")
     
-    arquivo_upload = st.file_uploader("Selecione o arquivo .json", type="json", key="upload_backup")
+    senha_import = st.text_input("Senha do Arquivo", type="password", key="senha_imp")
+    arquivo_upload = st.file_uploader("Selecione o arquivo .enc", type=["enc", "json"], key="upload_backup")
     
     if arquivo_upload is not None:
-        try:
-            # Lê o arquivo
-            string_dados = arquivo_upload.read().decode('utf-8')
-            dados_importados = json.loads(string_dados)
-            
-            # Validação simples das chaves
-            if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
+        if not senha_import:
+            st.warning("Digite a senha para descriptografar o arquivo.")
+        else:
+            try:
+                # Lê o arquivo binário
+                dados_arquivo = arquivo_upload.read()
                 
-                # Botão de confirmação para restaurar
-                if st.button("⚠️ Restaurar Dados", type="primary"):
-                    # Atualiza Contas (converte lista para DataFrame)
-                    st.session_state.df = pd.DataFrame(dados_importados['contas'])
-                    
-                    # Atualiza Lançamentos
-                    st.session_state.lancamentos = dados_importados['lancamentos']
-                    
-                    # Atualiza Next ID
-                    st.session_state.next_id = dados_importados['next_id']
-                    
-                    # Converte strings de data de volta para date objects se necessário
-                    # (O streamlit date_input geralmente lida com strings YYYY-MM-DD, mas é bom garantir)
-                    for l in st.session_state.lancamentos:
-                        if isinstance(l['data'], str):
-                            l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
-                            
-                    st.success("✅ Dados restaurados com sucesso!")
-                    st.rerun()
-                    
-            else:
-                st.error("❌ Arquivo inválido. O JSON deve conter as chaves: 'contas', 'lancamentos' e 'next_id'.")
+                # Tenta descriptografar
+                chave = gerar_chave(senha_import)
+                fernet = Fernet(chave)
+                dados_decodificados = fernet.decrypt(dados_arquivo)
                 
-        except Exception as e:
-            st.error(f"❌ Erro ao ler o arquivo: {e}")
+                # Converte bytes para string e depois para JSON
+                json_str_dec = dados_decodificados.decode('utf-8')
+                dados_importados = json.loads(json_str_dec)
+                
+                # Valida estrutura
+                if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
+                    
+                    st.success("✅ Arquivo descriptografado com sucesso!")
+                    
+                    if st.button("⚠️ Restaurar Dados", type="primary"):
+                        # Restaura Contas
+                        st.session_state.df = pd.DataFrame(dados_importados['contas'])
+                        
+                        # Restaura Lançamentos
+                        st.session_state.lancamentos = dados_importados['lancamentos']
+                        
+                        # Restaura Next ID
+                        st.session_state.next_id = dados_importados['next_id']
+                        
+                        # Converte datas
+                        for l in st.session_state.lancamentos:
+                            if isinstance(l['data'], str):
+                                l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
+                                
+                        st.success("Dados restaurados!")
+                        st.rerun()
+                        
+                else:
+                    st.error("❌ Estrutura do arquivo inválida.")
+                    
+            except Exception as e:
+                # Erro genérico captura senha incorreta (InvalidToken) e outros erros
+                st.error("❌ Falha ao descriptografar. Verifique se a senha está correta ou se o arquivo é válido.")
+                st.caption(f"Detalhe técnico: {type(e).__name__}")
