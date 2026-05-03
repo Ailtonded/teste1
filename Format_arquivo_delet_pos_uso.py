@@ -10,13 +10,13 @@ st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=["Código", "Descrição", "Tipo", "Conta Superior"])
 
-# Inicializa lançamentos
+# Inicializa lançamentos (lista de dicionários)
+# Estrutura: {'id': int, 'data': date, 'historico': str, 'linhas': list[dict]}
 if "lancamentos" not in st.session_state:
-    st.session_state.lancamentos = pd.DataFrame(columns=[
-        "Data", "Tipo", "Conta Débito", "Conta Crédito", "Histórico", "Valor", "Repetição", "Qtd"
-    ])
+    st.session_state.lancamentos = []
+    st.session_state.next_id = 1
 
-# Variáveis de controle
+# Variáveis de controle de interface
 if "modo" not in st.session_state:
     st.session_state.modo = None
 if "aba" not in st.session_state:
@@ -27,7 +27,6 @@ with st.sidebar:
     st.title("Menu")
     if st.button("Cadastros"):
         st.session_state.aba = "contas"
-    # Indentação visual para submenu
     if st.button("   → Contas"):
         st.session_state.aba = "contas"
     if st.button("Lançamentos"):
@@ -129,7 +128,7 @@ if st.session_state.aba == "contas":
                         st.session_state.modo = None
                         st.rerun()
 
-# --- ABA 2: LANÇAMENTOS (NOVO) ---
+# --- ABA 2: LANÇAMENTOS (CORRIGIDO) ---
 elif st.session_state.aba == "lanc":
     st.title("Lançamentos")
 
@@ -145,6 +144,9 @@ elif st.session_state.aba == "lanc":
     col1, col2, col3, col4 = st.columns([1, 1, 1, 6])
     if col1.button("Incluir", key="btn_inc_lanc"):
         st.session_state.modo = "incluir"
+        # Limpa dados de edição anteriores
+        if "edit_lanc_id" in st.session_state:
+            del st.session_state.edit_lanc_id
         
     if col2.button("Editar", key="btn_edit_lanc"):
         st.session_state.modo = "editar"
@@ -154,26 +156,43 @@ elif st.session_state.aba == "lanc":
 
     st.divider()
 
-    # Filtragem dos dados para exibição
-    df_lanc = st.session_state.lancamentos.copy()
-    if not df_lanc.empty:
-        # Garante que a coluna Data é datetime para comparação
-        df_lanc["Data"] = pd.to_datetime(df_lanc["Data"])
-        mask = (df_lanc["Data"].dt.date >= data_ini) & (df_lanc["Data"].dt.date <= data_fim)
-        df_view = df_lanc.loc[mask]
-    else:
-        df_view = df_lanc
+    # Prepara DataFrame para visualização
+    # Converte a lista de lançamentos para um DataFrame plano para exibição
+    rows = []
+    for lanc in st.session_state.lancamentos:
+        rows.append({
+            "ID": lanc['id'],
+            "Data": lanc['data'],
+            "Histórico": lanc['historico'],
+            "Linhas": f"{len(lanc['linhas'])} itens"
+        })
+    
+    df_view_lanc = pd.DataFrame(rows)
+    if not df_view_lanc.empty:
+        df_view_lanc["Data"] = pd.to_datetime(df_view_lanc["Data"])
+        mask = (df_view_lanc["Data"].dt.date >= data_ini) & (df_view_lanc["Data"].dt.date <= data_fim)
+        df_view_lanc = df_view_lanc.loc[mask]
+        # Converter de volta para string para exibição limpa
+        df_view_lanc["Data"] = df_view_lanc["Data"].dt.strftime("%d/%m/%Y")
 
-    # 3. TABELA
-    selecao_lanc = st.dataframe(df_view, use_container_width=True, hide_index=True, on_select="rerun", key="tabela_lanc")
+    # 3. TABELA DE VISUALIZAÇÃO
+    # Exibe ID, Data, Histórico e Resumo
+    selecao_lanc = st.dataframe(
+        df_view_lanc[["ID", "Data", "Histórico", "Linhas"]] if not df_view_lanc.empty else pd.DataFrame(columns=["ID", "Data", "Histórico", "Linhas"]), 
+        use_container_width=True, 
+        hide_index=True, 
+        on_select="rerun", 
+        key="tabela_lanc"
+    )
     linhas_sel_lanc = selecao_lanc.selection["rows"]
 
     # Lógica Deletar
     if st.session_state.modo == "deletar":
         if linhas_sel_lanc:
-            idx = linhas_sel_lanc[0]
-            st.session_state.lancamentos.drop(idx, inplace=True)
-            st.session_state.lancamentos.reset_index(drop=True, inplace=True)
+            # Pega o ID real pelo índice da view filtrada
+            id_del = df_view_lanc.iloc[linhas_sel_lanc[0]]["ID"]
+            # Filtra a lista original removendo o ID
+            st.session_state.lancamentos = [x for x in st.session_state.lancamentos if x['id'] != id_del]
             st.success("Lançamento deletado!")
             st.session_state.modo = None
             st.rerun()
@@ -182,140 +201,159 @@ elif st.session_state.aba == "lanc":
             st.session_state.modo = None
 
     # Lógica Editar (verifica seleção)
-    if st.session_state.modo == "editar" and not linhas_sel_lanc:
-        st.warning("Selecione um lançamento para editar.")
-        st.session_state.modo = None
+    if st.session_state.modo == "editar":
+        if linhas_sel_lanc:
+            # Guarda o ID que está sendo editado
+            id_edit = df_view_lanc.iloc[linhas_sel_lanc[0]]["ID"]
+            st.session_state.edit_lanc_id = id_edit
+        else:
+            st.warning("Selecione um lançamento para editar.")
+            st.session_state.modo = None
 
-    # FORMULÁRIO DE LANÇAMENTOS
+    # FORMULÁRIO DE LANÇAMENTOS (INCLUIR / EDITAR)
     if st.session_state.modo in ["incluir", "editar"]:
-        dados_lanc = {
-            "Data": hoje, "Tipo": "Partida Dobrada", "Conta Débito": None, 
-            "Conta Crédito": None, "Histórico": "", "Valor": 0.0, 
-            "Repetição": None, "Qtd": 1
-        }
-        idx_edit_lanc = 0
+        titulo_form = "Novo Lançamento"
+        dados_form = {"data": hoje, "historico": ""}
+        linhas_iniciais = []
 
-        if st.session_state.modo == "editar" and linhas_sel_lanc:
-            # Pega o índice real do dataframe original (considerando filtro)
-            # O índice retornado é da view filtrada, precisamos mapear para o original se usarmos filtro
-            # Simplificação: O índice retornado é o índice do df_view.
-            idx_edit_lanc = df_view.index[linhas_sel_lanc[0]]
-            dados_lanc = st.session_state.lancamentos.loc[idx_edit_lanc].to_dict()
-            # Converte data para date se necessário
-            if pd.notnull(dados_lanc["Data"]):
-                dados_lanc["Data"] = pd.to_datetime(dados_lanc["Data"]).date()
-
+        # Se for edição, carrega dados
+        if st.session_state.modo == "editar" and "edit_lanc_id" in st.session_state:
+            titulo_form = "Editar Lançamento"
+            # Busca dados originais
+            for l in st.session_state.lancamentos:
+                if l['id'] == st.session_state.edit_lanc_id:
+                    dados_form = l
+                    linhas_iniciais = l['linhas']
+                    break
+        
         with st.form("form_lanc"):
-            col_a, col_b = st.columns(2)
-            data_lanc = col_a.date_input("Data", value=dados_lanc["Data"])
-            tipo_lanc = col_a.selectbox("Tipo", ["Partida Dobrada", "Débito", "Crédito"], 
-                                        index=["Partida Dobrada", "Débito", "Crédito"].index(dados_lanc["Tipo"]))
+            col_cab = st.columns([2, 6])
+            data_lanc = col_cab[0].date_input("Data", value=dados_form['data'])
+            historico = col_cab[1].text_input("Histórico", value=dados_form['historico'])
+
+            st.subheader("Itens do Lançamento")
             
-            historico = col_b.text_input("Histórico", value=dados_lanc["Histórico"])
+            # GRID EDITÁVEL
+            # Define colunas
+            column_config = {
+                "Tipo": st.column_config.SelectboxColumn(
+                    options=["Débito", "Crédito"],
+                    required=True,
+                    width="small"
+                ),
+                "Conta": st.column_config.SelectboxColumn(
+                    options=sorted(st.session_state.df["Código"].unique().tolist()),
+                    required=True,
+                    width="medium"
+                ),
+                "Valor": st.column_config.NumberColumn(
+                    format="R$ %.2f",
+                    required=True,
+                    min_value=0.0,
+                    width="medium"
+                )
+            }
+
+            # Dataframe temporário para o editor
+            df_editor = pd.DataFrame(linhas_iniciais)
+            if df_editor.empty:
+                # Cria linhas vazias padrão para começar
+                df_editor = pd.DataFrame({"Tipo": ["", ""], "Conta": ["", ""], "Valor": [0.0, 0.0]})
+
+            # Exibe o editor
+            df_itens = st.data_editor(
+                df_editor,
+                column_config=column_config,
+                num_rows="dynamic", # Permite adicionar/remover linhas
+                use_container_width=True,
+                hide_index=True,
+                key="editor_grid"
+            )
+
+            # Cálculo dos totais
+            total_debito = df_itens[df_itens['Tipo'] == 'Débito']['Valor'].sum()
+            total_credito = df_itens[df_itens['Tipo'] == 'Crédito']['Valor'].sum()
+
+            # Exibe totais
+            col_tot1, col_tot2, col_tot3 = st.columns([2, 2, 4])
+            col_tot1.metric("Total Débito", f"R$ {total_debito:,.2f}")
+            col_tot2.metric("Total Crédito", f"R$ {total_credito:,.2f}")
+
+            # Validação visual
+            if total_debito != total_credito:
+                col_tot1.error("Diferente!")
+                col_tot2.error("Diferente!")
             
-            # Lista de contas
-            contas_lista = sorted(st.session_state.df["Código"].unique().tolist())
+            st.divider()
 
-            # Lógica de exibição baseada no tipo
-            if tipo_lanc == "Partida Dobrada":
-                debito = st.selectbox("Conta Débito", [None] + contas_lista, 
-                                      index=0 if not dados_lanc["Conta Débito"] else ([None] + contas_lista).index(dados_lanc["Conta Débito"]))
-                credito = st.selectbox("Conta Crédito", [None] + contas_lista,
-                                       index=0 if not dados_lanc["Conta Crédito"] else ([None] + contas_lista).index(dados_lanc["Conta Crédito"]))
-                valor = st.number_input("Valor", value=float(dados_lanc["Valor"]), min_value=0.0)
-                
-                # Estrutura para salvar
-                dados_para_salvar = {
-                    "Data": data_lanc, "Tipo": tipo_lanc, "Conta Débito": debito, 
-                    "Conta Crédito": credito, "Histórico": historico, "Valor": valor,
-                    "Repetição": None, "Qtd": 1
-                }
-
-            else:
-                # Tipos Débito ou Crédito: Grid simples
-                st.info(f"Modo {tipo_lanc}: Informe as contas e valores abaixo.")
-                
-                # Simulação de grid simples com múltiplos inputs (simplificado)
-                # Não usar data_editor para manter simplicidade de código como solicitado
-                
-                # Recupera dados existentes se for edição (apenas 1 linha para simplicidade)
-                # Se fosse edição de múltiplos, precisaria de lógica mais complexa. 
-                # Mantendo simples: 1 conta/valor no formulário principal para edição/inclusão simples.
-                
-                if tipo_lanc == "Débito":
-                    debito = st.selectbox("Conta Débito", [None] + contas_lista, 
-                                          index=0 if not dados_lanc["Conta Débito"] else ([None] + contas_lista).index(dados_lanc["Conta Débito"]))
-                    credito = None
-                else: # Crédito
-                    credito = st.selectbox("Conta Crédito", [None] + contas_lista, 
-                                           index=0 if not dados_lanc["Conta Crédito"] else ([None] + contas_lista).index(dados_lanc["Conta Crédito"]))
-                    debito = None
-                
-                valor = st.number_input("Valor", value=float(dados_lanc["Valor"]), min_value=0.0)
-                st.write(f"Total: {valor:,.2f}")
-
-                dados_para_salvar = {
-                    "Data": data_lanc, "Tipo": tipo_lanc, "Conta Débito": debito, 
-                    "Conta Crédito": credito, "Histórico": historico, "Valor": valor,
-                    "Repetição": None, "Qtd": 1
-                }
-
-            # Repetição
-            col_r1, col_r2 = st.columns(2)
-            rep = col_r1.selectbox("Repetição", [None, "Diário", "Semanal", "Mensal"], 
-                                   index=0 if not dados_lanc["Repetição"] else [None, "Diário", "Semanal", "Mensal"].index(dados_lanc["Repetição"]))
-            qtd = col_r2.number_input("Quantidade", value=int(dados_lanc["Qtd"]) if dados_lanc["Qtd"] else 1, min_value=1)
-
-            dados_para_salvar["Repetição"] = rep
-            dados_para_salvar["Qtd"] = qtd if rep else 1
-
-            salvar = st.form_submit_button("Salvar")
+            # Botões do form
+            salvar = st.form_submit_button("Salvar", type="primary")
             cancelar = st.form_submit_button("Cancelar")
 
             if cancelar:
+                # Limpa estado
                 st.session_state.modo = None
+                if "edit_lanc_id" in st.session_state:
+                    del st.session_state.edit_lanc_id
                 st.rerun()
-            
-            if salvar:
-                # Validações básicas
-                if tipo_lanc == "Partida Dobrada" and (not debito or not credito):
-                    st.error("Partida Dobrada exige Conta Débito e Crédito.")
-                elif tipo_lanc == "Débito" and not debito:
-                    st.error("Informe a Conta Débito.")
-                elif tipo_lanc == "Crédito" and not credito:
-                    st.error("Informe a Conta Crédito.")
-                elif valor <= 0:
-                    st.error("Valor deve ser maior que zero.")
-                else:
-                    # Lógica de repetição (simples)
-                    lista_inserir = []
-                    dt_base = data_lanc
-                    
-                    for i in range(dados_para_salvar["Qtd"]):
-                        novo = dados_para_salvar.copy()
-                        novo["Data"] = dt_base
-                        
-                        lista_inserir.append(novo)
-                        
-                        # Incrementa data
-                        if rep == "Diário":
-                            dt_base = dt_base + timedelta(days=1)
-                        elif rep == "Semanal":
-                            dt_base = dt_base + timedelta(days=7)
-                        elif rep == "Mensal":
-                            # Simplificação: adiciona 30 dias
-                            dt_base = dt_base + timedelta(days=30)
 
-                    if st.session_state.modo == "editar":
-                        # Na edição simples, atualiza apenas a linha base (remove repetições antigas se houver)
-                        # Mantendo simples: atualiza apenas o registro selecionado
-                        st.session_state.lancamentos.loc[idx_edit_lanc] = dados_para_salvar
-                        st.success("Lançamento atualizado!")
-                    else:
-                        # Inclusão
-                        df_novos = pd.DataFrame(lista_inserir)
-                        st.session_state.lancamentos = pd.concat([st.session_state.lancamentos, df_novos], ignore_index=True)
-                        st.success(f"{len(lista_inserir)} lançamento(s) incluído(s)!")
+            if salvar:
+                # VALIDAÇÃO FINAL
+                erro = False
+                
+                # 1. Valida Soma
+                if total_debito != total_credito:
+                    st.error("❌ Erro: A soma dos Débitos deve ser igual a soma dos Créditos.")
+                    erro = True
+                
+                # 2. Valida preenchimento
+                # Remove linhas completamente vazias
+                df_valid = df_itens.dropna(how='all')
+                # Verifica se sobrou algo
+                if df_valid.empty:
+                    st.error("❌ Erro: Adicione pelo menos uma linha de débito e uma de crédito.")
+                    erro = True
+                else:
+                    # Verifica campos nulos nas linhas preenchidas parcialmente
+                    if df_valid[['Tipo', 'Conta', 'Valor']].isnull().values.any():
+                        st.error("❌ Erro: Preencha todos os campos (Tipo, Conta, Valor) em todas as linhas.")
+                        erro = True
+                
+                # 3. Validação de partidas dobradas (lógica simples)
+                tipos_presentes = df_valid['Tipo'].unique()
+                if len(df_valid) > 0 and ("Débito" not in tipos_presentes or "Crédito" not in tipos_presentes):
+                    st.error("❌ Erro: O lançamento deve conter pelo menos um débito e um crédito.")
+                    erro = True
+
+                if not erro:
+                    # Prepara lista de linhas
+                    novas_linhas = df_valid.to_dict('records')
                     
+                    if st.session_state.modo == "incluir":
+                        novo = {
+                            "id": st.session_state.next_id,
+                            "data": data_lanc,
+                            "historico": historico,
+                            "linhas": novas_linhas
+                        }
+                        st.session_state.lancamentos.append(novo)
+                        st.session_state.next_id += 1
+                        st.success("Lançamento salvo com sucesso!")
+                    else:
+                        # Atualiza existente
+                        for i, l in enumerate(st.session_state.lancamentos):
+                            if l['id'] == st.session_state.edit_lanc_id:
+                                st.session_state.lancamentos[i] = {
+                                    "id": st.session_state.edit_lanc_id,
+                                    "data": data_lanc,
+                                    "historico": historico,
+                                    "linhas": novas_linhas
+                                }
+                                break
+                        st.success("Lançamento atualizado com sucesso!")
+                    
+                    # Limpa estado e recarrega
                     st.session_state.modo = None
+                    if "edit_lanc_id" in st.session_state:
+                        del st.session_state.edit_lanc_id
                     st.rerun()
