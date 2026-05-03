@@ -589,7 +589,7 @@ elif st.session_state.aba == "backup":
                         if isinstance(l['data'], str):
                             l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
                             
-                    st.success("✅ Dados restaurados com sucesso!")
+                    st.success("✅ Dados restaurados com sucesso!1")
                     st.rerun()
                     
             else:
