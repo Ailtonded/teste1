@@ -2,21 +2,9 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
-# BIBLIOTECAS PARA CRIPTOGRAFIA
-# É necessário instalar: pip install cryptography
-from cryptography.fernet import Fernet
-import base64
-import hashlib
 
 # Configuração da página
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
-
-# --- FUNÇÃO AUXILIAR PARA CRIPTOGRAFIA ---
-def gerar_chave(senha):
-    # Gera uma chave de 32 bytes a partir da senha usando SHA256
-    hash_obj = hashlib.sha256(senha.encode())
-    chave = base64.urlsafe_b64encode(hash_obj.digest())
-    return chave
 
 # --- INICIALIZAÇÃO DOS DADOS ---
 if "df" not in st.session_state:
@@ -395,7 +383,7 @@ elif st.session_state.aba == "balancete":
                 soma_c = 0.0
                 for filha in filhas_diretas:
                     soma_d += saldos[filha]['Debito']
-                    soma_c += salhas[filha]['Credito']
+                    soma_c += saldos[filha]['Credito']
                 
                 saldos[cod_pai]['Debito'] = soma_d
                 saldos[cod_pai]['Credito'] = soma_c
@@ -551,104 +539,61 @@ elif st.session_state.aba == "dre":
         delta_color = "normal" if resultado >= 0 else "inverse"
         c3.metric("Resultado do Período", f"R$ {resultado:,.2f}", delta_color=delta_color)
 
-# --- ABA 5: BACKUP CRIPTOGRAFADO (ATUALIZADO) ---
+# --- ABA 5: BACKUP (SEM CRIPTOGRAFIA) ---
 elif st.session_state.aba == "backup":
-    st.title("Backup e Restauração Segura")
+    st.title("Backup e Restauração")
     
-    st.markdown("Os backups são protegidos por senha e criptografados.")
+    st.markdown("Utilize esta aba para salvar seus dados localmente ou restaurar um backup anterior.")
     
     st.divider()
     
-    # --- 1. EXPORTAR BACKUP CRIPTOGRAFADO ---
-    st.subheader("1. Gerar Backup Criptografado")
+    # --- 1. EXPORTAR (BACKUP) ---
+    st.subheader("1. Gerar Backup")
     
-    senha_export = st.text_input("Definir Senha do Backup", type="password", key="senha_exp")
-    
-    # Botão para gerar o download (a lógica acontece ao clicar)
-    # Preparamos os dados
     dados_exportacao = {
         "contas": st.session_state.df.to_dict(orient='records'),
         "lancamentos": st.session_state.lancamentos,
         "next_id": st.session_state.next_id
     }
+    
     json_str = json.dumps(dados_exportacao, indent=4, default=str)
     
-    # Botão de download condicional
-    if not senha_export:
-        st.button("📥 Baixar backup_contabil.enc", disabled=True)
-        st.warning("Digite uma senha para gerar o backup.")
-    else:
-        try:
-            # Gera chave e criptografa
-            chave = gerar_chave(senha_export)
-            fernet = Fernet(chave)
-            bytes_dados = json_str.encode('utf-8')
-            dados_criptografados = fernet.encrypt(bytes_dados)
-            
-            st.download_button(
-                label="📥 Baixar backup_contabil.enc",
-                data=dados_criptografados,
-                file_name="backup_contabil.enc",
-                mime="application/octet-stream",
-                use_container_width=True
-            )
-            st.info("ℹ️ Guarde a senha em segurança. Sem ela, não é possível restaurar o backup.")
-            
-        except Exception as e:
-            st.error(f"Erro ao criptografar: {e}")
-
+    st.download_button(
+        label="📥 Baixar backup_contabil.json",
+        file_name="backup_contabil.json",
+        mime="application/json",
+        data=json_str,
+        use_container_width=True
+    )
+    
     st.divider()
     
-    # --- 2. IMPORTAR BACKUP CRIPTOGRAFADO ---
+    # --- 2. IMPORTAR (RESTAURAÇÃO) ---
     st.subheader("2. Restaurar Backup")
     
-    senha_import = st.text_input("Senha do Arquivo", type="password", key="senha_imp")
-    arquivo_upload = st.file_uploader("Selecione o arquivo .enc", type=["enc", "json"], key="upload_backup")
+    arquivo_upload = st.file_uploader("Selecione o arquivo .json", type="json", key="upload_backup")
     
     if arquivo_upload is not None:
-        if not senha_import:
-            st.warning("Digite a senha para descriptografar o arquivo.")
-        else:
-            try:
-                # Lê o arquivo binário
-                dados_arquivo = arquivo_upload.read()
+        try:
+            string_dados = arquivo_upload.read().decode('utf-8')
+            dados_importados = json.loads(string_dados)
+            
+            if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
                 
-                # Tenta descriptografar
-                chave = gerar_chave(senha_import)
-                fernet = Fernet(chave)
-                dados_decodificados = fernet.decrypt(dados_arquivo)
+                if st.button("⚠️ Restaurar Dados", type="primary"):
+                    st.session_state.df = pd.DataFrame(dados_importados['contas'])
+                    st.session_state.lancamentos = dados_importados['lancamentos']
+                    st.session_state.next_id = dados_importados['next_id']
+                    
+                    for l in st.session_state.lancamentos:
+                        if isinstance(l['data'], str):
+                            l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
+                            
+                    st.success("✅ Dados restaurados com sucesso!")
+                    st.rerun()
+                    
+            else:
+                st.error("❌ Arquivo inválido. O JSON deve conter as chaves: 'contas', 'lancamentos' e 'next_id'.")
                 
-                # Converte bytes para string e depois para JSON
-                json_str_dec = dados_decodificados.decode('utf-8')
-                dados_importados = json.loads(json_str_dec)
-                
-                # Valida estrutura
-                if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
-                    
-                    st.success("✅ Arquivo descriptografado com sucesso!")
-                    
-                    if st.button("⚠️ Restaurar Dados", type="primary"):
-                        # Restaura Contas
-                        st.session_state.df = pd.DataFrame(dados_importados['contas'])
-                        
-                        # Restaura Lançamentos
-                        st.session_state.lancamentos = dados_importados['lancamentos']
-                        
-                        # Restaura Next ID
-                        st.session_state.next_id = dados_importados['next_id']
-                        
-                        # Converte datas
-                        for l in st.session_state.lancamentos:
-                            if isinstance(l['data'], str):
-                                l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
-                                
-                        st.success("Dados restaurados!")
-                        st.rerun()
-                        
-                else:
-                    st.error("❌ Estrutura do arquivo inválida.")
-                    
-            except Exception as e:
-                # Erro genérico captura senha incorreta (InvalidToken) e outros erros
-                st.error("❌ Falha ao descriptografar. Verifique se a senha está correta ou se o arquivo é válido.")
-                st.caption(f"Detalhe técnico: {type(e).__name__}")
+        except Exception as e:
+            st.error(f"❌ Erro ao ler o arquivo: {e}")
