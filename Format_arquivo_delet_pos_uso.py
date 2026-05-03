@@ -2,6 +2,34 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
+import base64
+import hashlib
+
+# --- FUNÇÕES DE CRIPTOGRAFIA (SIMPLES) ---
+def gerar_chave(senha: str) -> bytes:
+    """Gera uma chave de 32 bytes a partir da senha usando SHA256."""
+    return hashlib.sha256(senha.encode('utf-8')).digest()
+
+def criptografar(texto: str, senha: str) -> str:
+    """Criptografa texto usando XOR e retorna Base64."""
+    try:
+        chave = gerar_chave(senha)
+        dados = texto.encode('utf-8')
+        # XOR byte a byte
+        dados_cripto = bytes([d ^ chave[i % len(chave)] for i, d in enumerate(dados)])
+        return base64.b64encode(dados_cripto).decode('utf-8')
+    except Exception:
+        return ""
+
+def descriptografar(texto_cripto: str, senha: str) -> str | None:
+    """Descriptografa Base64 usando XOR. Retorna None se falhar."""
+    try:
+        chave = gerar_chave(senha)
+        dados = base64.b64decode(texto_cripto)
+        dados_decripto = bytes([d ^ chave[i % len(chave)] for i, d in enumerate(dados)])
+        return dados_decripto.decode('utf-8')
+    except Exception:
+        return None
 
 # Configuração da página
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -145,15 +173,14 @@ if st.session_state.aba == "contas":
                         st.session_state.modo = None
                         st.rerun()
 
-# --- ABA 2: LANÇAMENTOS (PADRÃO VISUAL ATUALIZADO) ---
+# --- ABA 2: LANÇAMENTOS ---
 elif st.session_state.aba == "lanc":
     st.title("Lançamentos")
 
-    # 1. BOTÕES DE AÇÃO (Mesmo padrão da aba Contas)
     col1, col2, col3, col4 = st.columns([1, 1, 1, 6])
     if col1.button("Incluir", key="btn_inc_lanc"):
         st.session_state.modo = "incluir"
-        st.session_state.edit_id = None # Limpa edição anterior
+        st.session_state.edit_id = None
         
     if col2.button("Editar", key="btn_edit_lanc"):
         st.session_state.modo = "editar"
@@ -163,12 +190,8 @@ elif st.session_state.aba == "lanc":
 
     st.divider()
 
-    # Preparação da tabela de visualização
     rows_view = []
     hoje = datetime.now().date()
-    f_data_ini = hoje - timedelta(days=365)
-    f_data_fim = hoje
-    
     for l in st.session_state.lancamentos:
         debitos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Débito']
         creditos = [f"{x['Conta']} ({x['Valor']:.2f})" for x in l['itens'] if x['Tipo'] == 'Crédito']
@@ -185,15 +208,10 @@ elif st.session_state.aba == "lanc":
         
     df_view = pd.DataFrame(rows_view)
 
-    # Exibição da tabela (sempre visível)
     if df_view.empty:
         st.info("Nenhum lançamento cadastrado.")
-        # Mesmo vazio, mantemos o modo para evitar erros, mas não mostramos a tabela
-        if st.session_state.modo == "deletar":
-            st.warning("Nada para deletar.")
-            st.session_state.modo = None
-        if st.session_state.modo == "editar":
-            st.warning("Nada para editar.")
+        if st.session_state.modo in ["deletar", "editar"]:
+            st.warning("Nada para selecionar.")
             st.session_state.modo = None
     else:
         selecao_lanc = st.dataframe(
@@ -206,7 +224,6 @@ elif st.session_state.aba == "lanc":
         )
         linhas_sel_lanc = selecao_lanc.selection["rows"]
 
-        # --- LÓGICA DELETAR ---
         if st.session_state.modo == "deletar":
             if linhas_sel_lanc:
                 idx_sel = linhas_sel_lanc[0]
@@ -219,7 +236,6 @@ elif st.session_state.aba == "lanc":
                 st.warning("Selecione uma linha para deletar.")
                 st.session_state.modo = None
 
-        # --- LÓGICA EDITAR (Verifica seleção) ---
         if st.session_state.modo == "editar":
             if linhas_sel_lanc:
                 idx_sel = linhas_sel_lanc[0]
@@ -228,17 +244,12 @@ elif st.session_state.aba == "lanc":
                 st.warning("Selecione uma linha na tabela para editar.")
                 st.session_state.modo = None
 
-    # --- FORMULÁRIO (Incluir ou Editar) ---
-    # Aparece logo abaixo dos botões/tabela, igual a aba de contas
     if st.session_state.modo in ["incluir", "editar"]:
-        
-        # Carregar dados se for edição
         data_padrao = datetime.now().date()
         hist_padrao = ""
         itens_padrao = []
         
         if st.session_state.modo == "editar" and st.session_state.edit_id is not None:
-            # Busca dados originais
             for l in st.session_state.lancamentos:
                 if l['id'] == st.session_state.edit_id:
                     data_padrao = l['data']
@@ -325,7 +336,6 @@ elif st.session_state.aba == "lanc":
                         st.session_state.next_id += 1
                         st.success("Lançamento salvo!")
                     else:
-                        # Atualiza existente
                         for i, l in enumerate(st.session_state.lancamentos):
                             if l['id'] == st.session_state.edit_id:
                                 st.session_state.lancamentos[i]['data'] = data_lanc
@@ -549,61 +559,87 @@ elif st.session_state.aba == "dre":
         delta_color = "normal" if resultado >= 0 else "inverse"
         c3.metric("Resultado do Período", f"R$ {resultado:,.2f}", delta_color=delta_color)
 
-# --- ABA 5: BACKUP (SIMPLES) ---
+# --- ABA 5: BACKUP COM CRIPTOGRAFIA SIMPLES ---
 elif st.session_state.aba == "backup":
-    st.title("Backup e Restauração")
+    st.title("Backup e Restauração Segura")
     
-    st.markdown("Utilize esta aba para salvar seus dados localmente ou restaurar um backup anterior.")
+    st.markdown("Os backups são protegidos por senha usando criptografia XOR (SHA256 + Base64).")
     
     st.divider()
     
-    # --- 1. EXPORTAR (BACKUP) ---
-    st.subheader("1. Gerar Backup")
+    # --- 1. EXPORTAR BACKUP CRIPTOGRAFADO ---
+    st.subheader("1. Gerar Backup Criptografado")
     
+    senha_export = st.text_input("Definir Senha do Backup", type="password", key="senha_exp")
+    
+    # Prepara dados
     dados_exportacao = {
         "contas": st.session_state.df.to_dict(orient='records'),
         "lancamentos": st.session_state.lancamentos,
         "next_id": st.session_state.next_id
     }
-    
     json_str = json.dumps(dados_exportacao, indent=4, default=str)
     
-    st.download_button(
-        label="📥 Baixar backup_contabil.json",
-        file_name="backup_contabil.json",
-        mime="application/json",
-        data=json_str,
-        use_container_width=True
-    )
+    if not senha_export:
+        st.button("📥 Baixar backup_contabil.enc", disabled=True)
+        st.warning("Digite uma senha para gerar o backup.")
+    else:
+        # Criptografa
+        dados_cripto = criptografar(json_str, senha_export)
+        
+        st.download_button(
+            label="📥 Baixar backup_contabil.enc",
+            data=dados_cripto,
+            file_name="backup_contabil.enc",
+            mime="application/octet-stream",
+            use_container_width=True
+        )
+        st.info("ℹ️ Guarde a senha em segurança. Sem ela, não é possível restaurar o backup.")
     
     st.divider()
     
-    # --- 2. IMPORTAR (RESTAURAÇÃO) ---
+    # --- 2. IMPORTAR BACKUP CRIPTOGRAFADO ---
     st.subheader("2. Restaurar Backup")
     
-    arquivo_upload = st.file_uploader("Selecione o arquivo .json", type="json", key="upload_backup")
+    senha_import = st.text_input("Senha do Arquivo", type="password", key="senha_imp")
+    arquivo_upload = st.file_uploader("Selecione o arquivo .enc", type=["enc"], key="upload_backup")
     
     if arquivo_upload is not None:
-        try:
-            string_dados = arquivo_upload.read().decode('utf-8')
-            dados_importados = json.loads(string_dados)
-            
-            if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
+        if not senha_import:
+            st.warning("Digite a senha para descriptografar o arquivo.")
+        else:
+            try:
+                # Lê o arquivo
+                conteudo = arquivo_upload.read().decode('utf-8')
                 
-                if st.button("⚠️ Restaurar Dados", type="primary"):
-                    st.session_state.df = pd.DataFrame(dados_importados['contas'])
-                    st.session_state.lancamentos = dados_importados['lancamentos']
-                    st.session_state.next_id = dados_importados['next_id']
+                # Tenta descriptografar
+                json_decodificado = descriptografar(conteudo, senha_import)
+                
+                if json_decodificado is None:
+                    st.error("❌ Falha ao descriptografar. Senha incorreta ou arquivo corrompido.")
+                else:
+                    # Valida JSON
+                    dados_importados = json.loads(json_decodificado)
                     
-                    for l in st.session_state.lancamentos:
-                        if isinstance(l['data'], str):
-                            l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
+                    if "contas" in dados_importados and "lancamentos" in dados_importados and "next_id" in dados_importados:
+                        st.success("✅ Arquivo descriptografado com sucesso!")
+                        
+                        if st.button("⚠️ Restaurar Dados", type="primary"):
+                            st.session_state.df = pd.DataFrame(dados_importados['contas'])
+                            st.session_state.lancamentos = dados_importados['lancamentos']
+                            st.session_state.next_id = dados_importados['next_id']
                             
-                    st.success("✅ Dados restaurados com sucesso!")
-                    st.rerun()
-                    
-            else:
-                st.error("❌ Arquivo inválido. O JSON deve conter as chaves: 'contas', 'lancamentos' e 'next_id'.")
-                
-        except Exception as e:
-            st.error(f"❌ Erro ao ler o arquivo: {e}")
+                            # Converte datas
+                            for l in st.session_state.lancamentos:
+                                if isinstance(l['data'], str):
+                                    l['data'] = datetime.strptime(l['data'], "%Y-%m-%d").date()
+                                    
+                            st.success("Dados restaurados com sucesso!")
+                            st.rerun()
+                    else:
+                        st.error("❌ Estrutura do arquivo JSON inválida.")
+                        
+            except json.JSONDecodeError:
+                st.error("❌ Erro: O arquivo descriptografado não é um JSON válido.")
+            except Exception as e:
+                st.error(f"❌ Erro inesperado: {e}")
