@@ -1,896 +1,557 @@
-# app.py
 import streamlit as st
 import pandas as pd
-import numpy as np
 from io import BytesIO
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import hashlib
-from datetime import datetime
-import re
 
-# Configuração da página
-st.set_page_config(
-    page_title="Sistema de Auditoria SPED Fiscal", 
-    page_icon="📊", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="SPED Fiscal Completo", layout="wide")
 
-# CSS personalizado para interface profissional
+# CSS para reduzir a fonte do grid em 25%
 st.markdown("""
 <style>
-    /* Estilo geral */
-    .main {
-        background-color: #f5f7f9;
-    }
-    
-    /* Cards de métricas */
-    .metric-card {
-        background-color: white;
-        border-radius: 10px;
-        padding: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-left: 4px solid #1f77b4;
-        margin-bottom: 10px;
-    }
-    
-    .metric-title {
-        font-size: 14px;
-        color: #666;
-        margin-bottom: 5px;
-    }
-    
-    .metric-value {
-        font-size: 28px;
-        font-weight: bold;
-        color: #1f77b4;
-    }
-    
-    .metric-subtitle {
-        font-size: 12px;
-        color: #999;
-        margin-top: 5px;
-    }
-    
-    /* Tabela estilizada */
     .stDataFrame {
-        font-size: 13px !important;
-        font-family: 'Consolas', monospace !important;
+        font-size: 75% !important;
     }
-    
     .dataframe {
-        font-size: 13px !important;
-    }
-    
-    /* Cabeçalhos */
-    h1, h2, h3 {
-        color: #2c3e50;
-        font-weight: 600;
-    }
-    
-    /* Botões */
-    .stButton button {
-        background-color: #1f77b4;
-        color: white;
-        border-radius: 5px;
-        border: none;
-        padding: 8px 16px;
-        transition: all 0.3s;
-    }
-    
-    .stButton button:hover {
-        background-color: #135f8a;
-        transform: translateY(-2px);
-    }
-    
-    /* Alertas */
-    .stAlert {
-        border-radius: 8px;
-        border-left: 4px solid;
-    }
-    
-    /* Abas */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 4px;
-        padding: 8px 16px;
-        background-color: #f0f2f6;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background-color: #1f77b4;
-        color: white;
+        font-size: 75% !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================================
-# CLASSES PRINCIPAIS
-# ============================================================================
+st.title("📊 Leitor SPED Fiscal (C100 + C170 + C190 + C197)")
 
-class SPEDParser:
-    """Parser principal para arquivos SPED Fiscal"""
-    
-    def __init__(self, dict_cfop=None):
-        self.dict_cfop = dict_cfop or {}
-        self.registros = {
-            '0000': self.parse_registro_0000,
-            'C100': self.parse_registro_C100,
-            'C170': self.parse_registro_C170,
-            '0200': self.parse_registro_0200,
-            '0150': self.parse_registro_0150,
-        }
-        
-    def to_float(self, valor):
-        """Converte string para float tratando vírgula e ponto"""
-        try:
-            if valor is None or str(valor).strip() == '':
-                return 0.0
-            valor = str(valor).replace(',', '.').strip()
-            valor = re.sub(r'[^\d.-]', '', valor)
-            return float(valor) if valor else 0.0
-        except:
+# =========================
+# FUNÇÕES AUXILIARES
+# =========================
+def to_float(valor):
+    try:
+        if valor is None:
             return 0.0
-    
-    def to_int(self, valor):
-        """Converte string para inteiro"""
-        try:
-            if valor is None or str(valor).strip() == '':
-                return 0
-            return int(float(str(valor).replace(',', '.')))
-        except:
-            return 0
-    
-    def get_origem_produto(self, cst_icms):
-        """Extrai origem do produto do CST_ICMS"""
-        origem_map = {
-            "0": "0 - Nacional",
-            "1": "1 - Estrangeira - Importação direta",
-            "2": "2 - Estrangeira - Adquirida no mercado interno",
-            "3": "3 - Nacional - Conteúdo de importação > 40%",
-            "4": "4 - Nacional - Produção conforme processo produtivo básico",
-            "5": "5 - Nacional - Conteúdo de importação < 40%",
-            "6": "6 - Estrangeira - Importação direta sem similar nacional",
-            "7": "7 - Estrangeira - Adquirida no mercado interno sem similar nacional",
-            "8": "8 - Nacional - Conteúdo de importação > 70%"
-        }
-        try:
-            cst_str = str(cst_icms).strip()
-            if cst_str and len(cst_str) > 0:
-                return origem_map.get(cst_str[0], f"{cst_str[0]} - Origem desconhecida")
-            return "Sem origem"
-        except:
-            return "Erro"
-    
-    def get_class_fis(self, cst_icms):
-        """Extrai classificação fiscal do CST_ICMS"""
-        class_fis_map = {
-            "00": "00 - Tributada integralmente",
-            "10": "10 - Tributada e com cobrança do ICMS por substituição tributária",
-            "20": "20 - Com redução de base de cálculo",
-            "30": "30 - Isenta ou não tributada e com cobrança do ICMS por substituição tributária",
-            "40": "40 - Isenta",
-            "41": "41 - Não tributada",
-            "50": "50 - Suspensão",
-            "51": "51 - Diferimento",
-            "60": "60 - ICMS cobrado anteriormente por substituição tributária",
-            "70": "70 - Com redução de base de cálculo e cobrança do ICMS por substituição tributária",
-            "90": "90 - Outras"
-        }
-        try:
-            cst_str = str(cst_icms).strip()
-            if len(cst_str) >= 3:
-                class_fis_num = cst_str[1:3]
-                return class_fis_map.get(class_fis_num, f"{class_fis_num} - Classificação não mapeada")
-            elif len(cst_str) == 2:
-                return class_fis_map.get(cst_str, f"{cst_str} - Classificação não mapeada")
-            return ""
-        except:
-            return ""
-    
-    def get_descricao_cfop(self, cfop):
-        """Retorna descrição do CFOP"""
-        try:
-            if not self.dict_cfop:
-                return ""
-            cfop_str = str(cfop).strip()
-            return self.dict_cfop.get(cfop_str, "CFOP não encontrado")
-        except:
-            return ""
-    
-    def formatar_data(self, data_str):
-        """Formata data do SPED para DD/MM/AAAA"""
-        try:
-            if not data_str or str(data_str).strip() == '':
-                return ""
-            data_str = str(data_str).strip()
-            if len(data_str) == 8 and data_str.isdigit():
-                return f"{data_str[0:2]}/{data_str[2:4]}/{data_str[4:8]}"
-            return data_str
-        except:
-            return data_str
-    
-    def parse_registro_0000(self, parts):
-        """Parse do registro 0000 - Dados da empresa"""
-        if len(parts) < 11:
-            return {}
-        return {
-            "DATA_INICIAL": self.formatar_data(self.get_part(parts, 4)),
-            "DATA_FINAL": self.formatar_data(self.get_part(parts, 5)),
-            "NOME_EMPRESA": self.get_part(parts, 6),
-            "CNPJ": self.get_part(parts, 7),
-            "UF": self.get_part(parts, 9),
-            "IE": self.get_part(parts, 10),
-            "MUNICIPIO": self.get_part(parts, 8)
-        }
-    
-    def parse_registro_C100(self, parts):
-        """Parse do registro C100 - Cabeçalho da nota fiscal"""
-        if len(parts) < 13:
-            return {}
-        return {
-            "NUM_DOC": self.get_part(parts, 8),
-            "SER": self.get_part(parts, 7),
-            "DT_DOC": self.formatar_data(self.get_part(parts, 10)),
-            "VL_DOC": self.to_float(self.get_part(parts, 12)),
-            "CHAVE_NFE": self.get_part(parts, 9),
-            "IND_OPER": self.get_part(parts, 2),
-            "IND_EMIT": self.get_part(parts, 3),
-            "COD_PART": self.get_part(parts, 4),
-            "COD_MOD": self.get_part(parts, 5),
-            "CFOP_C100": self.get_part(parts, 11)
-        }
-    
-    def parse_registro_C170(self, parts):
-        """Parse do registro C170 - Itens da nota fiscal"""
-        if len(parts) < 18:
-            return {}
-        return {
-            "NUM_ITEM": self.to_int(self.get_part(parts, 2)),
-            "COD_ITEM": self.get_part(parts, 3),
-            "DESCR_COMPL": self.get_part(parts, 4),
-            "QTD": self.to_float(self.get_part(parts, 5)),
-            "UNID": self.get_part(parts, 6),
-            "VL_ITEM": self.to_float(self.get_part(parts, 7)),
-            "VL_DESC": self.to_float(self.get_part(parts, 8)),
-            "CST_ICMS": self.get_part(parts, 12),
-            "CFOP": self.get_part(parts, 13),
-            "ALIQ_ICMS": self.to_float(self.get_part(parts, 15)),
-            "VL_BC_ICMS": self.to_float(self.get_part(parts, 16)),
-            "VL_ICMS": self.to_float(self.get_part(parts, 17)),
-            "VL_IPI": self.to_float(self.get_part(parts, 25)) if len(parts) > 25 else 0.0
-        }
-    
-    def parse_registro_0200(self, parts):
-        """Parse do registro 0200 - Tabela de produtos"""
-        if len(parts) < 9:
-            return {}
-        return {
-            "COD_ITEM": self.get_part(parts, 2),
-            "DESCR_ITEM": self.get_part(parts, 3),
-            "COD_BARRAS": self.get_part(parts, 4),
-            "UNID_INV": self.get_part(parts, 5),
-            "NCM": self.get_part(parts, 7)
-        }
-    
-    def parse_registro_0150(self, parts):
-        """Parse do registro 0150 - Tabela de participantes"""
-        if len(parts) < 9:
-            return {}
-        return {
-            "COD_PART": self.get_part(parts, 2),
-            "NOME_PART": self.get_part(parts, 3),
-            "COD_PAIS": self.get_part(parts, 4),
-            "CNPJ_CPF": self.get_part(parts, 5),
-            "IE": self.get_part(parts, 8)
-        }
-    
-    def get_part(self, parts, index):
-        """Retorna parte do registro ou string vazia"""
-        return parts[index].strip() if len(parts) > index else ""
-    
-    def parse_arquivo(self, lines):
-        """Parse completo do arquivo SPED"""
-        dados_empresa = {}
-        notas_fiscais = {}
-        itens_notas = []
-        produtos = {}
-        participantes = {}
-        
-        nota_atual = None
-        
-        for line_num, line in enumerate(lines):
-            try:
-                if not line.strip():
-                    continue
-                    
-                parts = line.strip().split('|')
-                if len(parts) < 2:
-                    continue
-                
-                reg = parts[1]
-                
-                if reg == '0000':
-                    dados_empresa = self.parse_registro_0000(parts)
-                
-                elif reg == '0200':
-                    produto = self.parse_registro_0200(parts)
-                    if produto:
-                        produtos[produto['COD_ITEM']] = produto
-                
-                elif reg == '0150':
-                    participante = self.parse_registro_0150(parts)
-                    if participante:
-                        participantes[participante['COD_PART']] = participante
-                
-                elif reg == 'C100':
-                    nota_atual = self.parse_registro_C100(parts)
-                    if nota_atual:
-                        notas_fiscais[nota_atual.get('NUM_DOC', line_num)] = nota_atual
-                
-                elif reg == 'C170' and nota_atual:
-                    item = self.parse_registro_C170(parts)
-                    if item:
-                        # Vincula com o cabeçalho da nota
-                        item_completo = {**nota_atual, **item}
-                        
-                        # Adiciona campos auxiliares
-                        item_completo['ORIGEM_PRODUTO'] = self.get_origem_produto(item.get('CST_ICMS', ''))
-                        item_completo['CLASS_FIS'] = self.get_class_fis(item.get('CST_ICMS', ''))
-                        item_completo['DESC_CFOP'] = self.get_descricao_cfop(item.get('CFOP', ''))
-                        
-                        # Adiciona dados da empresa
-                        item_completo['EMPRESA'] = dados_empresa.get('NOME_EMPRESA', '')
-                        item_completo['CNPJ'] = dados_empresa.get('CNPJ', '')
-                        item_completo['UF_EMITENTE'] = dados_empresa.get('UF', '')
-                        item_completo['IE_EMITENTE'] = dados_empresa.get('IE', '')
-                        item_completo['PERIODO_INICIAL'] = dados_empresa.get('DATA_INICIAL', '')
-                        item_completo['PERIODO_FINAL'] = dados_empresa.get('DATA_FINAL', '')
-                        
-                        itens_notas.append(item_completo)
+        valor = str(valor).replace(",", ".").strip()
+        # Remove caracteres não numéricos exceto ponto
+        valor = ''.join(c for c in valor if c.isdigit() or c == '.')
+        return float(valor) if valor else 0.0
+    except:
+        return 0.0
+
+def get_part(parts, index):
+    return parts[index] if len(parts) > index else ""
+
+def get_origem_produto(cst_icms):
+    """Extrai o primeiro dígito do CST_ICMS para identificar a origem do produto"""
+    try:
+        if cst_icms and len(str(cst_icms)) > 0:
+            primeiro_digito = str(cst_icms)[0]
+            origem_map = {
+                "0": "0 - Nacional",
+                "1": "1 - Estrangeira - Importação direta",
+                "2": "2 - Estrangeira - Adquirida no mercado interno",
+                "3": "3 - Nacional - Conteúdo de importação > 40%",
+                "4": "4 - Nacional - Produção conforme processo produtivo básico",
+                "5": "5 - Nacional - Conteúdo de importação < 40%",
+                "6": "6 - Estrangeira - Importação direta sem similar nacional",
+                "7": "7 - Estrangeira - Adquirida no mercado interno sem similar nacional",
+                "8": "8 - Nacional - Conteúdo de importação > 70%"
+            }
+            return origem_map.get(primeiro_digito, f"{primeiro_digito} - Origem desconhecida")
+        return "Sem origem"
+    except:
+        return "Erro"
+
+def get_class_fis(cst_icms):
+    """Extrai as posições 2 e 3 do CST_ICMS (dois últimos dígitos) e retorna com descrição"""
+    try:
+        if cst_icms and len(str(cst_icms)) >= 3:
+            cst_str = str(cst_icms)
+            class_fis_num = cst_str[1:3]  # Pega posições 2 e 3
             
-            except Exception as e:
-                continue
-        
-        return pd.DataFrame(itens_notas), dados_empresa, produtos, participantes
+            class_fis_map = {
+                "00": "00 - Tributada integralmente",
+                "10": "10 - Tributada e com cobrança do ICMS por substituição tributária",
+                "20": "20 - Com redução de base de cálculo",
+                "30": "30 - Isenta ou não tributada e com cobrança do ICMS por substituição tributária",
+                "40": "40 - Isenta",
+                "41": "41 - Não tributada",
+                "50": "50 - Suspensão",
+                "51": "51 - Diferimento",
+                "60": "60 - ICMS cobrado anteriormente por substituição tributária",
+                "70": "70 - Com redução de base de cálculo e cobrança do ICMS por substituição tributária",
+                "90": "90 - Outras"
+            }
+            
+            return class_fis_map.get(class_fis_num, f"{class_fis_num} - Classificação não mapeada")
+        elif cst_icms and len(str(cst_icms)) == 2:
+            class_fis_num = str(cst_icms)
+            class_fis_map = {
+                "00": "00 - Tributada integralmente",
+                "10": "10 - Tributada e com cobrança do ICMS por substituição tributária",
+                "20": "20 - Com redução de base de cálculo",
+                "30": "30 - Isenta ou não tributada e com cobrança do ICMS por substituição tributária",
+                "40": "40 - Isenta",
+                "41": "41 - Não tributada",
+                "50": "50 - Suspensão",
+                "51": "51 - Diferimento",
+                "60": "60 - ICMS cobrado anteriormente por substituição tributária",
+                "70": "70 - Com redução de base de cálculo e cobrança do ICMS por substituição tributária",
+                "90": "90 - Outras"
+            }
+            return class_fis_map.get(class_fis_num, f"{class_fis_num} - Classificação não mapeada")
+        return ""
+    except:
+        return ""
 
-
-class SPEDAnalytics:
-    """Classe para análises e métricas do SPED"""
-    
-    @staticmethod
-    def calcular_resumo_tributario(df):
-        """Calcula resumo tributário"""
-        if df.empty:
+def carregar_tabela_cfop(arquivo_cfop):
+    """Carrega a tabela de CFOP do arquivo Excel"""
+    try:
+        if arquivo_cfop is not None:
+            df_cfop = pd.read_excel(arquivo_cfop)
+            
+            coluna_cfop = None
+            coluna_descricao = None
+            
+            for col in df_cfop.columns:
+                col_lower = col.lower()
+                if 'cfop' in col_lower or 'código' in col_lower:
+                    coluna_cfop = col
+                if 'descri' in col_lower or 'descrição' in col_lower:
+                    coluna_descricao = col
+            
+            if coluna_cfop and coluna_descricao:
+                df_cfop = df_cfop.rename(columns={coluna_cfop: "CFOP", coluna_descricao: "DESCRICAO"})
+                df_cfop["CFOP"] = df_cfop["CFOP"].astype(str).str.strip()
+                dict_cfop = dict(zip(df_cfop["CFOP"], df_cfop["DESCRICAO"]))
+                return dict_cfop
+            else:
+                st.error("❌ O arquivo Excel deve conter colunas com 'CFOP'/'Código' e 'Descrição'")
+                return None
+        else:
             return {}
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar arquivo de CFOP: {str(e)}")
+        return None
+
+def get_descricao_cfop(cfop, dict_cfop):
+    """Retorna apenas a descrição do CFOP sem o número"""
+    try:
+        if not dict_cfop:
+            return ""
         
-        resumo = {
-            'total_notas': df['NUM_DOC'].nunique() if 'NUM_DOC' in df.columns else 0,
-            'total_itens': len(df),
-            'valor_total': df['VL_DOC'].sum() if 'VL_DOC' in df.columns else 0,
-            'valor_itens': df['VL_ITEM'].sum() if 'VL_ITEM' in df.columns else 0,
-            'total_icms': df['VL_ICMS'].sum() if 'VL_ICMS' in df.columns else 0,
-            'total_ipi': df['VL_IPI'].sum() if 'VL_IPI' in df.columns else 0,
-            'total_desc': df['VL_DESC'].sum() if 'VL_DESC' in df.columns else 0,
-            'media_icms': df['VL_ICMS'].mean() if 'VL_ICMS' in df.columns else 0,
-            'total_bc_icms': df['VL_BC_ICMS'].sum() if 'VL_BC_ICMS' in df.columns else 0,
-            'ticket_medio': df['VL_DOC'].mean() if 'VL_DOC' in df.columns else 0
-        }
+        cfop_str = str(cfop).strip()
+        descricao = dict_cfop.get(cfop_str, "")
         
-        # Resumo por CST
-        if 'CST_ICMS' in df.columns:
-            resumo_cst = df.groupby('CST_ICMS').agg({
-                'VL_ITEM': 'sum',
-                'VL_ICMS': 'sum',
-                'NUM_ITEM': 'count'
-            }).to_dict()
-            resumo['resumo_cst'] = resumo_cst
-        
-        # Resumo por CFOP
-        if 'CFOP' in df.columns:
-            resumo_cfop = df.groupby('CFOP').agg({
-                'VL_ITEM': 'sum',
-                'VL_ICMS': 'sum'
-            }).to_dict()
-            resumo['resumo_cfop'] = resumo_cfop
-        
-        return resumo
+        if descricao:
+            return descricao
+        else:
+            return "CFOP não encontrado"
+    except:
+        return ""
+
+def parse_bloco_0000(lines):
+    """Extrai informações do bloco 0000"""
+    info = {
+        "DATA_INICIAL": "",
+        "DATA_FINAL": "",
+        "NOME_EMPRESA": "",
+        "CNPJ": "",
+        "UF": "",
+        "IE": ""
+    }
     
-    @staticmethod
-    def gerar_graficos(df):
-        """Gera gráficos para dashboard"""
-        if df.empty:
-            return None
+    for line in lines:
+        parts = line.strip().split("|")
+        if len(parts) < 2:
+            continue
         
-        fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=('Valor por Mês', 'Top 10 Produtos', 
-                           'Distribuição ICMS', 'Participação CFOP'),
-            specs=[[{"type": "scatter"}, {"type": "bar"}],
-                   [{"type": "pie"}, {"type": "pie"}]]
-        )
+        reg = parts[1]
         
-        # Gráfico 1: Valor por mês
-        if 'DT_DOC' in df.columns and 'VL_DOC' in df.columns:
-            df_temp = df.copy()
-            df_temp['MES'] = pd.to_datetime(df_temp['DT_DOC'], format='%d/%m/%Y', errors='coerce')
-            if not df_temp['MES'].isna().all():
-                df_mes = df_temp.groupby(df_temp['MES'].dt.to_period('M'))['VL_DOC'].sum().reset_index()
-                df_mes['MES'] = df_mes['MES'].astype(str)
-                fig.add_trace(
-                    go.Scatter(x=df_mes['MES'], y=df_mes['VL_DOC'], mode='lines+markers', name='Valor'),
-                    row=1, col=1
-                )
+        if reg == "0000":
+            info["DATA_INICIAL"] = get_part(parts, 4)
+            info["DATA_FINAL"] = get_part(parts, 5)
+            info["NOME_EMPRESA"] = get_part(parts, 6)
+            info["CNPJ"] = get_part(parts, 7)
+            info["UF"] = get_part(parts, 9)
+            info["IE"] = get_part(parts, 10)
+            break
+            
+    return info
+
+def formatar_data_brasil(data_str):
+    """Converte data do formato DDMMAAAA para DD/MM/AAAA"""
+    try:
+        if not data_str:
+            return ""
         
-        # Gráfico 2: Top 10 produtos
-        if 'COD_ITEM' in df.columns and 'VL_ITEM' in df.columns:
-            top_produtos = df.groupby('COD_ITEM')['VL_ITEM'].sum().nlargest(10).reset_index()
-            fig.add_trace(
-                go.Bar(x=top_produtos['COD_ITEM'], y=top_produtos['VL_ITEM'], name='Produtos'),
-                row=1, col=2
-            )
+        data_str = str(data_str).strip()
         
-        # Gráfico 3: Distribuição ICMS
-        if 'VL_ICMS' in df.columns and 'VL_ITEM' in df.columns:
-            icms_sum = df['VL_ICMS'].sum()
-            if icms_sum > 0:
-                fig.add_trace(
-                    go.Pie(labels=['Com ICMS', 'Sem ICMS'], 
-                           values=[icms_sum, df['VL_ITEM'].sum() - icms_sum],
-                           name='ICMS'),
-                    row=2, col=1
-                )
+        if len(data_str) == 8 and data_str.isdigit():
+            dia = data_str[0:2]
+            mes = data_str[2:4]
+            ano = data_str[4:8]
+            return f"{dia}/{mes}/{ano}"
+        else:
+            return data_str
+    except:
+        return data_str
+
+def parse_sped(lines, dict_cfop):
+    """
+    Parser completo para SPED Fiscal.
+    Retorna dois DataFrames:
+    1. df_c100_c190 (Resumo por nota/CST/CFOP)
+    2. df_c170 (Detalhamento de itens)
+    """
+    
+    # Listas para armazenar os dados
+    dados_c100_c190 = []
+    dados_c170 = []
+    
+    # Variáveis de controle
+    nota_atual = None
+    primeiro_item_c197 = None
+
+    # Mapeamento de colunas do C170 para garantir ordem e existência
+    cols_c170_order = [
+        "NUM_ITEM", "COD_ITEM", "DESCR_COMPL", "QTD", "UNID", "VL_ITEM", "VL_DESC", 
+        "IND_MOV", "CST_ICMS", "CFOP", "COD_NAT", "VL_BC_ICMS", "ALIQ_ICMS", "VL_ICMS", 
+        "VL_BC_ICMS_ST", "ALIQ_ST", "VL_ICMS_ST", "IND_APUR", "CST_IPI", "COD_ENQ", 
+        "VL_BC_IPI", "ALIQ_IPI", "VL_IPI", "CST_PIS", "VL_BC_PIS", "ALIQ_PIS_PERC", 
+        "QUANT_BC_PIS", "ALIQ_PIS_REAIS", "VL_PIS", "CST_COFINS", "VL_BC_COFINS", 
+        "ALIQ_COFINS_PERC", "QUANT_BC_COFINS", "ALIQ_COFINS_REAIS", "VL_COFINS", 
+        "COD_CTA", "VL_ABAT_NT"
+    ]
+
+    for line in lines:
+        parts = line.strip().split("|")
+
+        if len(parts) < 2:
+            continue
+
+        reg = parts[1]
+
+        # -----------------------------------
+        # REGISTRO C100 (Cabeçalho da Nota)
+        # -----------------------------------
+        if reg == "C100":
+            # Estrutura base para C100/C190
+            nota_atual = {
+                "NUM_DOC": get_part(parts, 8),
+                "SER": get_part(parts, 7),
+                "DT_DOC": get_part(parts, 10),
+                "VL_DOC": to_float(get_part(parts, 12)),
+                "CHAVE_NFE": get_part(parts, 9),
+                # Campos para C170 (serão herdados)
+                "_header_info": {
+                    "NUM_DOC": get_part(parts, 8),
+                    "SER": get_part(parts, 7),
+                    "DT_DOC": get_part(parts, 10),
+                    "CHAVE_NFE": get_part(parts, 9),
+                }
+            }
+            primeiro_item_c197 = None  # Reseta o controle do C197
+
+        # -----------------------------------
+        # REGISTRO C170 (Itens da Nota)
+        # -----------------------------------
+        elif reg == "C170" and nota_atual is not None:
+            # Extrair todos os campos do C170
+            # Layout: |REG|NUM_ITEM|COD_ITEM|DESCR_COMPL|QTD|UNID|VL_ITEM|...
+            
+            item_data = {
+                "NUM_ITEM": get_part(parts, 2),
+                "COD_ITEM": get_part(parts, 3),
+                "DESCR_COMPL": get_part(parts, 4),
+                "QTD": to_float(get_part(parts, 5)),
+                "UNID": get_part(parts, 6),
+                "VL_ITEM": to_float(get_part(parts, 7)),
+                "VL_DESC": to_float(get_part(parts, 8)),
+                "IND_MOV": get_part(parts, 9),
+                "CST_ICMS": get_part(parts, 10),
+                "CFOP": get_part(parts, 11),
+                "COD_NAT": get_part(parts, 12),
+                "VL_BC_ICMS": to_float(get_part(parts, 13)),
+                "ALIQ_ICMS": to_float(get_part(parts, 14)),
+                "VL_ICMS": to_float(get_part(parts, 15)),
+                "VL_BC_ICMS_ST": to_float(get_part(parts, 16)),
+                "ALIQ_ST": to_float(get_part(parts, 17)),
+                "VL_ICMS_ST": to_float(get_part(parts, 18)),
+                "IND_APUR": get_part(parts, 19),
+                "CST_IPI": get_part(parts, 20),
+                "COD_ENQ": get_part(parts, 21),
+                "VL_BC_IPI": to_float(get_part(parts, 22)),
+                "ALIQ_IPI": to_float(get_part(parts, 23)),
+                "VL_IPI": to_float(get_part(parts, 24)),
+                "CST_PIS": get_part(parts, 25),
+                "VL_BC_PIS": to_float(get_part(parts, 26)),
+                "ALIQ_PIS_PERC": to_float(get_part(parts, 27)),
+                "QUANT_BC_PIS": to_float(get_part(parts, 28)),
+                "ALIQ_PIS_REAIS": to_float(get_part(parts, 29)),
+                "VL_PIS": to_float(get_part(parts, 30)),
+                "CST_COFINS": get_part(parts, 31),
+                "VL_BC_COFINS": to_float(get_part(parts, 32)),
+                "ALIQ_COFINS_PERC": to_float(get_part(parts, 33)),
+                "QUANT_BC_COFINS": to_float(get_part(parts, 34)),
+                "ALIQ_COFINS_REAIS": to_float(get_part(parts, 35)),
+                "VL_COFINS": to_float(get_part(parts, 36)),
+                "COD_CTA": get_part(parts, 37),
+                "VL_ABAT_NT": to_float(get_part(parts, 38)),
+            }
+            
+            # Adicionar informações do cabeçalho (C100) ao item
+            item_data.update(nota_atual["_header_info"])
+            
+            # Adicionar descrição do CFOP e classificações
+            cfop_item = item_data["CFOP"]
+            cst_item = item_data["CST_ICMS"]
+            
+            item_data["DESC_CFOP"] = get_descricao_cfop(cfop_item, dict_cfop)
+            item_data["ORIGEM_PRODUTO"] = get_origem_produto(cst_item)
+            item_data["CLASS_FIS"] = get_class_fis(cst_item)
+            
+            dados_c170.append(item_data)
+
+        # -----------------------------------
+        # REGISTRO C197 (Observações do Lançamento Fiscal)
+        # -----------------------------------
+        elif reg == "C197" and nota_atual is not None and primeiro_item_c197 is None:
+            # Mantendo lógica original para capturar o primeiro C197 para o C190
+            # parts[4] é COD_ITEM no layout padrão, ou parts[2] dependendo da versão.
+            # Mantendo parts[4] conforme correção anterior.
+            cod_item = get_part(parts, 4) 
+            primeiro_item_c197 = cod_item
+
+        # -----------------------------------
+        # REGISTRO C190 (Totais por CST/CFOP)
+        # -----------------------------------
+        elif reg == "C190" and nota_atual is not None:
+            cst_icms_original = get_part(parts, 2)
+            cfop_numero = get_part(parts, 3)
+            
+            linha_completa = {
+                "NUM_DOC": nota_atual["NUM_DOC"],
+                "SER": nota_atual["SER"],
+                "DT_DOC": nota_atual["DT_DOC"],
+                "VL_DOC": nota_atual["VL_DOC"],
+                "CHAVE_NFE": nota_atual["CHAVE_NFE"],
+                
+                "CST_ICMS": cst_icms_original,
+                "CFOP": cfop_numero,
+                "DESC_CFOP": get_descricao_cfop(cfop_numero, dict_cfop),
+                "ALIQ_ICMS": to_float(get_part(parts, 4)),
+                "VL_OPR": to_float(get_part(parts, 5)),
+                "VL_BC_ICMS": to_float(get_part(parts, 6)),
+                "VL_ICMS": to_float(get_part(parts, 7)),
+                "VL_BC_ICMS_ST": to_float(get_part(parts, 8)),
+                "VL_ICMS_ST": to_float(get_part(parts, 9)),
+                "VL_RED_BC": to_float(get_part(parts, 10)),
+                "VL_IPI": to_float(get_part(parts, 11)),
+                "COD_OBS": get_part(parts, 12),
+                "ORIGEM_PRODUTO": get_origem_produto(cst_icms_original),
+                "CLASS_FIS": get_class_fis(cst_icms_original),
+                "COD_ITEM": primeiro_item_c197 if primeiro_item_c197 else "",
+            }
+            dados_c100_c190.append(linha_completa)
+            # Não reseta nota_atual aqui para permitir múltiplos C190 para mesma nota
+            # A nota_atual será sobrescrita apenas no próximo C100
+
+    # Criar DataFrames
+    df_c190 = pd.DataFrame(dados_c100_c190)
+    df_c170 = pd.DataFrame(dados_c170)
+
+    # Formatação de datas
+    if not df_c190.empty:
+        df_c190["DT_DOC"] = pd.to_datetime(df_c190["DT_DOC"], format="%d%m%Y", errors="coerce")
+        df_c190["DT_DOC"] = df_c190["DT_DOC"].dt.strftime("%d/%m/%Y")
+
+    if not df_c170.empty:
+        df_c170["DT_DOC"] = pd.to_datetime(df_c170["DT_DOC"], format="%d%m%Y", errors="coerce")
+        df_c170["DT_DOC"] = df_c170["DT_DOC"].dt.strftime("%d/%m/%Y")
         
-        # Gráfico 4: Participação CFOP
-        if 'CFOP' in df.columns and 'VL_ITEM' in df.columns:
-            top_cfop = df.groupby('CFOP')['VL_ITEM'].sum().nlargest(5).reset_index()
-            fig.add_trace(
-                go.Pie(labels=top_cfop['CFOP'], values=top_cfop['VL_ITEM'], name='CFOP'),
-                row=2, col=2
-            )
+        # Reordenar colunas do C170 para lógica: Identificação -> Produto -> Valores
+        cols_front = ["NUM_DOC", "SER", "DT_DOC", "CHAVE_NFE", "NUM_ITEM", "COD_ITEM", "DESCR_COMPL", "QTD", "UNID"]
+        cols_middle = ["CFOP", "DESC_CFOP", "CST_ICMS", "ORIGEM_PRODUTO", "CLASS_FIS"]
         
-        fig.update_layout(height=800, showlegend=True, title_text="Dashboard Fiscal")
-        fig.update_xaxes(title_text="Período", row=1, col=1)
-        fig.update_yaxes(title_text="Valor (R$)", row=1, col=1)
-        fig.update_xaxes(title_text="Produtos", row=1, col=2)
-        fig.update_yaxes(title_text="Valor (R$)", row=1, col=2)
+        # Todas as outras colunas que não estão nas listas acima
+        other_cols = [c for c in df_c170.columns if c not in cols_front and c not in cols_middle]
         
-        return fig
+        # Ordem final
+        final_order = cols_front + cols_middle + other_cols
+        # Filtrar apenas colunas que existem de fato
+        final_order = [c for c in final_order if c in df_c170.columns]
+        
+        df_c170 = df_c170[final_order]
+
+    return df_c190, df_c170
 
 
-# ============================================================================
-# FUNÇÕES DE EXPORTAÇÃO
-# ============================================================================
+def processar_arquivo(uploaded_file, dict_cfop):
+    """Processa um único arquivo SPED retornando ambos os DataFrames"""
+    content = uploaded_file.read().decode("latin-1")
+    lines = content.splitlines()
+    
+    info_empresa = parse_bloco_0000(lines)
+    df_c190, df_c170 = parse_sped(lines, dict_cfop)
+    
+    return info_empresa, df_c190, df_c170, uploaded_file.name
 
-def to_excel_formatado(df):
-    """Exporta DataFrame para Excel com formatação profissional"""
+
+def to_excel_multi(df_c190, df_c170):
+    """Converte DataFrames para Excel com múltiplas abas"""
     output = BytesIO()
-    
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Escreve dados
-        df.to_excel(writer, index=False, sheet_name='Itens NF')
-        
-        # Ajusta largura das colunas
-        worksheet = writer.sheets['Itens NF']
-        for column in worksheet.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_width = min(max_length + 2, 50)
-            worksheet.column_dimensions[column_letter].width = adjusted_width
-        
-        # Congela cabeçalho
-        worksheet.freeze_panes = 'A2'
-        
-        # Adiciona filtros
-        worksheet.auto_filter.ref = worksheet.dimensions
-    
+        if not df_c190.empty:
+            df_c190.to_excel(writer, index=False, sheet_name='Resumo C100-C190')
+        if not df_c170.empty:
+            df_c170.to_excel(writer, index=False, sheet_name='Itens C170')
     return output.getvalue()
 
 
-# ============================================================================
-# INTERFACE STREAMLIT
-# ============================================================================
+# =========================
+# INTERFACE
+# =========================
+with st.sidebar:
+    st.header("⚙️ Configurações")
+    
+    st.subheader("📚 Tabela de CFOP")
+    arquivo_cfop = st.file_uploader(
+        "Carregar tabela CFOP (Excel)", 
+        type=["xlsx", "xls"],
+        help="Arquivo Excel com colunas: CFOP/Código e Descrição"
+    )
+    
+    dict_cfop = {}
+    if arquivo_cfop:
+        dict_cfop = carregar_tabela_cfop(arquivo_cfop)
+        if dict_cfop is not None:
+            st.success(f"✅ Tabela CFOP carregada com {len(dict_cfop)} registros")
+        else:
+            st.error("❌ Erro ao carregar tabela CFOP")
+    else:
+        st.info("ℹ️ Opcional: Carregue uma tabela CFOP")
+    
+    st.divider()
+    
+    st.subheader("📁 Arquivos SPED")
+    uploaded_files = st.file_uploader(
+        "Envie os arquivos SPED (.txt)", 
+        type=["txt"], 
+        accept_multiple_files=True
+    )
 
-def main():
-    """Função principal do sistema"""
+# =========================
+# CONTEÚDO PRINCIPAL
+# =========================
+if uploaded_files:
+    todos_c190 = []
+    todos_c170 = []
     
-    # Título principal
-    st.title("📊 Sistema de Auditoria SPED Fiscal")
-    st.markdown("---")
+    with st.spinner(f"Processando {len(uploaded_files)} arquivo(s)..."):
+        for arquivo in uploaded_files:
+            info_empresa, df_c190, df_c170, nome_arquivo = processar_arquivo(arquivo, dict_cfop)
+            
+            # Processar Resumo C100/C190
+            if not df_c190.empty:
+                df_c190["EMPRESA"] = info_empresa["NOME_EMPRESA"]
+                df_c190["CNPJ"] = info_empresa["CNPJ"]
+                df_c190["PERIODO_INICIAL"] = formatar_data_brasil(info_empresa["DATA_INICIAL"])
+                df_c190["PERIODO_FINAL"] = formatar_data_brasil(info_empresa["DATA_FINAL"])
+                df_c190["UF"] = info_empresa["UF"]
+                df_c190["IE"] = info_empresa["IE"]
+                df_c190["ARQUIVO_ORIGEM"] = nome_arquivo
+                todos_c190.append(df_c190)
+            
+            # Processar Itens C170
+            if not df_c170.empty:
+                df_c170["EMPRESA"] = info_empresa["NOME_EMPRESA"]
+                df_c170["CNPJ"] = info_empresa["CNPJ"]
+                df_c170["ARQUIVO_ORIGEM"] = nome_arquivo
+                todos_c170.append(df_c170)
     
-    # Sidebar
-    with st.sidebar:
-        st.markdown("## ⚙️ Configurações")
-        
-        # Upload tabela CFOP
-        st.markdown("### 📚 Tabela de CFOP")
-        arquivo_cfop = st.file_uploader(
-            "Carregar tabela CFOP (Excel)", 
-            type=["xlsx", "xls"],
-            help="Arquivo Excel com colunas: CFOP/Código e Descrição"
-        )
-        
-        dict_cfop = {}
-        if arquivo_cfop:
-            try:
-                df_cfop = pd.read_excel(arquivo_cfop)
-                col_cfop = None
-                col_desc = None
-                
-                for col in df_cfop.columns:
-                    if 'cfop' in col.lower() or 'código' in col.lower() or 'codigo' in col.lower():
-                        col_cfop = col
-                    if 'descri' in col.lower() or 'descrição' in col.lower() or 'descricao' in col.lower():
-                        col_desc = col
-                
-                if col_cfop and col_desc:
-                    dict_cfop = dict(zip(df_cfop[col_cfop].astype(str), df_cfop[col_desc]))
-                    st.success(f"✅ {len(dict_cfop)} registros carregados")
-                else:
-                    st.error("❌ Colunas não encontradas")
-            except Exception as e:
-                st.error(f"Erro: {str(e)}")
-        
-        st.markdown("---")
-        
-        # Upload arquivos SPED
-        st.markdown("### 📁 Arquivos SPED")
-        uploaded_files = st.file_uploader(
-            "Envie os arquivos SPED (.txt)", 
-            type=["txt"], 
-            accept_multiple_files=True,
-            help="Selecione um ou mais arquivos no formato SPED Fiscal"
-        )
-        
-        st.markdown("---")
-        
-        # Informações do sistema
-        st.markdown("### ℹ️ Informações")
-        st.info("""
-        **Registros lidos:**
-        - C100 (Cabeçalho NF)
-        - C170 (Itens NF)
-        - 0200 (Produtos)
-        - 0150 (Participantes)
-        
-        **Em desenvolvimento:**
-        - C190 (ICMS)
-        - E110 (Apuração)
-        - H010 (Inventário)
-        """)
+    # Concatenar resultados
+    df_final_c190 = pd.concat(todos_c190, ignore_index=True) if todos_c190 else pd.DataFrame()
+    df_final_c170 = pd.concat(todos_c170, ignore_index=True) if todos_c170 else pd.DataFrame()
     
-    # Conteúdo principal
-    if uploaded_files:
-        todos_dados = []
-        todas_empresas = {}
-        todos_produtos = {}
-        todos_participantes = {}
+    if not df_final_c190.empty or not df_final_c170.empty:
         
-        with st.spinner(f"🔄 Processando {len(uploaded_files)} arquivo(s)..."):
-            for arquivo in uploaded_files:
-                try:
-                    # Lê arquivo
-                    content = arquivo.read().decode('latin-1')
-                    lines = content.splitlines()
-                    
-                    # Processa com parser
-                    parser = SPEDParser(dict_cfop)
-                    df_itens, dados_empresa, produtos, participantes = parser.parse_arquivo(lines)
-                    
-                    if not df_itens.empty:
-                        df_itens['ARQUIVO_ORIGEM'] = arquivo.name
-                        todos_dados.append(df_itens)
-                        
-                        if dados_empresa:
-                            todas_empresas[dados_empresa.get('CNPJ', '')] = dados_empresa
-                        
-                        todos_produtos.update(produtos)
-                        todos_participantes.update(participantes)
-                        
-                        st.success(f"✅ {arquivo.name}: {len(df_itens)} itens processados")
-                    else:
-                        st.warning(f"⚠️ {arquivo.name}: Nenhum item encontrado")
-                
-                except Exception as e:
-                    st.error(f"❌ Erro no arquivo {arquivo.name}: {str(e)}")
+        tab1, tab2 = st.tabs(["📄 Resumo Notas (C100/C190)", "📦 Itens da Nota (C170)"])
         
-        if todos_dados:
-            df_final = pd.concat(todos_dados, ignore_index=True)
-            
-            # Métricas no topo
-            st.markdown("## 📈 Painel de Métricas")
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            
-            with col1:
-                st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">Total de Itens</div>
-                    <div class="metric-value">{:,.0f}</div>
-                    <div class="metric-subtitle">Itens processados</div>
-                </div>
-                """.format(len(df_final)), unsafe_allow_html=True)
-            
-            with col2:
-                valor_total = df_final['VL_ITEM'].sum() if 'VL_ITEM' in df_final.columns else 0
-                st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">Valor Total</div>
-                    <div class="metric-value">R$ {:,.2f}</div>
-                    <div class="metric-subtitle">Soma dos itens</div>
-                </div>
-                """.format(valor_total), unsafe_allow_html=True)
-            
-            with col3:
-                total_icms = df_final['VL_ICMS'].sum() if 'VL_ICMS' in df_final.columns else 0
-                st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">Total ICMS</div>
-                    <div class="metric-value">R$ {:,.2f}</div>
-                    <div class="metric-subtitle">ICMS destacado</div>
-                </div>
-                """.format(total_icms), unsafe_allow_html=True)
-            
-            with col4:
-                total_notas = df_final['NUM_DOC'].nunique() if 'NUM_DOC' in df_final.columns else 0
-                st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">Notas Fiscais</div>
-                    <div class="metric-value">{:,.0f}</div>
-                    <div class="metric-subtitle">Documentos únicos</div>
-                </div>
-                """.format(total_notas), unsafe_allow_html=True)
-            
-            with col5:
-                ticket_medio = df_final['VL_DOC'].mean() if 'VL_DOC' in df_final.columns and not df_final['VL_DOC'].isna().all() else 0
-                st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-title">Ticket Médio</div>
-                    <div class="metric-value">R$ {:,.2f}</div>
-                    <div class="metric-subtitle">Por nota fiscal</div>
-                </div>
-                """.format(ticket_medio), unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            # Abas para diferentes visualizações
-            tab1, tab2, tab3, tab4 = st.tabs(["📋 Dados", "🔍 Filtros", "📊 Dashboard", "📥 Exportação"])
-            
-            with tab1:
-                st.markdown("## 📋 Itens das Notas Fiscais")
+        # =========================
+        # ABA 1: C100/C190 (Mantendo lógica original)
+        # =========================
+        with tab1:
+            if not df_final_c190.empty:
+                st.subheader("Resumo Fiscal por CST/CFOP")
                 
-                # Colunas para exibição
-                colunas_exibicao = [
-                    'EMPRESA', 'CNPJ', 'NUM_DOC', 'SER', 'DT_DOC', 'NUM_ITEM',
-                    'COD_ITEM', 'DESCR_COMPL', 'QTD', 'UNID', 'VL_ITEM', 'VL_DESC',
-                    'CST_ICMS', 'ORIGEM_PRODUTO', 'CLASS_FIS', 'CFOP', 'DESC_CFOP',
-                    'ALIQ_ICMS', 'VL_BC_ICMS', 'VL_ICMS', 'VL_IPI', 'CHAVE_NFE'
+                colunas_ordenadas_c190 = [
+                    "EMPRESA", "CNPJ", "UF", "IE", "PERIODO_INICIAL", "PERIODO_FINAL",
+                    "NUM_DOC", "SER", "DT_DOC", "CHAVE_NFE", "VL_DOC",
+                    "CST_ICMS", "ORIGEM_PRODUTO", "CLASS_FIS",
+                    "CFOP", "DESC_CFOP",
+                    "ALIQ_ICMS", "VL_OPR", "VL_BC_ICMS", "VL_ICMS",
+                    "VL_BC_ICMS_ST", "VL_ICMS_ST", "VL_RED_BC", "VL_IPI", "COD_OBS",
+                    "COD_ITEM", 
+                    "ARQUIVO_ORIGEM"
                 ]
                 
-                colunas_existentes = [col for col in colunas_exibicao if col in df_final.columns]
-                df_exibicao = df_final[colunas_existentes]
+                colunas_existentes = [col for col in colunas_ordenadas_c190 if col in df_final_c190.columns]
+                df_view_c190 = df_final_c190[colunas_existentes]
                 
-                # Dataframe interativo
-                st.dataframe(
-                    df_exibicao,
-                    use_container_width=True,
-                    height=500
+                st.dataframe(df_view_c190, use_container_width=True, height=600)
+                st.info(f"Total de {len(df_view_c190)} registros resumidos.")
+            else:
+                st.warning("Nenhum registro C100/C190 encontrado.")
+
+        # =========================
+        # ABA 2: C170 (Nova funcionalidade)
+        # =========================
+        with tab2:
+            if not df_final_c170.empty:
+                st.subheader("Detalhamento dos Itens (C170)")
+                
+                # O DataFrame já vem ordenado da função de parser
+                st.dataframe(df_final_c170, use_container_width=True, height=600)
+                st.info(f"Total de {len(df_final_c170)} itens extraídos.")
+            else:
+                st.warning("Nenhum registro C170 encontrado.")
+        
+        # =========================
+        # DOWNLOADS
+        # =========================
+        st.divider()
+        st.subheader("📥 Download dos dados")
+        
+        col1, col2 = st.columns(2)
+        
+        # Botão Excel (Agora contém duas abas)
+        with col1:
+            excel_data = to_excel_multi(df_final_c190, df_final_c170)
+            st.download_button(
+                "📊 Baixar Excel (Completo)",
+                excel_data,
+                "sped_completo_c170_c190.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        
+        # Botão CSV C170 (Novo)
+        with col2:
+            if not df_final_c170.empty:
+                csv_c170 = df_final_c170.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "📄 Baixar CSV Itens (C170)",
+                    csv_c170,
+                    "itens_c170.csv",
+                    "text/csv",
+                    use_container_width=True
                 )
-            
-            with tab2:
-                st.markdown("## 🔍 Filtros Avançados")
-                
-                col_filtro1, col_filtro2, col_filtro3 = st.columns(3)
-                
-                with col_filtro1:
-                    # Filtro por empresa
-                    if 'EMPRESA' in df_final.columns:
-                        empresas = ['Todas'] + sorted(df_final['EMPRESA'].dropna().unique().tolist())
-                        filtro_empresa = st.selectbox("🏢 Empresa", empresas)
-                    else:
-                        filtro_empresa = 'Todas'
-                    
-                    # Filtro por CNPJ
-                    if 'CNPJ' in df_final.columns:
-                        cnpjs = ['Todos'] + sorted(df_final['CNPJ'].dropna().unique().tolist())
-                        filtro_cnpj = st.selectbox("📄 CNPJ", cnpjs)
-                    else:
-                        filtro_cnpj = 'Todos'
-                
-                with col_filtro2:
-                    # Filtro por CFOP
-                    if 'CFOP' in df_final.columns:
-                        cfops = ['Todos'] + sorted(df_final['CFOP'].dropna().unique().tolist())
-                        filtro_cfop = st.selectbox("📑 CFOP", cfops)
-                    else:
-                        filtro_cfop = 'Todos'
-                    
-                    # Filtro por CST
-                    if 'CST_ICMS' in df_final.columns:
-                        csts = ['Todos'] + sorted(df_final['CST_ICMS'].dropna().unique().tolist())
-                        filtro_cst = st.selectbox("🔖 CST ICMS", csts)
-                    else:
-                        filtro_cst = 'Todos'
-                
-                with col_filtro3:
-                    # Filtro por produto
-                    if 'COD_ITEM' in df_final.columns:
-                        produtos_lista = ['Todos'] + sorted(df_final['COD_ITEM'].dropna().unique().tolist())
-                        filtro_produto = st.selectbox("📦 Produto", produtos_lista)
-                    else:
-                        filtro_produto = 'Todos'
-                    
-                    # Busca por NF
-                    busca_nf = st.text_input("🔎 Buscar Nota Fiscal", placeholder="Digite o número da NF")
-                
-                # Aplicar filtros
-                df_filtrado = df_final.copy()
-                
-                if filtro_empresa != 'Todas' and 'EMPRESA' in df_filtrado.columns:
-                    df_filtrado = df_filtrado[df_filtrado['EMPRESA'] == filtro_empresa]
-                if filtro_cnpj != 'Todos' and 'CNPJ' in df_filtrado.columns:
-                    df_filtrado = df_filtrado[df_filtrado['CNPJ'] == filtro_cnpj]
-                if filtro_cfop != 'Todos' and 'CFOP' in df_filtrado.columns:
-                    df_filtrado = df_filtrado[df_filtrado['CFOP'] == filtro_cfop]
-                if filtro_cst != 'Todos' and 'CST_ICMS' in df_filtrado.columns:
-                    df_filtrado = df_filtrado[df_filtrado['CST_ICMS'] == filtro_cst]
-                if filtro_produto != 'Todos' and 'COD_ITEM' in df_filtrado.columns:
-                    df_filtrado = df_filtrado[df_filtrado['COD_ITEM'] == filtro_produto]
-                if busca_nf and 'NUM_DOC' in df_filtrado.columns:
-                    df_filtrado = df_filtrado[df_filtrado['NUM_DOC'].astype(str).str.contains(busca_nf, case=False)]
-                
-                st.markdown(f"**Resultados:** {len(df_filtrado)} itens encontrados")
-                colunas_existentes_filtro = [col for col in colunas_exibicao if col in df_filtrado.columns]
-                st.dataframe(df_filtrado[colunas_existentes_filtro], use_container_width=True, height=400)
-            
-            with tab3:
-                st.markdown("## 📊 Dashboard Analítico")
-                
-                # Resumo tributário
-                analytics = SPEDAnalytics()
-                resumo = analytics.calcular_resumo_tributario(df_final)
-                
-                if resumo:
-                    col_r1, col_r2, col_r3 = st.columns(3)
-                    
-                    with col_r1:
-                        st.markdown("### 💰 Valores")
-                        st.metric("Valor Total dos Itens", f"R$ {resumo.get('valor_itens', 0):,.2f}")
-                        st.metric("Total ICMS", f"R$ {resumo.get('total_icms', 0):,.2f}")
-                        st.metric("Total IPI", f"R$ {resumo.get('total_ipi', 0):,.2f}")
-                    
-                    with col_r2:
-                        st.markdown("### 📊 Estatísticas")
-                        st.metric("Média ICMS por Item", f"R$ {resumo.get('media_icms', 0):,.2f}")
-                        st.metric("Total de Descontos", f"R$ {resumo.get('total_desc', 0):,.2f}")
-                        st.metric("Base de Cálculo ICMS", f"R$ {resumo.get('total_bc_icms', 0):,.2f}")
-                    
-                    with col_r3:
-                        st.markdown("### 📈 Indicadores")
-                        st.metric("Ticket Médio", f"R$ {resumo.get('ticket_medio', 0):,.2f}")
-                        itens_por_nf = resumo['total_itens'] / max(resumo['total_notas'], 1) if resumo['total_notas'] > 0 else 0
-                        st.metric("Itens por NF", f"{itens_por_nf:.1f}")
-                        efetividade = (resumo['total_icms'] / max(resumo['valor_itens'], 1) * 100) if resumo['valor_itens'] > 0 else 0
-                        st.metric("Efetividade ICMS", f"{efetividade:.1f}%")
-                
-                # Gráficos
-                st.markdown("### 📈 Visualizações Gráficas")
-                fig = analytics.gerar_graficos(df_final)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                # Tabela de CFOP
-                st.markdown("### 📑 Resumo por CFOP")
-                if 'CFOP' in df_final.columns and 'DESC_CFOP' in df_final.columns:
-                    resumo_cfop = df_final.groupby(['CFOP', 'DESC_CFOP']).agg({
-                        'VL_ITEM': 'sum',
-                        'VL_ICMS': 'sum',
-                        'NUM_ITEM': 'count'
-                    }).reset_index()
-                    resumo_cfop.columns = ['CFOP', 'Descrição', 'Valor Total', 'ICMS Total', 'Quantidade']
-                    resumo_cfop = resumo_cfop.sort_values('Valor Total', ascending=False)
-                    st.dataframe(resumo_cfop, use_container_width=True)
-            
-            with tab4:
-                st.markdown("## 📥 Exportação de Dados")
-                
-                st.info("💡 Os arquivos exportados incluem formatação profissional, filtros automáticos e cabeçalho congelado.")
-                
-                col_export1, col_export2 = st.columns(2)
-                
-                colunas_existentes_export = [col for col in colunas_exibicao if col in df_final.columns]
-                
-                with col_export1:
-                    # Exportação CSV
-                    csv_data = df_final[colunas_existentes_export].to_csv(index=False).encode('utf-8-sig')
-                    st.download_button(
-                        label="📄 Exportar como CSV",
-                        data=csv_data,
-                        file_name=f"sped_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                
-                with col_export2:
-                    # Exportação Excel
-                    excel_data = to_excel_formatado(df_final[colunas_existentes_export])
-                    st.download_button(
-                        label="📊 Exportar como Excel",
-                        data=excel_data,
-                        file_name=f"sped_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                
-                st.markdown("---")
-                st.markdown("### 📋 Relatórios Específicos")
-                
-                if st.button("📈 Gerar Relatório Resumido"):
-                    if 'EMPRESA' in df_final.columns and 'CFOP' in df_final.columns:
-                        relatorio = df_final.groupby(['EMPRESA', 'CFOP']).agg({
-                            'VL_ITEM': 'sum',
-                            'VL_ICMS': 'sum',
-                            'NUM_DOC': 'nunique'
-                        }).reset_index()
-                        st.dataframe(relatorio, use_container_width=True)
-        else:
-            st.warning("⚠️ Nenhum dado foi processado. Verifique os arquivos enviados.")
-    
+            else:
+                st.download_button(
+                    "📄 Baixar CSV Resumo (C190)",
+                    df_final_c190.to_csv(index=False).encode("utf-8"),
+                    "resumo_c190.csv",
+                    "text/csv",
+                    use_container_width=True,
+                    disabled=True
+                )
+        
     else:
-        # Estado inicial
-        st.info("👈 **Como usar:**")
-        st.markdown("""
-        1. **Carregue a tabela CFOP** (opcional) para descrições completas
-        2. **Envie um ou mais arquivos SPED** no formato .txt
-        3. **Explore os dados** com filtros e dashboard
-        4. **Exporte** os resultados em CSV ou Excel
-        
-        **Registros suportados atualmente:**
-        - ✅ C100 (Cabeçalho da Nota Fiscal)
-        - ✅ C170 (Itens da Nota Fiscal)
-        - ✅ 0200 (Cadastro de Produtos)
-        - ✅ 0150 (Cadastro de Participantes)
-        
-        **Em breve:**
-        - 🔄 C190 (Detalhamento ICMS)
-        - 🔄 E110 (Apuração do ICMS)
-        - 🔄 H010 (Inventário)
-        """)
-        
-        # Exemplo de estrutura
-        with st.expander("📖 Estrutura do Arquivo SPED"):
-            st.markdown("""
-            O arquivo SPED Fiscal deve seguir o layout do Sistema Público de Escrituração Digital.
-            
-            **Registros obrigatórios para leitura completa:**
-            - `|0000|` - Dados da empresa
-            - `|C100|` - Nota Fiscal (cabeçalho)
-            - `|C170|` - Itens da Nota Fiscal
-            - `|0200|` - Tabela de produtos (opcional)
-            - `|0150|` - Tabela de participantes (opcional)
-            
-            **Exemplo de estrutura:**
-            ```
-            |0000|...
-            |0150|...
-            |0200|...
-            |C100|...
-            |C170|...
-            |C990|...
-            ```
-            """)
-
-
-if __name__ == "__main__":
-    main()
+        st.warning("⚠️ Nenhum registro encontrado nos arquivos enviados!")
+else:
+    st.info("👆 Selecione um ou mais arquivos SPED na barra lateral")
