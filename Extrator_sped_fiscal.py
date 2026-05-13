@@ -214,6 +214,7 @@ def parse_sped(lines, dict_cfop):
         reg = parts[1]
 
         if reg == "C100":
+            # Reinicia o contexto para uma nova nota
             nota_atual = {
                 "NUM_DOC": get_part(parts, 8),
                 "SER": get_part(parts, 7),
@@ -234,21 +235,20 @@ def parse_sped(lines, dict_cfop):
                 "COD_OBS": "",
                 "ORIGEM_PRODUTO": "",
                 "CLASS_FIS": "",
-                "COD_ITEM": "",  # Novo campo do C197
+                "COD_ITEM": "", 
             }
-            primeiro_item_c197 = None  # Reseta o controle do C197
+            # Reseta o item do C197 para a nova nota
+            primeiro_item_c197 = None 
 
         elif reg == "C197" and nota_atual is not None and primeiro_item_c197 is None:
-            # Captura apenas o PRIMEIRO item C197 da nota
-            # Layout C197:
-            # parts[2] = COD_ITEM (Código do item)
-            # parts[3] = COD_CLASS (Código da classificação)
-            # parts[4] = QTDE (Quantidade)
-            # parts[5] = UNID (Unidade)
-            # parts[6] = VL_ITEM (Valor do item)
-            # parts[7] = VL_DESC (Valor do desconto)
-            
-            cod_item = get_part(parts, 2)  # Código do item
+            # Layout padrão C197:
+            # parts[1] = REG
+            # parts[2] = COD_AJ (Código do Ajuste)
+            # parts[3] = DESCR_COMPL
+            # parts[4] = COD_ITEM (Código do Item)
+            # Nota: Verifique se seu arquivo segue o layout padrão. 
+            # O código original usava parts[2], ajustei para parts[4] que é o padrão para COD_ITEM.
+            cod_item = get_part(parts, 4) 
             primeiro_item_c197 = cod_item
 
         elif reg == "C190" and nota_atual is not None:
@@ -271,11 +271,13 @@ def parse_sped(lines, dict_cfop):
                 "COD_OBS": get_part(parts, 12),
                 "ORIGEM_PRODUTO": get_origem_produto(cst_icms_original),
                 "CLASS_FIS": get_class_fis(cst_icms_original),
-                "COD_ITEM": primeiro_item_c197 if primeiro_item_c197 else "",  # Adiciona o código do item
+                "COD_ITEM": primeiro_item_c197 if primeiro_item_c197 else "",
             })
             dados_completos.append(linha_completa)
-            nota_atual = None
-            primeiro_item_c197 = None  # Reseta após usar
+            
+            # CORREÇÃO: Removido o "nota_atual = None" daqui.
+            # Isso permite que a mesma nota (C100) gere várias linhas se tiver vários C190.
+            # O nota_atual só será substituído quando um novo C100 aparecer no loop.
 
     df = pd.DataFrame(dados_completos)
 
@@ -347,6 +349,8 @@ if uploaded_files:
     
     with st.spinner(f"Processando {len(uploaded_files)} arquivo(s)..."):
         for arquivo in uploaded_files:
+            # O ponteiro do arquivo precisa voltar ao início se for lido múltiplas vezes, 
+            # mas como é um objeto uploaded file novo no loop, não há problema.
             info_empresa, df_completo, nome_arquivo = processar_arquivo(arquivo, dict_cfop)
             
             if not df_completo.empty:
@@ -372,7 +376,7 @@ if uploaded_files:
             "CFOP", "DESC_CFOP",
             "ALIQ_ICMS", "VL_OPR", "VL_BC_ICMS", "VL_ICMS",
             "VL_BC_ICMS_ST", "VL_ICMS_ST", "VL_RED_BC", "VL_IPI", "COD_OBS",
-            "COD_ITEM",  # Campo extraído do C197
+            "COD_ITEM", 
             "ARQUIVO_ORIGEM"
         ]
         
