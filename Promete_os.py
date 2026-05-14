@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Gerador de Prompts",
@@ -6,6 +7,14 @@ st.set_page_config(
 )
 
 PROMPTS = {
+    "Lançamento de OS": """
+Reescreva o texto abaixo em tom de OS,
+iniciando frases com verbos de ação no passado particípio.
+
+Utilize linguagem técnica, clara e objetiva.
+Corrija erros de ortografia, gramática e concordância.
+""",
+
     "Comentário em Chamado": """
 Reescreva em tom de comentário em histórico de chamado,
 de forma clara, técnica, profissional e objetiva.
@@ -15,6 +24,7 @@ Corrija erros de ortografia, gramática e concordância.
     "Situação Inicial": """
 Reescreva em tom de situação inicial,
 relatando o que o cliente está solicitando e apontando.
+
 Utilize linguagem técnica e profissional,
 com expressões como:
 "Cliente reportou",
@@ -54,15 +64,20 @@ texto_base = st.text_area(
     placeholder="Cole aqui o texto..."
 )
 
-resultado = ""
-
-if st.button("Gerar Prompt"):
-    resultado = f"""
-{PROMPTS[tipo].strip()}
+resultado = f"""{PROMPTS[tipo].strip()}
 
 [{texto_base.strip()}]
 """
 
+col1, col2 = st.columns(2)
+
+with col1:
+    gerar = st.button("🚀 Gerar Prompt")
+
+with col2:
+    copiar = st.button("📋 Copiar Prompt")
+
+if gerar:
     st.success("Prompt gerado com sucesso!")
 
     st.text_area(
@@ -71,13 +86,16 @@ if st.button("Gerar Prompt"):
         height=350
     )
 
-    st.code(resultado, language="text")
+if copiar:
 
-    st.markdown(
+    texto_js = resultado.replace("`", "\\`")
+
+    components.html(
         f"""
-        <button onclick="navigator.clipboard.writeText(`{resultado}`)">
-            📋 Copiar Texto
-        </button>
+        <script>
+        navigator.clipboard.writeText(`{texto_js}`);
+        </script>
+        <p>✅ Prompt copiado!</p>
         """,
-        unsafe_allow_html=True
+        height=40,
     )
