@@ -16,3 +16,6 @@ openai-whisper
 ffmpeg-python
 torch
 textblob
+SpeechRecognition
+pydub
+audioop-lts
