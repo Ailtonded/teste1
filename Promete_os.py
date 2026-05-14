@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import json
 
 st.set_page_config(
     page_title="Gerador de Prompts",
@@ -78,6 +79,7 @@ with col2:
     copiar = st.button("📋 Copiar Prompt")
 
 if gerar:
+
     st.success("Prompt gerado com sucesso!")
 
     st.text_area(
@@ -88,14 +90,23 @@ if gerar:
 
 if copiar:
 
-    texto_js = resultado.replace("`", "\\`")
+    texto_json = json.dumps(resultado)
 
     components.html(
         f"""
         <script>
-        navigator.clipboard.writeText(`{texto_js}`);
+            navigator.clipboard.writeText({texto_json});
         </script>
-        <p>✅ Prompt copiado!</p>
+
+        <div style="
+            padding:10px;
+            background:#d4edda;
+            color:#155724;
+            border-radius:5px;
+            font-weight:bold;
+        ">
+            ✅ Prompt copiado com sucesso!
+        </div>
         """,
-        height=40,
+        height=60,
     )
