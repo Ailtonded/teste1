@@ -2,7 +2,8 @@ import streamlit as st
 import speech_recognition as sr
 import soundfile as sf
 import tempfile
-import scipy.io.wavfile as wavfile
+import numpy as np
+from scipy.io.wavfile import write
 
 st.title("🎙️ Transcrição de Áudio WhatsApp")
 
@@ -15,17 +16,21 @@ if arquivo:
 
     st.audio(arquivo)
 
-    # salvar ogg temporário
+    # salvar arquivo temporário
     with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_ogg:
         temp_ogg.write(arquivo.read())
         ogg_path = temp_ogg.name
 
-    # converter usando soundfile
+    # ler ogg
     data, samplerate = sf.read(ogg_path)
+
+    # converter para PCM 16 bits
+    data = (data * 32767).astype(np.int16)
 
     wav_path = ogg_path.replace(".ogg", ".wav")
 
-    wavfile.write(
+    # salvar wav
+    write(
         wav_path,
         samplerate,
         data
@@ -58,28 +63,6 @@ if arquivo:
 
         st.write(f"Total de palavras: {len(palavras)}")
         st.write(f"Total de caracteres: {len(texto)}")
-
-        # palavras mais comuns
-        frequencia = {}
-
-        for p in palavras:
-            p = p.lower()
-
-            if p in frequencia:
-                frequencia[p] += 1
-            else:
-                frequencia[p] = 1
-
-        top = sorted(
-            frequencia.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:10]
-
-        st.write("### 🔥 Palavras mais usadas")
-
-        for palavra, qtd in top:
-            st.write(f"{palavra}: {qtd}")
 
     except Exception as e:
         st.error(f"Erro ao transcrever: {e}")
