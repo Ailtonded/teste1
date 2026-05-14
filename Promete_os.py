@@ -51,6 +51,9 @@ Corrija erros de ortografia, gramática e concordância.
 """
 }
 
+if "resultado" not in st.session_state:
+    st.session_state.resultado = ""
+
 st.title("📝 Gerador de Prompts")
 
 tipo = st.radio(
@@ -61,52 +64,57 @@ tipo = st.radio(
 
 texto_base = st.text_area(
     "Cole o texto base:",
-    height=300,
-    placeholder="Cole aqui o texto..."
+    height=300
 )
-
-resultado = f"""{PROMPTS[tipo].strip()}
-
-[{texto_base.strip()}]
-"""
 
 col1, col2 = st.columns(2)
 
 with col1:
-    gerar = st.button("🚀 Gerar Prompt")
+
+    if st.button("🚀 Gerar Prompt"):
+
+        st.session_state.resultado = f"""
+{PROMPTS[tipo].strip()}
+
+[{texto_base.strip()}]
+"""
 
 with col2:
-    copiar = st.button("📋 Copiar Prompt")
 
-if gerar:
+    if st.button("📋 Copiar Prompt"):
+
+        if st.session_state.resultado:
+
+            texto_json = json.dumps(st.session_state.resultado)
+
+            components.html(
+                f"""
+                <script>
+                    navigator.clipboard.writeText({texto_json});
+                </script>
+
+                <div style="
+                    padding:10px;
+                    background:#d4edda;
+                    color:#155724;
+                    border-radius:5px;
+                    font-weight:bold;
+                ">
+                    ✅ Prompt copiado com sucesso!
+                </div>
+                """,
+                height=60,
+            )
+
+        else:
+            st.warning("Gere o prompt antes de copiar.")
+
+if st.session_state.resultado:
 
     st.success("Prompt gerado com sucesso!")
 
     st.text_area(
         "Resultado:",
-        value=resultado,
+        value=st.session_state.resultado,
         height=350
-    )
-
-if copiar:
-
-    texto_json = json.dumps(resultado)
-
-    components.html(
-        f"""
-        <script>
-            navigator.clipboard.writeText({texto_json});
-        </script>
-
-        <div style="
-            padding:10px;
-            background:#d4edda;
-            color:#155724;
-            border-radius:5px;
-            font-weight:bold;
-        ">
-            ✅ Prompt copiado com sucesso!
-        </div>
-        """,
-        height=60,
     )
