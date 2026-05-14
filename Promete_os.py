@@ -51,6 +51,17 @@ Corrija erros de ortografia, gramática e concordância.
 """
 }
 
+# 1. Criamos uma função para montar o prompt. 
+# Isso garante que pegamos o texto e o tipo ATUAL.
+def montar_prompt(tipo, texto):
+    if not texto.strip():
+        return ""
+    return f"""
+{PROMPTS[tipo].strip()}
+
+[{texto.strip()}]
+"""
+
 if "resultado" not in st.session_state:
     st.session_state.resultado = ""
 
@@ -70,22 +81,20 @@ texto_base = st.text_area(
 col1, col2 = st.columns(2)
 
 with col1:
-
     if st.button("🚀 Gerar Prompt"):
-
-        st.session_state.resultado = f"""
-{PROMPTS[tipo].strip()}
-
-[{texto_base.strip()}]
-"""
+        # Atualiza o estado com o texto atual
+        st.session_state.resultado = montar_prompt(tipo, texto_base)
 
 with col2:
-
     if st.button("📋 Copiar Prompt"):
-
-        if st.session_state.resultado:
-
-            texto_json = json.dumps(st.session_state.resultado)
+        # Gera o texto baseado no que está na tela AGORA
+        texto_para_copiar = montar_prompt(tipo, texto_base)
+        
+        if texto_para_copiar:
+            # Atualiza o estado para que o texto apareça na área abaixo se não estiver
+            st.session_state.resultado = texto_para_copiar
+            
+            texto_json = json.dumps(texto_para_copiar)
 
             components.html(
                 f"""
@@ -105,14 +114,12 @@ with col2:
                 """,
                 height=60,
             )
-
         else:
-            st.warning("Gere o prompt antes de copiar.")
+            st.warning("Cole um texto base antes de copiar.")
 
+# Exibe o resultado na tela
 if st.session_state.resultado:
-
     st.success("Prompt gerado com sucesso!")
-
     st.text_area(
         "Resultado:",
         value=st.session_state.resultado,
