@@ -19,3 +19,9 @@ textblob
 SpeechRecognition
 pydub
 audioop-lts
+
+streamlit
+SpeechRecognition
+soundfile
+scipy
+numpy
