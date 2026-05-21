@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Calculadora DIFAL - Base Dupla (por dentro) | ICMS</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(145deg, #e9f0f5 0%, #dce3ec 100%);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px 16px;
+        }
+
+        .card {
+            max-width: 1380px;
+            width: 100%;
+            background: #ffffff;
+            border-radius: 2rem;
+            box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        /* cabeçalho */
+        .header {
+            background: #0f2b3d;
+            padding: 1.5rem 2rem;
+            color: white;
+        }
+
+        .header h1 {
+            margin: 0 0 0.25rem 0;
+            font-weight: 600;
+            font-size: 1.8rem;
+            letter-spacing: -0.3px;
+        }
+
+        .header p {
+            margin: 0;
+            opacity: 0.85;
+            font-size: 0.95rem;
+        }
+
+        .badge-method {
+            background: #2c8f6e;
+            display: inline-block;
+            padding: 0.2rem 0.9rem;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-top: 0.6rem;
+        }
+
+        /* grid principal */
+        .dashboard {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.8rem;
+            padding: 2rem;
+        }
+
+        .form-section {
+            flex: 1.3;
+            min-width: 280px;
+            background: #f9fafc;
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .result-section {
+            flex: 1;
+            min-width: 320px;
+            background: #ffffff;
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2edf2;
+        }
+
+        .checklist {
+            flex: 0.9;
+            min-width: 260px;
+            background: #fef8e7;
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            border-left: 5px solid #f5b042;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        @media (max-width: 960px) {
+            .dashboard {
+                flex-direction: column;
+            }
+            .form-section, .result-section, .checklist {
+                width: 100%;
+            }
+        }
+
+        /* formulário */
+        .input-group {
+            margin-bottom: 1.4rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-group label {
+            font-weight: 600;
+            color: #1e3a4d;
+            margin-bottom: 0.4rem;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .input-group input, .input-group select {
+            padding: 0.75rem 1rem;
+            border: 1px solid #cbdbe2;
+            border-radius: 1rem;
+            font-size: 1rem;
+            background: white;
+            transition: 0.2s;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: #2c6e9e;
+            box-shadow: 0 0 0 3px rgba(44, 110, 158, 0.2);
+        }
+
+        .row-double {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .row-double .input-group {
+            flex: 1;
+        }
+
+        button {
+            background: #1f6392;
+            color: white;
+            border: none;
+            padding: 0.9rem 1.2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 2rem;
+            width: 100%;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-top: 0.5rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            background: #0e4a6f;
+            transform: translateY(-1px);
+        }
+
+        .result-card {
+            background: #f0f6fa;
+            border-radius: 1.2rem;
+            padding: 0.2rem 1rem 1rem 1rem;
+            margin-bottom: 1.8rem;
+        }
+
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.7rem 0;
+            border-bottom: 1px dashed #cbdbe6;
+            font-size: 1rem;
+        }
+
+        .result-row.highlight {
+            font-weight: 800;
+            font-size: 1.2rem;
+            color: #0b4f6c;
+            border-bottom: 2px solid #1f6392;
+        }
+
+        .result-row:last-child {
+            border-bottom: none;
+        }
+
+        .difal-value {
+            font-size: 1.7rem;
+            font-weight: 800;
+            color: #c4450c;
+            background: #fff0e5;
+            padding: 0.2rem 1rem;
+            border-radius: 2rem;
+            text-align: center;
+            margin-top: 1rem;
+        }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+            background: white;
+            padding: 12px 14px;
+            border-radius: 1rem;
+            transition: all 0.1s;
+            border: 1px solid #f0e0c0;
+        }
+
+        .check-item input {
+            width: 22px;
+            height: 22px;
+            cursor: pointer;
+            accent-color: #f5b042;
+        }
+
+        .check-item label {
+            font-weight: 500;
+            color: #3b2a1f;
+            cursor: pointer;
+            font-size: 0.9rem;
+            flex: 1;
+        }
+
+        .check-item small {
+            font-size: 0.7rem;
+            color: #8b6946;
+        }
+
+        .rp-message {
+            background: #f3e5d8;
+            padding: 14px;
+            border-radius: 1rem;
+            margin-top: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #a55117;
+            text-align: center;
+        }
+
+        hr {
+            margin: 1rem 0;
+            border: 0;
+            height: 1px;
+            background: linear-gradient(to right, #ccc, transparent);
+        }
+
+        .info-text {
+            font-size: 0.75rem;
+            color: #5e6f8d;
+            text-align: center;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="header">
+        <h1>📊 DIFAL · Base Dupla (Cálculo por dentro)</h1>
+        <p>Metodologia conforme legislação: ICMS Interno – ICMS Interestadual | Exclusão e inclusão na base</p>
+        <div class="badge-method">✓ Passo a passo: ICMS Inter → BC1 → BC2 → ICMS Interno → DIFAL</div>
+    </div>
+
+    <div class="dashboard">
+        <!-- ÁREA DE ENTRADA DE DADOS -->
+        <div class="form-section">
+            <h3 style="margin-top:0; color:#1e4a6b;">📝 Parâmetros da operação</h3>
+            <div class="input-group">
+                <label>💰 Valor da Operação (R$)</label>
+                <input type="number" id="valorOperacao" value="1000.00" step="any" placeholder="Ex: 1000,00">
+            </div>
+
+            <div class="row-double">
+                <div class="input-group">
+                    <label>📍 Estado de Origem</label>
+                    <select id="estadoOrigem">
+                        <option value="SP">São Paulo (SP)</option>
+                        <option value="RJ">Rio de Janeiro (RJ)</option>
+                        <option value="MG">Minas Gerais (MG)</option>
+                        <option value="RS">Rio Grande do Sul (RS)</option>
+                        <option value="BA">Bahia (BA)</option>
+                        <option value="PR">Paraná (PR)</option>
+                        <option value="outro">Outro estado</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>📍 Estado de Destino</label>
+                    <select id="estadoDestino">
+                        <option value="SP">São Paulo (SP)</option>
+                        <option value="RJ" selected>Rio de Janeiro (RJ)</option>
+                        <option value="MG">Minas Gerais (MG)</option>
+                        <option value="RS">Rio Grande do Sul (RS)</option>
+                        <option value="BA">Bahia (BA)</option>
+                        <option value="PR">Paraná (PR)</option>
+                        <option value="outro">Outro estado</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row-double">
+                <div class="input-group">
+                    <label>🧾 Alíquota Interna (destino) %</label>
+                    <input type="number" id="aliquotaInterna" value="18.00" step="any" placeholder="Ex: 18">
+                </div>
+                <div class="input-group">
+                    <label>🚚 Alíquota Interestadual %</label>
+                    <input type="number" id="aliquotaInterestadual" value="12.00" step="any" placeholder="Ex: 12">
+                </div>
+            </div>
+            <button id="calcularBtn">🔁 Calcular DIFAL (Base Dupla)</button>
+            <div class="info-text">
+                * Cálculo rigoroso: Exclusão do ICMS Interestadual → Divisão por (1 - Aliq Interna) → ICMS Interno → Diferença.
+            </div>
+        </div>
+
+        <!-- RESULTADOS DETALHADOS -->
+        <div class="result-section">
+            <h3 style="margin-top:0; color:#1e4a6b;">🧮 Demonstração do cálculo (Base Dupla)</h3>
+            <div class="result-card">
+                <div class="result-row">
+                    <strong>1. Valor da operação</strong>
+                    <span id="displayValorOp">R$ 1.000,00</span>
+                </div>
+                <div class="result-row">
+                    <strong>2. ICMS Interestadual (origem)</strong>
+                    <span id="displayIcmsInter">R$ 120,00</span>
+                </div>
+                <div class="result-row">
+                    <strong>3. Base Cálculo 1 = Valor Op - ICMS Inter</strong>
+                    <span id="displayBase1">R$ 880,00</span>
+                </div>
+                <div class="result-row">
+                    <strong>4. Fator (1 - Alíquota Interna)</strong>
+                    <span id="displayFator">0,8200</span>
+                </div>
+                <div class="result-row highlight">
+                    <strong>5. Base Cálculo 2 (Base Dupla) = BC1 / (1 - AliqInt)</strong>
+                    <span id="displayBase2">R$ 1.073,17</span>
+                </div>
+                <div class="result-row">
+                    <strong>6. ICMS Interno = BC2 × Aliq. Interna</strong>
+                    <span id="displayIcmsInterno">R$ 193,17</span>
+                </div>
+                <div class="result-row">
+                    <strong>7. ICMS Interestadual (original)</strong>
+                    <span id="displayIcmsInterFinal">R$ 120,00</span>
+                </div>
+            </div>
+            <div class="difal-value" id="difalFinal">
+                ⚡ DIFAL = R$ 73,17
+            </div>
+            <div style="margin-top: 12px; font-size:0.75rem; text-align:center; background:#eef2f5; border-radius: 30px; padding: 6px;">
+                🔍 Fórmula: [Base2 * AliqInterna] - (ValorOp * AliqInterestadual)
+            </div>
+        </div>
+
+        <!-- CHECKLIST INTERATIVO PARA TESTE E VALIDAÇÃO DO RP (PARTE DO SISTEMA) -->
+        <div class="checklist">
+            <h3 style="margin-top:0; display: flex; align-items: center; gap:8px;">✅ Checklist Teste & RP</h3>
+            <p style="font-size:0.75rem; color:#8b6946; margin-bottom: 1rem;">Marque os passos conforme validação do sistema / RP</p>
+
+            <div class="check-item">
+                <input type="checkbox" id="chkValorOp">
+                <label>✔️ Valor da operação capturado corretamente</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkAliqInterna">
+                <label>🔁 Alíquota Interna aplicada (destino)</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkAliqInter">
+                <label>📦 Alíquota Interestadual correta (origem x destino)</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkExclusaoIcms">
+                <label>➖ Etapa exclusão ICMS Interestadual (BC1)</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkBaseDupla">
+                <label>🧮 Base Dupla calculada = BC1 / (1 - AliqInt)</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkIcmsInterno">
+                <label>🏛️ ICMS Interno apurado corretamente</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkDifal">
+                <label>💰 DIFAL = ICMS Interno - ICMS Interestadual</label>
+            </div>
+            <div class="check-item">
+                <input type="checkbox" id="chkFormatReal">
+                <label>📋 Exibição valores com duas casas decimais (R$)</label>
+            </div>
+
+            <div class="rp-message" id="rpStatusMessage">
+                🧪 Marque os requisitos validados no seu sistema / RP.
+            </div>
+            <button id="resetChecklistBtn" style="background:#d9c7a7; color:#4e3b28; margin-top: 12px; font-size:0.8rem; box-shadow: none;">⟳ Limpar checkboxes</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // DOM elements
+    const valorOpInput = document.getElementById('valorOperacao');
+    const estadoOrigemSelect = document.getElementById('estadoOrigem');
+    const estadoDestinoSelect = document.getElementById('estadoDestino');
+    const aliqInternaInput = document.getElementById('aliquotaInterna');
+    const aliqInterestadualInput = document.getElementById('aliquotaInterestadual');
+    const calcularBtn = document.getElementById('calcularBtn');
+
+    // Display fields
+    const displayValorOp = document.getElementById('displayValorOp');
+    const displayIcmsInter = document.getElementById('displayIcmsInter');
+    const displayBase1 = document.getElementById('displayBase1');
+    const displayFator = document.getElementById('displayFator');
+    const displayBase2 = document.getElementById('displayBase2');
+    const displayIcmsInterno = document.getElementById('displayIcmsInterno');
+    const displayIcmsInterFinal = document.getElementById('displayIcmsInterFinal');
+    const difalFinalSpan = document.getElementById('difalFinal');
+
+    // checkboxes
+    const chkValorOp = document.getElementById('chkValorOp');
+    const chkAliqInterna = document.getElementById('chkAliqInterna');
+    const chkAliqInter = document.getElementById('chkAliqInter');
+    const chkExclusaoIcms = document.getElementById('chkExclusaoIcms');
+    const chkBaseDupla = document.getElementById('chkBaseDupla');
+    const chkIcmsInterno = document.getElementById('chkIcmsInterno');
+    const chkDifal = document.getElementById('chkDifal');
+    const chkFormatReal = document.getElementById('chkFormatReal');
+    const resetChecklistBtn = document.getElementById('resetChecklistBtn');
+
+    // Função principal de cálculo DIFAL base dupla (por dentro)
+    function calcularDifalBaseDupla() {
+        // Obter valores com validação
+        let valorOperacao = parseFloat(valorOpInput.value.replace(',', '.'));
+        if (isNaN(valorOperacao) || valorOperacao <= 0) valorOperacao = 0;
+        
+        let aliInterna = parseFloat(aliqInternaInput.value.replace(',', '.'));
+        if (isNaN(aliInterna)) aliInterna = 0;
+        let aliInterestadual = parseFloat(aliqInterestadualInput.value.replace(',', '.'));
+        if (isNaN(aliInterestadual)) aliInterestadual = 0;
+        
+        // Percentuais em decimal (já estão em % ex: 18 -> 0.18)
+        const percInterna = aliInterna / 100;
+        const percInterest = aliInterestadual / 100;
+
+        // Passo 1: ICMS Interestadual
+        const icmsInterestadual = valorOperacao * percInterest;
+        
+        // Passo 2: Base de cálculo 1 = Valor operação - ICMS interestadual
+        const base1 = valorOperacao - icmsInterestadual;
+        
+        // Passo 3: Fator (1 - Alíquota interna) e Base2 = base1 / (1 - aliq interna)
+        let fator = 1 - percInterna;
+        let base2 = 0;
+        let icmsInterno = 0;
+        let difal = 0;
+        
+        if (fator > 0 && !isNaN(fator) && fator !== 0) {
+            base2 = base1 / fator;
+        } else {
+            base2 = 0;
+        }
+        
+        // Passo 4: ICMS Interno = base2 * aliquota interna
+        icmsInterno = base2 * percInterna;
+        
+        // Passo 5: DIFAL = ICMS Interno - ICMS Interestadual
+        difal = icmsInterno - icmsInterestadual;
+        
+        // Arredondamentos para exibição e consistência (2 decimais)
+        const round2 = (val) => Math.round(val * 100) / 100;
+        
+        const valorOperacaoRound = round2(valorOperacao);
+        const icmsInterRound = round2(icmsInterestadual);
+        const base1Round = round2(base1);
+        const fatorRound = round2(fator);
+        const base2Round = round2(base2);
+        const icmsInternoRound = round2(icmsInterno);
+        const difalRound = round2(difal);
+        
+        // Atualizar interface com formatação BRL
+        displayValorOp.innerText = formatarMoeda(valorOperacaoRound);
+        displayIcmsInter.innerText = formatarMoeda(icmsInterRound);
+        displayBase1.innerText = formatarMoeda(base1Round);
+        displayFator.innerText = fatorRound.toFixed(4);
+        displayBase2.innerText = formatarMoeda(base2Round);
+        displayIcmsInterno.innerText = formatarMoeda(icmsInternoRound);
+        displayIcmsInterFinal.innerText = formatarMoeda(icmsInterRound);
+        difalFinalSpan.innerHTML = `⚡ DIFAL = ${formatarMoeda(difalRound)}`;
+        
+        // Armazenar valores para possível debug, e também sincronizar automaticamente os checks? Não, apenas facilitamos
+        // mas se quiser dar dica de que o cálculo foi atualizado:
+        // Opcional: destacar visual
+    }
+    
+    // Formatação Real brasileiro
+    function formatarMoeda(valor) {
+        return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
+    }
+    
+    // Atualizar estados de exemplo? Poderíamos pré-preencher alíquotas conforme UF de origem/destino? 
+    // Como a descrição pede interface clara e checkbox para testar e ver no sistema qual parte do RP, 
+    // vou implementar uma função opcional que sugere alíquotas comuns, mas sem forçar totalmente.
+    // Vamos adicionar um listener para mudança de UF se o usuário desejar preencher padrão (opcional)
+    function sugestaoAliquotasPorUF() {
+        // apenas para facilitar testes: quando o estado de destino mudar, podemos sugerir aliquota interna comum?
+        // porém para não atrapalhar, deixaremos manual. mas adicionamos dica no placeholder.
+        const destino = estadoDestinoSelect.value;
+        const origem = estadoOrigemSelect.value;
+        // Não altera automaticamente para não atrapalhar valores customizados, mas exibe algo sutil? 
+        // O foco é total flexibilidade.
+    }
+    
+    // Evento principal de cálculo sempre que clicar no botão
+    function handleCalculate() {
+        calcularDifalBaseDupla();
+        // Após calcular, podemos sincronizar visualmente as mensagens do checklist mas sem alterar checkboxes existentes.
+        // O usuário escolhe o que validar.
+    }
+    
+    // reset checklist
+    function resetChecklist() {
+        chkValorOp.checked = false;
+        chkAliqInterna.checked = false;
+        chkAliqInter.checked = false;
+        chkExclusaoIcms.checked = false;
+        chkBaseDupla.checked = false;
+        chkIcmsInterno.checked = false;
+        chkDifal.checked = false;
+        chkFormatReal.checked = false;
+        const msgDiv = document.getElementById('rpStatusMessage');
+        msgDiv.innerHTML = '🧹 Checklist limpo. Marque os itens conforme validação do RP.';
+        setTimeout(() => {
+            if (document.getElementById('rpStatusMessage')) 
+                msgDiv.innerHTML = '🧪 Marque os requisitos validados no seu sistema / RP.';
+        }, 1800);
+    }
+    
+    // Adicionar validação de mudanças nos campos numéricos ao pressionar Enter ou perda de foco
+    function attachNumericEvents() {
+        const numericInputs = [valorOpInput, aliqInternaInput, aliqInterestadualInput];
+        numericInputs.forEach(inp => {
+            inp.addEventListener('change', () => {
+                let v = parseFloat(inp.value.replace(',', '.'));
+                if (isNaN(v)) v = 0;
+                if (inp === valorOpInput && v < 0) v = 0;
+                if ((inp === aliqInternaInput || inp === aliqInterestadualInput) && (v < 0 || isNaN(v))) v = 0;
+                if (inp === aliqInternaInput && v > 100) v = 100;
+                if (inp === aliqInterestadualInput && v > 100) v = 100;
+                inp.value = v;
+                calcularDifalBaseDupla();
+            });
+            inp.addEventListener('input', () => {
+                // podemos calcular em tempo real, mas para performance manter apenas change + botão, mas será amigável.
+                // Vamos calcular após pequeno delay? melhor usar botão, mas para experiência, também ao digitar + button.
+                // farei cálculo ao perder foco ou botão, mas mantém consistência.
+            });
+        });
+        
+        estadoOrigemSelect.addEventListener('change', () => calcularDifalBaseDupla());
+        estadoDestinoSelect.addEventListener('change', () => calcularDifalBaseDupla());
+    }
+    
+    // Inicialização: ao carregar a página e sempre que alterar campos principais via botão ou change.
+    function bindEvents() {
+        calcularBtn.addEventListener('click', handleCalculate);
+        resetChecklistBtn.addEventListener('click', resetChecklist);
+        // também aciona cálculo quando mudar os selects e inputs
+        valorOpInput.addEventListener('change', calcularDifalBaseDupla);
+        aliqInternaInput.addEventListener('change', calcularDifalBaseDupla);
+        aliqInterestadualInput.addEventListener('change', calcularDifalBaseDupla);
+        estadoOrigemSelect.addEventListener('change', calcularDifalBaseDupla);
+        estadoDestinoSelect.addEventListener('change', calcularDifalBaseDupla);
+        // calcular ao carregar
+        calcularDifalBaseDupla();
+        
+        // Adicional: Garantir que o fator e os passos sejam consistentes e se o usuário clicar nos checkboxes,
+        // não interfere no cálculo, apenas validação do processo de RP.
+        // Adiciona também um "duplo clique" ou dica no título.
+    }
+    
+    // extra: demonstrar a fórmula direta e garantir que percentuais estão coerentes
+    function validarValoresExtras() {
+        // só log no console para auxílio
+        console.log("Calculadora DIFAL base dupla - pronta para validação do sistema");
+    }
+    
+    // Inicializa
+    function init() {
+        bindEvents();
+        attachNumericEvents();
+        validarValoresExtras();
+        // pequeno ajuste para valores padrão exibirem corretamente o exemplo 1000, 18%, 12%
+        // garantir que os dados iniciais sejam 1000, 18, 12
+        if (valorOpInput.value === "1000.00") calcularDifalBaseDupla();
+    }
+    
+    init();
+</script>
+</body>
+</html>
