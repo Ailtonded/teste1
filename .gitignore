@@ -1,0 +1,24 @@
+# Dados de clientes, notas e decisões: ficam só no computador de quem usa
+*.csv
+*.xlsx
+*.xls
+*.xml
+*.zip
+clientes_desconsiderados.json
+decisoes_pendencias.json
+correcoes.json
+codigos_regras.json
+conhecimento_historico.json
+grupos_derivados.json
+cadastro_sa1.csv
+regime_clientes.csv
+padroes_backup/
+
+# Chaves e segredos
+llm_config.json
+.env
+.streamlit/secrets.toml
+
+# Arquivos gerados pelo Python
+__pycache__/
+*.pyc
