@@ -1850,6 +1850,8 @@ def montar_matriz(an, anteriores=None):
                 if p and p.upper() != nome.upper() and (not limpas or p != limpas[-1]):
                     limpas.append(p)
             desc = " | ".join([nome] + limpas)
+            if t == "ICMSST" and fin == "CONSUMO":          # ST de consumo final = DIFAL ST (mesmo F2B_TRIB ICMSST)
+                desc = desc.replace("ICMS ST |", "DIFAL ST |", 1)
             desc_gerencial = desc
             if t == "DIFAL":
                 desc = _desc_difal_gf(bcod, part_txt, b[3])
