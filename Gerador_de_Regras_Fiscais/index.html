@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facilitador Fiscal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0D2847; --navy-2:#163A63; --navy-3:#0A1F38;
+  --azul:#1F6FEB; --azul-claro:#E8F0FE;
+  --teal:#0E9F8E; --teal-claro:#E3F5F2;
+  --ambar:#E5A00D; --ambar-claro:#FDF4DD; --ambar-texto:#8A5A00;
+  --vermelho:#C93A3A; --vermelho-claro:#FBE9E9;
+  --fundo:#F2F5F9; --card:#FFFFFF; --linha:#E2E8F0; --linha-forte:#CBD5E1;
+  --texto:#13263A; --suave:#5D6F82; --apagado:#8A99A8;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:var(--sans);color:var(--texto);background:var(--fundo);font-size:14px;line-height:1.5;
+  font-variant-numeric:tabular-nums}
+a{color:var(--azul);text-decoration:none}
+a:hover{text-decoration:underline}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--azul);outline-offset:2px}
+
+/* ── estrutura ───────────────────────────────────────── */
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.lateral{background:var(--navy);color:#DCE6F2;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.marca{display:flex;align-items:center;gap:10px;padding:22px 20px 26px;color:#fff;font-weight:600;font-size:17px;line-height:1.2}
+.marca svg{flex:none}
+.nav{display:flex;flex-direction:column;gap:2px;padding:0 12px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;color:#C9D6E5;font-weight:500}
+.nav a:hover{background:var(--navy-2);color:#fff;text-decoration:none}
+.nav a.ativo{background:var(--azul);color:#fff}
+.nav a .cont{margin-left:auto;font-size:12px;background:rgba(255,255,255,.14);border-radius:10px;padding:0 7px}
+.nav .sep{height:1px;background:rgba(255,255,255,.08);margin:10px 12px}
+.inteligencia{margin:auto 14px 18px;padding:14px;border-radius:10px;background:var(--navy-3);border:1px solid rgba(255,255,255,.07);font-size:13px;color:#AFC2D6}
+.inteligencia b{display:block;color:#fff;font-weight:600;margin-bottom:2px}
+.inteligencia .barra{height:4px;border-radius:2px;background:rgba(255,255,255,.1);margin-top:10px;overflow:hidden}
+.inteligencia .barra i{display:block;height:100%;background:var(--teal)}
+
+.principal{min-width:0;display:flex;flex-direction:column}
+.topo{height:58px;display:flex;align-items:center;gap:16px;padding:0 28px;background:var(--card);border-bottom:1px solid var(--linha);position:sticky;top:0;z-index:5}
+.migalhas{color:var(--suave);font-size:13px;display:flex;gap:8px;align-items:center;min-width:0}
+.migalhas a{color:var(--suave)}
+.migalhas b{color:var(--texto);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topo .direita{margin-left:auto;display:flex;align-items:center;gap:14px}
+.sino{position:relative;color:var(--suave);display:flex}
+.sino .bolinha{position:absolute;top:-6px;right:-8px;background:var(--ambar);color:#3D2800;font-size:11px;font-weight:600;border-radius:9px;padding:0 5px;line-height:17px}
+.empresa{display:flex;align-items:center;gap:10px;border:1px solid var(--linha);border-radius:20px;padding:3px 6px 3px 3px}
+.empresa .ini{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:600}
+.empresa select{border:0;background:transparent;max-width:320px;font-weight:500;cursor:pointer}
+.conteudo{padding:26px 28px 48px;max-width:1360px;width:100%}
+
+/* ── tipografia e blocos ─────────────────────────────── */
+h1{font-size:28px;line-height:1.15;margin:0;font-weight:700;color:var(--navy);letter-spacing:-.01em}
+.sub{color:var(--suave);font-size:16px;margin:4px 0 22px}
+h2{font-size:16px;margin:0;font-weight:600;color:var(--navy);display:flex;align-items:center;gap:8px}
+.card{background:var(--card);border:1px solid var(--linha);border-radius:10px}
+.card .cab{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--linha)}
+.card .cab .acao{margin-left:auto}
+.card .corpo{padding:16px 18px}
+.grade{display:grid;gap:16px}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g21{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+.mt{margin-top:16px}
+.muted{color:var(--suave)}
+.peq{font-size:12.5px}
+
+/* indicadores */
+.kpi{display:flex;gap:14px;padding:16px 18px;align-items:flex-start}
+.kpi .ic{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none}
+.kpi .rot{color:var(--suave);font-weight:500}
+.kpi .num{font-size:28px;font-weight:600;line-height:1.1;margin-top:2px;color:var(--texto)}
+.kpi .det{font-size:12.5px;color:var(--suave);margin-top:4px}
+.ic-azul{background:var(--azul-claro);color:var(--azul)}
+.ic-teal{background:var(--teal-claro);color:var(--teal)}
+.ic-ambar{background:var(--ambar-claro);color:var(--ambar)}
+.ic-navy{background:#E7ECF3;color:var(--navy)}
+
+/* botões */
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;padding:8px 14px;border:1px solid var(--linha-forte);background:#fff;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--azul);color:var(--azul)}
+.btn.prim{background:var(--azul);border-color:var(--azul);color:#fff}
+.btn.prim:hover{background:#185ED0;color:#fff}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.mini{padding:4px 10px;font-size:12.5px}
+.link-acao{display:inline-flex;align-items:center;gap:6px;font-weight:500;cursor:pointer;background:none;border:0;color:var(--azul);padding:0}
+
+/* selos */
+.selo{display:inline-flex;align-items:center;gap:5px;border-radius:12px;padding:1px 9px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.selo.ok{background:var(--teal-claro);color:#0A6F64}
+.selo.rev{background:var(--ambar-claro);color:var(--ambar-texto)}
+.selo.erro{background:var(--vermelho-claro);color:var(--vermelho)}
+.selo.info{background:var(--azul-claro);color:#1557C0}
+.selo.cinza{background:#EEF2F6;color:var(--suave)}
+
+/* chip de código: marca colorida por família de tributo */
+.cod{font-family:var(--mono);font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:5px;padding:1px 6px 1px 4px;border-radius:5px;background:#F1F4F8;border:1px solid var(--linha);color:var(--texto);white-space:nowrap}
+.cod::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--cor,var(--apagado))}
+a.cod:hover{border-color:var(--azul);text-decoration:none}
+.f-icms{--cor:var(--navy)} .f-ipi{--cor:var(--azul)} .f-pc{--cor:var(--teal)} .f-ibs{--cor:#7C5CC4} .f-cad{--cor:var(--apagado)}
+
+/* tabelas */
+.tab-wrap{overflow:auto;max-width:100%}
+table.tab{width:100%;border-collapse:collapse;font-size:13.5px}
+.tab th{position:sticky;top:0;background:#F7F9FC;text-align:left;font-weight:600;color:var(--suave);padding:9px 9px;border-bottom:1px solid var(--linha);white-space:nowrap;cursor:pointer;user-select:none}
+.tab th[data-ord="asc"]::after{content:" ▲";font-size:10px}
+.tab th[data-ord="desc"]::after{content:" ▼";font-size:10px}
+.tab td{padding:8px 9px;border-bottom:1px solid #EEF2F6;vertical-align:top}
+.tab th:first-child,.tab td:first-child{padding-left:16px}.tab th:last-child,.tab td:last-child{padding-right:16px}
+.tab tr.clic{cursor:pointer}
+.tab tr.clic:hover td{background:#F7FAFF}
+.tab tr.sel td{background:var(--azul-claro)}
+.tab td.num,.tab th.num{text-align:right}
+.tab .quebra{max-width:520px;min-width:180px;white-space:normal}
+.barra-tab{display:flex;gap:10px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--linha);flex-wrap:wrap}
+.busca{display:flex;align-items:center;gap:8px;border:1px solid var(--linha-forte);border-radius:8px;padding:6px 10px;background:#fff;min-width:260px}
+.busca input{border:0;outline:0;flex:1;min-width:0}
+.rodape-tab{padding:10px 18px;color:var(--suave);font-size:12.5px;display:flex;align-items:center;gap:12px}
+.filtros{display:flex;gap:6px;flex-wrap:wrap}
+.filtro{border:1px solid var(--linha-forte);background:#fff;border-radius:16px;padding:3px 12px;cursor:pointer;font-size:13px}
+.filtro.ativo{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* importação */
+.zona{border:1.5px dashed #A9BED6;border-radius:12px;background:#F8FAFD;display:flex;align-items:center;gap:22px;padding:22px 26px}
+.zona.arrastando{border-color:var(--azul);background:var(--azul-claro)}
+.zona .icone{width:64px;height:64px;border-radius:14px;border:1.5px solid #9DB6D3;display:grid;place-items:center;color:var(--azul);flex:none;background:#fff}
+.zona h3{margin:0;font-size:17px;color:var(--navy)}
+.zona .div{width:1px;align-self:stretch;background:var(--linha)}
+.formatos svg{flex:none}
+.formatos{margin-left:auto;background:var(--azul-claro);border-radius:10px;padding:12px 14px;max-width:290px;font-size:13px;color:#2A4A72;display:flex;gap:10px}
+.progresso{height:6px;background:#E5EBF2;border-radius:3px;overflow:hidden;margin-top:10px}
+.progresso i{display:block;height:100%;background:var(--azul);transition:width .3s}
+.opcao{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #EEF2F6}
+.opcao:last-child{border-bottom:0}
+.opcao input{margin-top:3px}
+.tribs{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px}
+.tribs label{display:flex;gap:6px;align-items:center;font-size:13px}
+.campo{display:flex;gap:8px}
+.campo input{flex:1;border:1px solid var(--linha-forte);border-radius:8px;padding:8px 10px}
+
+/* detalhe da regra */
+.kv{display:grid;grid-template-columns:150px 1fr;font-size:13.5px}
+.kv div{padding:8px 0;border-bottom:1px solid #EEF2F6}
+.kv div:nth-child(odd){color:var(--suave)}
+.xml{font-family:var(--mono);font-size:12.5px;line-height:1.6;background:#F7F9FC;border:1px solid var(--linha);border-radius:8px;margin:0;padding:12px 0;overflow:auto;max-height:560px;counter-reset:l}
+.xml span.l{display:block;padding:0 14px 0 0;white-space:pre}
+.xml span.l::before{counter-increment:l;content:counter(l);display:inline-block;width:38px;margin-right:12px;text-align:right;color:var(--apagado)}
+.xml .t{color:#1557C0} .xml .a{color:#0A6F64} .xml .v{color:#9A3D00} .xml .c{color:var(--apagado);font-style:italic}
+.aviso{display:flex;gap:10px;align-items:flex-start;background:var(--ambar-claro);border:1px solid #F1D48A;color:#6B4700;border-radius:10px;padding:12px 16px;margin-top:16px}
+.aviso.azul{background:var(--azul-claro);border-color:#BFD3F7;color:#1D3F70}
+.aviso ul{margin:4px 0 0;padding-left:18px}
+.linha-csv{font-family:var(--mono);font-size:12px;background:#F7F9FC;border:1px solid var(--linha);border-radius:8px;padding:10px 12px;overflow:auto;white-space:nowrap}
+
+/* cadastros */
+.cad{display:flex;gap:14px;padding:16px;cursor:pointer;align-items:flex-start;border-radius:10px;border:1px solid var(--linha);background:#fff;text-align:left}
+.cad:hover{border-color:#9DB6D3}
+.cad.ativo{border-color:var(--azul);box-shadow:inset 0 0 0 1px var(--azul)}
+.cad .ic{width:38px;height:38px;border-radius:9px;display:grid;place-items:center;flex:none;background:#EEF3FA;color:var(--navy)}
+.cad h4{margin:0;font-size:14.5px;color:var(--navy)}
+.cad .qt{font-size:22px;font-weight:600;line-height:1.2}
+.cad .ex{font-size:12.5px;color:var(--suave);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.cad .tab-ref{margin-left:auto}
+
+/* gaveta de cenário */
+.gaveta{position:fixed;top:0;right:0;width:min(520px,100%);height:100vh;background:#fff;border-left:1px solid var(--linha);z-index:20;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s}
+.gaveta.aberta{transform:none}
+.gaveta .cab{padding:18px;border-bottom:1px solid var(--linha);display:flex;gap:10px;align-items:flex-start}
+.gaveta .corpo{padding:16px 18px;overflow:auto}
+.fechar{margin-left:auto;background:none;border:0;cursor:pointer;color:var(--suave);padding:4px}
+.lista-regra{display:grid;grid-template-columns:90px 80px 1fr;gap:6px 12px;font-size:13px;align-items:baseline}
+
+.vazio{padding:44px 24px;text-align:center;color:var(--suave)}
+.vazio h3{color:var(--navy);margin:10px 0 6px;font-size:18px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;border-radius:8px;padding:10px 16px;z-index:30;font-size:13.5px;display:none}
+.depende{display:flex;flex-wrap:wrap;gap:4px}
+textarea.md{width:100%;min-height:62vh;border:1px solid var(--linha-forte);border-radius:8px;padding:12px;font-family:var(--mono);font-size:12.5px;line-height:1.55;resize:vertical}
+.menu-mob{display:none}
+.fundo-janela{position:fixed;inset:0;background:rgba(13,40,71,.45);z-index:40;display:grid;place-items:center;padding:16px}
+.janela{background:#fff;border-radius:12px;width:min(640px,100%);max-height:92vh;overflow:auto;box-shadow:0 18px 50px rgba(13,40,71,.3)}
+.janela .cab{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--linha)}
+.janela .corpo{padding:16px 18px}
+.grupos-ncm{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+.grupo-ncm{border:1px solid var(--linha);border-radius:10px;padding:10px 12px}
+.grupo-ncm .g-tit{display:flex;gap:8px;align-items:center}
+.grupo-ncm .efeito{margin-left:auto}
+.tab.fixa1 td:first-child,.tab.fixa1 th:first-child{position:sticky;left:0;background:#fff;z-index:1}
+.tab.fixa1 th:first-child{background:#F7F9FC;z-index:2}
+.tab .dsc{display:block;color:var(--suave);font-size:12px;line-height:1.35;min-width:120px;max-width:260px;white-space:normal}
+.visoes{display:inline-flex;border:1px solid var(--linha-forte);border-radius:8px;overflow:hidden}
+.visoes button{border:0;background:#fff;padding:5px 12px;cursor:pointer;font-size:13px}
+.visoes button.ativo{background:var(--navy);color:#fff}
+.grupo-div{border-left:4px solid var(--ambar)}
+.grupo-ref{border-left:4px solid var(--teal)}
+.correcao{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.correcao label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--suave)}
+.correcao label b{color:var(--texto);font-weight:500}
+.alcance{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.alcance .filtros-c{display:flex;flex-wrap:wrap;gap:6px 14px;margin-left:24px}
+.antes-depois{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:start}
+.antes-depois .seta{color:var(--azul);margin-top:26px}
+.mudou{background:var(--ambar-claro);border-radius:4px;padding:0 3px}
+button.val{font:inherit;font-family:var(--mono);font-size:12px;border:1px dashed var(--linha-forte);background:#F7F9FC;border-radius:5px;padding:2px 7px;cursor:pointer;white-space:nowrap;color:var(--texto)}
+button.val:hover{border-color:var(--azul);border-style:solid;background:#fff}
+button.val.dif{color:#B42318;background:#FDECEC;border:1px solid #F4B4AE;font-weight:600}
+button.val.novo{color:var(--texto);background:var(--teal-claro);border:1px solid #9ED9CF}
+button.val.novo s{color:#B42318;font-weight:400}
+span.val.ref{font-family:var(--mono);font-size:12px;color:#0A6F64}
+.val-ed{max-width:130px;font-family:var(--mono);font-size:12px;padding:3px 6px;border-color:var(--azul)}
+.dif-resumo{background:#FFF8F7;border-bottom:1px solid var(--linha)}
+.chip-dif{display:inline-flex;gap:4px;align-items:center;border:1px solid #F4B4AE;background:#fff;border-radius:14px;padding:1px 10px;margin:2px 4px 2px 0;font-size:13px}
+.chip-dif .x{color:#B42318;font-weight:600;font-family:var(--mono)}
+.chip-dif .ok{color:#0A6F64;font-weight:600;font-family:var(--mono)}
+.chip-dif.azul{border-color:#BFD3F7}.chip-dif.azul .x{color:#1557C0}
+button.val.cen{color:#1557C0;background:var(--azul-claro);border:1px solid #BFD3F7;font-weight:600}
+.chip-sub{display:inline-flex;gap:4px;align-items:center;border:1px solid #9ED9CF;background:var(--teal-claro);border-radius:14px;padding:1px 4px 1px 10px;font-size:13px}
+.chip-sub s{color:#B42318}
+.legitimo{border-top:1px solid var(--linha);background:#F6FBFA}
+.decisoes{border-bottom:1px solid var(--linha);background:#FBFCFE}
+.dec-linha{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.dec-campo{min-width:120px;font-weight:600;color:var(--navy)}
+.opt{border:1px solid var(--linha-forte);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.25;text-align:left}
+.opt b{font-family:var(--mono);font-size:13px}.opt small{color:var(--suave);font-size:11.5px}
+.opt:hover{border-color:var(--azul)}
+.opt.sel{border-color:var(--azul);box-shadow:inset 0 0 0 1px var(--azul);background:var(--azul-claro)}
+.efeito{margin:6px 0 10px;padding-left:18px;font-size:13px}
+details.outras{border-top:1px solid var(--linha)}
+details.outras>summary{cursor:pointer;padding:12px 18px;color:var(--suave);font-weight:500;display:flex;gap:8px;align-items:center;list-style:none}
+details.outras>summary::-webkit-details-marker{display:none}
+details.outras[open]>summary{color:var(--texto)}
+.sep-btn{border-color:#9ED9CF;color:#0A6F64}
+.sep-btn:hover{border-color:var(--teal);color:#08594F;background:var(--teal-claro)}
+@media (max-width:760px){.antes-depois{grid-template-columns:1fr}.antes-depois .seta{transform:rotate(90deg);margin:0 auto}}
+/* dica ao passar o mouse */
+#dica{position:fixed;z-index:50;max-width:360px;background:var(--navy);color:#EAF1F9;border-radius:8px;padding:10px 12px;
+  font-size:12.5px;line-height:1.5;white-space:pre-line;pointer-events:none;box-shadow:0 6px 22px rgba(13,40,71,.25);display:none}
+#dica b{color:#fff}
+[data-tip]{cursor:help}
+a[data-tip]{cursor:pointer}
+.g4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.tab.pilha,.tab.pilha tbody{display:block}
+.tab.pilha thead{display:none}
+.tab.pilha tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 14px;border-bottom:1px solid var(--linha);padding:12px 16px}
+.tab.pilha td{display:flex;flex-direction:column;gap:2px;border:0;padding:0!important;text-align:left!important;min-width:0}
+.tab.pilha td::before{content:attr(data-label);color:var(--suave);font-size:12px}
+.tab.pilha td.quebra{grid-column:1/-1}
+.tab.pilha td.vazio{grid-column:1/-1}
+.tab.pilha .quebra{max-width:none}
+.tab.pilha td>*{align-self:flex-start}
+.ed{width:100%;border:1px solid var(--linha-forte);border-radius:7px;padding:6px 8px;background:#fff}
+.ed:focus{border-color:var(--azul);outline:0}
+.ed.cod-ed{font-family:var(--mono);max-width:110px}
+.icone-btn{background:none;border:1px solid transparent;border-radius:6px;cursor:pointer;color:var(--suave);padding:4px;display:inline-flex}
+.icone-btn:hover{color:var(--vermelho);border-color:var(--linha)}
+
+@media (max-width:1180px){
+  .app{grid-template-columns:72px 1fr}
+  .marca span,.nav a span,.nav a .cont,.inteligencia{display:none}
+  .marca{justify-content:center;padding:20px 0 24px}
+  .nav{padding:0 10px}.nav a{justify-content:center;padding:11px 0}
+  .g21{grid-template-columns:1fr}.formatos{display:none}
+}
+@media (max-width:760px){
+  .marca span,.nav a span{display:inline}.nav a{justify-content:flex-start;padding:10px 12px}.marca{justify-content:flex-start;padding:22px 20px 26px}
+  .migalhas span,.migalhas a{display:none}
+  .app{grid-template-columns:1fr}
+  .lateral{position:fixed;inset:0 auto 0 0;width:240px;z-index:25;transform:translateX(-100%);transition:transform .2s}
+  .lateral.aberta{transform:none}
+  .menu-mob{display:flex;background:none;border:0;cursor:pointer;color:var(--navy)}
+  .conteudo{padding:18px 16px 40px}.topo{padding:0 16px}
+  .zona{flex-direction:column;align-items:flex-start}.zona .div{display:none}
+  .empresa select{max-width:150px}.kv{grid-template-columns:110px 1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="lateral" id="lateral">
+    <div class="marca">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M7 21h10M5 7h14M5 7l-3 7a3.5 3.5 0 0 0 6 0L5 7zM19 7l-3 7a3.5 3.5 0 0 0 6 0l-3-7"/></svg>
+      <span>Facilitador<br>Fiscal</span>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="inteligencia" id="intel"></div>
+  </aside>
+  <div class="principal">
+    <header class="topo">
+      <button class="menu-mob" aria-label="Abrir menu" onclick="document.getElementById('lateral').classList.toggle('aberta')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="migalhas" id="migalhas"></div>
+      <div class="direita">
+        <a class="sino" href="#/validacoes" title="Pontos para revisar" id="sino"></a>
+        <div class="empresa" id="empresa"></div>
+      </div>
+    </header>
+    <main class="conteudo" id="conteudo"></main>
+  </div>
+</div>
+<div class="gaveta" id="gaveta" role="dialog" aria-label="Detalhes do cenário"></div>
+<div class="toast" id="toast"></div>
+<div id="dica" role="tooltip"></div>
+
+<script>
+/* ═══════════════════ utilitários ═══════════════════ */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => (typeof n === "number" ? n.toLocaleString("pt-BR") : esc(n));
+const itens = n => `${fmt(n)} ${n === 1 ? "item" : "itens"}`;
+const ICON = {
+  home:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
+  upload:'<path d="M16 16l-4-4-4 4"/><path d="M12 12v9"/><path d="M20.4 18.4A5 5 0 0 0 18 9h-1.3A8 8 0 1 0 4 16.3"/>',
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  file:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/>',
+  db:'<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  sliders:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  code:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M10 13l-2 2 2 2M14 13l2 2-2 2"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  check:'<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
+  alerta:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  box:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/>',
+  users:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.4.6 4 2.9 4 6"/>',
+  arrows:'<path d="M4 7h14l-3-3M20 17H6l3 3"/>',
+  percent:'<path d="M19 5L5 19"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/>',
+  book:'<path d="M4 4h6a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-6a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h7z"/>',
+  tag:'<path d="M3 12V3h9l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  download:'<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
+  folder:'<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>',
+  building:'<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3"/>',
+  arrowR:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+};
+const ic = (n, s = 18, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+const FAM = t => ({ICMS:"f-icms",ICMSST:"f-icms",DIFAL:"f-icms",FECPIC:"f-icms",FECPST:"f-icms",FCPDIF:"f-icms",IPI:"f-ipi",PIS:"f-pc",COF:"f-pc",IBSEST:"f-ibs",IBSMUN:"f-ibs",CBSFED:"f-ibs"}[t] || "f-cad");
+const dicaDe = c => { const t = S.cache.dic && S.cache.dic[c]; return t ? ` data-tip="${esc(t)}"` : ""; };
+const codRegra = (cod, trib) => cod ? `<a class="cod ${FAM(trib)}" href="#/regra/${encodeURIComponent(cod)}"${dicaDe(cod)}>${esc(cod)}</a>` : '<span class="muted">—</span>';
+const cod = (c, cls = "f-cad") => c ? `<span class="cod ${cls}"${dicaDe(c)}${dicaDe(c) ? ' tabindex="0"' : ""}>${esc(c)}</span>` : "";
+const selo = (st, codigo) => st === "Revisar"
+  ? (codigo ? `<a class="selo rev" href="#/corrigir/regra/${encodeURIComponent(codigo)}" data-tip="Abrir os itens divergentes para corrigir">${ic("alerta",13,2)} Revisar</a>` : `<span class="selo rev">${ic("alerta",13,2)} Revisar</span>`)
+  : `<span class="selo ok">${ic("check",13,2)} Identificado</span>`;
+
+const chave = ch => ch ? `<span class="peq" title="${esc(ch)}" style="white-space:nowrap">${esc(ch.slice(0, 6))}…${esc(ch.slice(-8))}</span> <button class="link-acao peq" data-copiar="${esc(ch)}" title="Copiar chave">${ic("copy",13)}</button>` : "";
+document.addEventListener("click", e => { const b = e.target.closest("[data-copiar]"); if (b) { e.stopPropagation(); copiar(b.dataset.copiar, "Chave copiada."); } });
+(function () {
+  const dica = () => document.getElementById("dica");
+  function mostrar(alvo, x, y) {
+    const t = alvo.getAttribute("data-tip"); if (!t) return;
+    const d = dica(); const linhas = t.split("\n");
+    d.innerHTML = `<b>${esc(linhas[0])}</b>` + (linhas.length > 1 ? "\n" + esc(linhas.slice(1).join("\n")) : "");
+    d.style.display = "block";
+    const w = d.offsetWidth, h = d.offsetHeight;
+    d.style.left = Math.max(8, Math.min(x + 14, innerWidth - w - 8)) + "px";
+    d.style.top = (y + 18 + h > innerHeight ? y - h - 12 : y + 18) + "px";
+  }
+  document.addEventListener("mousemove", e => { const a = e.target.closest && e.target.closest("[data-tip]"); if (a) mostrar(a, e.clientX, e.clientY); else dica().style.display = "none"; });
+  document.addEventListener("focusin", e => { const a = e.target.closest && e.target.closest("[data-tip]"); if (a) { const r = a.getBoundingClientRect(); mostrar(a, r.left, r.bottom - 10); } });
+  document.addEventListener("focusout", () => dica().style.display = "none");
+  document.addEventListener("scroll", () => dica().style.display = "none", true);
+})();
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 2600); }
+async function api(caminho, opc = {}) {
+  const r = await fetch(caminho, opc);
+  const j = await r.json().catch(() => ({erro: "Resposta inválida do servidor"}));
+  if (!r.ok) throw new Error(j.erro || r.statusText);
+  return j;
+}
+const post = (c, corpo) => api(c, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo || {})});
+function copiar(txt, msg = "Copiado.") { navigator.clipboard.writeText(txt).then(() => toast(msg), () => toast("Não foi possível copiar.")); }
+
+/* ═══════════════════ estado ═══════════════════ */
+const S = {status: null, cache: {}, tarefaAnterior: null};
+const limparCache = () => S.cache = {};
+async function dado(nome, caminho) { if (!S.cache[nome]) S.cache[nome] = await api(caminho); return S.cache[nome]; }
+
+/* ═══════════════════ tabela reutilizável ═══════════════════ */
+function tabela(el, {colunas, linhas, celula, aoClicar, busca = true, limite = 300, vazio = "Nada para mostrar.", extra = "", empilhar = true, fixa = false}) {
+  const st = {q: "", ord: null, dir: 1, lim: limite, sel: -1};
+  el.innerHTML = `${busca || extra ? `<div class="barra-tab">${busca ? `<label class="busca">${ic("search",16)}<input placeholder="Buscar" aria-label="Buscar"></label>` : ""}${extra}</div>` : ""}
+    <div class="tab-wrap"><table class="tab ${fixa ? "fixa1" : ""}"><thead><tr>${colunas.map((c, i) => `<th data-i="${i}" class="${c.num ? "num" : ""}">${esc(c.t || c)}</th>`).join("")}</tr></thead><tbody></tbody></table></div>
+    <div class="rodape-tab"></div>`;
+  const tb = $("tbody", el), rod = $(".rodape-tab", el);
+  const texto = l => (Array.isArray(l) ? l : Object.values(l)).map(v => typeof v === "object" && v ? JSON.stringify(v) : v).join(" ").toLowerCase();
+  function desenhar() {
+    let ls = linhas.map((l, i) => [l, i]);
+    if (st.q) ls = ls.filter(([l]) => texto(l).includes(st.q));
+    if (st.ord !== null) {
+      const k = colunas[st.ord].k ?? st.ord;
+      ls.sort((a, b) => { const x = (Array.isArray(a[0]) ? a[0][k] : a[0][k]), y = (Array.isArray(b[0]) ? b[0][k] : b[0][k]);
+        const nx = parseFloat(String(x).replace(/\./g, "").replace(",", ".")), ny = parseFloat(String(y).replace(/\./g, "").replace(",", "."));
+        return (!isNaN(nx) && !isNaN(ny) ? nx - ny : String(x).localeCompare(String(y), "pt-BR")) * st.dir; });
+    }
+    const vis = ls.slice(0, st.lim);
+    tb.innerHTML = vis.length ? vis.map(([l, i]) => `<tr data-i="${i}" class="${aoClicar ? "clic" : ""} ${i === st.sel ? "sel" : ""}">${colunas.map((c, j) => `<td data-label="${esc(c.t || c)}" class="${c.num ? "num" : ""} ${c.quebra ? "quebra" : ""}">${celula ? celula(l, j, c) : fmt(Array.isArray(l) ? l[j] : l[c.k])}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${colunas.length}" class="vazio">${esc(vazio)}</td></tr>`;
+    rod.innerHTML = `${fmt(ls.length)} de ${fmt(linhas.length)} registro(s)` + (ls.length > st.lim ? ` · mostrando ${fmt(st.lim)} <button class="btn mini">Mostrar mais</button>` : "");
+    const b = $("button", rod); if (b) b.onclick = () => { st.lim += 500; desenhar(); };
+    ajustar();
+  }
+  const tbl = $("table", el), wrap = $(".tab-wrap", el);
+  function ajustar() {
+    if (!empilhar) return;
+    tbl.classList.remove("pilha");
+    if (wrap.scrollWidth > wrap.clientWidth + 4) tbl.classList.add("pilha");
+  }
+  if (window.ResizeObserver) { let raf; new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(ajustar); }).observe(el); }
+  if (busca) $(".busca input", el).oninput = e => { st.q = e.target.value.trim().toLowerCase(); desenhar(); };
+  el.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const i = +th.dataset.i; st.dir = st.ord === i ? -st.dir : 1; st.ord = i;
+    el.querySelectorAll("th").forEach(x => x.removeAttribute("data-ord")); th.dataset.ord = st.dir > 0 ? "asc" : "desc"; desenhar(); });
+  if (aoClicar) tb.onclick = e => { const tr = e.target.closest("tr[data-i]"); if (!tr || e.target.closest("a,[data-copiar]")) return;
+    st.sel = +tr.dataset.i; desenhar(); aoClicar(linhas[st.sel], st.sel); };
+  desenhar();
+}
+
+/* ═══════════════════ moldura: menu, topo, empresa ═══════════════════ */
+const ROTAS = [["visao","Visão geral","home"],["importar","Importar XML","upload"],["cenarios","Cenários fiscais","grid"],
+  ["regras","Regras F2B","file"],["cadastros","Cadastros-base","db"],["validacoes","Validações","shield"],
+  ["correcoes","Correções","wrench"],["tipos","Tipos de operação","tag"],["regime","Regime dos clientes","building"],["padroes","Padrões","sliders"]];
+function moldura(rota, trilha) {
+  const st = S.status || {};
+  const rail = innerWidth <= 1180 && innerWidth > 760;
+  $("#nav").innerHTML = ROTAS.map(([r, n, i], k) => (k === 7 ? '<div class="sep"></div>' : "") +
+    `<a href="#/${r}" class="${rota === r ? "ativo" : ""}" aria-label="${n}"${rail ? ` data-tip="${n}"` : ""}>${ic(i, 19)}<span>${n}</span></a>`).join("");
+  $("#migalhas").innerHTML = `<a href="#/visao">Início</a>` + trilha.map((t, i) => ` <span>›</span> ` +
+    (i < trilha.length - 1 && t[1] ? `<a href="${t[1]}">${esc(t[0])}</a>` : `<b>${esc(t[0])}</b>`)).join("");
+  const v = S.cache.visao;
+  const rev = v ? v.kpis.revisar : 0;
+  $("#sino").innerHTML = ic("bell", 20) + (rev ? `<span class="bolinha">${rev}</span>` : "");
+  const emis = st.emitentes || [];
+  const nome = st.nome || (emis[0] && emis[0].nome) || "";
+  $("#empresa").innerHTML = `<span class="ini">${esc((nome || "FF").split(/\s+/).slice(0, 2).map(x => x[0]).join("").toUpperCase())}</span>` +
+    (emis.length ? `<select id="selEmp" aria-label="CNPJ analisado">${emis.map(e => `<option value="${e.cnpj}" ${e.cnpj === st.cnpj ? "selected" : ""}>${esc(e.cnpj)} · ${esc(e.nome)}</option>`).join("")}</select>`
+      : `<span class="muted peq" style="padding-right:10px">Nenhum XML importado</span>`);
+  const sel = $("#selEmp"); if (sel) sel.onchange = () => gerar(sel.value);
+  const pct = v ? v.kpis.correto_pct : 0;
+  $("#intel").innerHTML = v ? `<b>${ic("bolt",14)} Inteligência fiscal</b>${String(pct).replace(".", ",")}% dos itens acionam exatamente uma regra correta.<div class="barra"><i style="width:${pct}%"></i></div>`
+    : `<b>${ic("bolt",14)} Inteligência fiscal</b>Importe os XMLs de saída para gerar regras e cadastros.`;
+  $("#lateral").classList.remove("aberta");
+}
+
+/* ═══════════════════ ações ═══════════════════ */
+function opcoesAtuais() {
+  const st = S.status || {};
+  const o = st.opcoes || {};
+  return {agrupar: S.agrupar ?? (st.padroes_opcoes?.agrupar ?? true), separar: S.separar ?? (st.padroes_opcoes?.separar ?? false),
+          aliq_ncm: S.aliqNcm ?? (o.aliq_ncm || st.aliq_ncm_padrao || [])};
+}
+async function gerar(cnpj) {
+  try { await post("/api/gerar", {cnpj, ...opcoesAtuais()}); limparCache(); acompanhar(); }
+  catch (e) { toast(e.message); }
+}
+async function atualizarStatus() { S.status = await api("/api/status"); return S.status; }
+let _poll = null;
+function acompanhar() {
+  clearInterval(_poll);
+  _poll = setInterval(async () => {
+    const st = await atualizarStatus().catch(() => null); if (!st) return;
+    const t = st.status.tarefa;
+    const barra = $("#progresso"); if (barra) { barra.style.width = Math.round((st.status.prog || 0) * 100) + "%"; $("#progMsg").textContent = st.status.msg || ""; }
+    if (!t) {
+      clearInterval(_poll);
+      if (st.status.erro) toast("Erro: " + st.status.erro);
+      else if (S.tarefaAnterior === "gerando cenários") { toast("Cenários gerados."); limparCache(); location.hash = "#/visao"; }
+      else if (S.tarefaAnterior === "correcao") { toast("Reprocessado com as correções."); limparCache(); location.hash = "#/correcoes"; }
+      else if (S.tarefaAnterior === "regime") { toast("Reprocessado com o regime dos clientes."); limparCache(); }
+      else if (S.tarefaAnterior && S.tarefaAnterior.startsWith("importando")) toast(`${fmt(st.docs)} NF-e na memória.`);
+      S.tarefaAnterior = null; render();
+    } else if (!["correcao", "regime"].includes(S.tarefaAnterior)) S.tarefaAnterior = t;
+  }, 700);
+}
+
+/* ═══════════════════ telas ═══════════════════ */
+function telaVazia(titulo = "Nenhuma análise gerada", texto = "Importe os XMLs de saída e gere os cenários para ver os resultados aqui.") {
+  return `<div class="card"><div class="vazio">${ic("code", 40, 1.4)}<h3>${titulo}</h3><p>${texto}</p><a class="btn prim" href="#/importar">${ic("upload",16)} Importar XMLs</a></div></div>`;
+}
+
+function zonaImportacao(compacta) {
+  return `<div class="zona" id="zona">
+    <div class="icone">${ic("code", 30, 1.5)}</div><div class="div"></div>
+    <div><h3>Importar XMLs de NF-e</h3><div class="muted" style="margin:2px 0 12px">Arraste arquivos, pastas ou ZIPs aqui, ou selecione</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="btn prim">${ic("folder",16)} Selecionar arquivos<input type="file" id="inArq" multiple accept=".xml,.zip" hidden></label>
+        <label class="btn">${ic("folder",16)} Selecionar pasta<input type="file" id="inPasta" webkitdirectory hidden></label>
+        ${compacta ? "" : ""}
+      </div></div>
+    <div class="formatos">${ic("info",18)}<div><b>Formatos aceitos</b><br>NF-e e NFC-e (XML ou procNFe), eventos de cancelamento e arquivos ZIP com XMLs.</div></div>
+  </div>`;
+}
+function ligarZona() {
+  const z = $("#zona"); if (!z) return;
+  $("#inArq").onchange = e => enviar([...e.target.files]);
+  $("#inPasta").onchange = e => enviar([...e.target.files]);
+  z.ondragover = e => { e.preventDefault(); z.classList.add("arrastando"); };
+  z.ondragleave = () => z.classList.remove("arrastando");
+  z.ondrop = async e => {
+    e.preventDefault(); z.classList.remove("arrastando");
+    const itens = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+    const arqs = [];
+    async function ler(ent) {
+      if (ent.isFile) { const f = await new Promise(r => ent.file(r)); arqs.push(f); }
+      else if (ent.isDirectory) { const rd = ent.createReader(); let lote;
+        do { lote = await new Promise(r => rd.readEntries(r)); for (const x of lote) await ler(x); } while (lote.length); }
+    }
+    for (const it of itens) await ler(it);
+    enviar(arqs.length ? arqs : [...e.dataTransfer.files]);
+  };
+}
+async function enviar(arquivos) {
+  arquivos = arquivos.filter(f => /\.(xml|zip)$/i.test(f.name));
+  if (!arquivos.length) return toast("Selecione arquivos .xml ou .zip.");
+  if (location.hash !== "#/importar") location.hash = "#/importar";
+  const enc = new TextEncoder(); let i = 0, lote = 0;
+  const total = arquivos.length;
+  while (i < total) {
+    const partes = []; let bytes = 0;
+    while (i < total && (bytes < 24e6 || !partes.length) && partes.length < 4500) {
+      const f = arquivos[i++], nome = enc.encode(f.webkitRelativePath || f.name);
+      const cab = new DataView(new ArrayBuffer(4)); cab.setUint32(0, nome.length);
+      const tam = new DataView(new ArrayBuffer(8)); tam.setUint32(0, Math.floor(f.size / 4294967296)); tam.setUint32(4, f.size >>> 0);
+      partes.push(cab.buffer, nome, tam.buffer, f); bytes += f.size;
+    }
+    lote++;
+    const p = $("#progresso"); if (p) { p.style.width = Math.round(i / total * 100) + "%"; $("#progMsg").textContent = `Enviando ${fmt(i)} de ${fmt(total)} arquivo(s)…`; }
+    try { await api("/api/upload", {method: "POST", body: new Blob(partes)}); }
+    catch (e) { toast(e.message); break; }
+  }
+  await atualizarStatus(); S.tarefaAnterior = S.status.status.tarefa; acompanhar(); render();
+}
+
+/* ── Janela: quais impostos terão a alíquota pela NCM ── */
+const GRUPOS_NCM = [["ICMS e derivados", ["ICMS", "ICMSST", "DIFAL", "FECP", "FECPST", "FECPDF"]], ["IPI", ["IPI"]],
+  ["PIS e COFINS", ["PIS", "COF"]], ["IBS e CBS", ["IBSEST", "IBSMUN", "CBSFED"]]];
+function janela(html) {
+  const f = document.createElement("div"); f.className = "fundo-janela";
+  f.innerHTML = `<div class="janela" role="dialog" aria-modal="true">${html}</div>`;
+  document.body.appendChild(f);
+  const fechar = () => f.remove();
+  f.addEventListener("click", e => { if (e.target === f) fechar(); });
+  document.addEventListener("keydown", function esc_(e) { if (e.key === "Escape") { fechar(); document.removeEventListener("keydown", esc_); } });
+  return {el: f, fechar};
+}
+function perguntarNcm({gerarCnpj = null, depois = null} = {}) {
+  const st = S.status, tribs = st.tributos || [], nome = Object.fromEntries(tribs.map(t => [t.chave, t.nome]));
+  let sel = new Set(opcoesAtuais().aliq_ncm);
+  const existe = k => tribs.some(t => t.chave === k);
+  const j = janela(`<div class="cab"><h2>${ic("percent",20)} Alíquota pela NCM ou fixa?</h2><button class="fechar" aria-label="Fechar">${ic("x",20)}</button></div>
+    <div class="corpo">
+      <p class="muted" style="margin:0 0 12px">Marque os impostos cuja alíquota será informada pela <b>regra de NCM</b> (NCM × origem × UF origem × UF destino × CEST). Assim uma única regra fiscal atende várias alíquotas. Os desmarcados ficam com <b>alíquota fixa</b> na regra: cada alíquota diferente (4%, 7%, 12%…) vira uma regra própria.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="filtro" data-pre="todos">Todos pela NCM</button><button class="filtro" data-pre="principais">ICMS, IPI e PIS/COFINS</button><button class="filtro" data-pre="nenhum">Nenhum (tudo fixo)</button></div>
+      <div class="grupos-ncm">${GRUPOS_NCM.map(([g, ks]) => { const ex = ks.filter(existe); if (!ex.length) return "";
+        return `<div class="grupo-ncm"><label class="g-tit"><input type="checkbox" data-grupo="${esc(g)}"> <b>${esc(g)}</b> <span class="selo cinza peq efeito" data-ef="${esc(g)}"></span></label>
+          <div class="tribs">${ex.map(k => `<label><input type="checkbox" data-t="${k}"> ${esc(nome[k])}</label>`).join("")}</div></div>`; }).join("")}</div>
+      <label class="opcao" style="margin-top:10px"><input type="checkbox" id="lembrarNcm" checked><span><b>Guardar esta escolha nos padrões</b><br><span class="muted peq">Fica gravada no padroes_configurador.md e vem marcada nas próximas importações.</span></span></label>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn" data-cancelar>Cancelar</button>
+        <button class="btn prim" data-ok>${ic(gerarCnpj ? "bolt" : "check",16)} ${gerarCnpj ? "Confirmar e gerar cenários" : "Salvar escolha"}</button></div>
+    </div>`);
+  const r = j.el;
+  const desenhar = () => {
+    r.querySelectorAll("[data-t]").forEach(x => x.checked = sel.has(x.dataset.t));
+    GRUPOS_NCM.forEach(([g, ks]) => { const ex = ks.filter(existe), n = ex.filter(k => sel.has(k)).length;
+      const cb = r.querySelector(`[data-grupo="${g}"]`), ef = r.querySelector(`[data-ef="${g}"]`); if (!cb) return;
+      cb.checked = n === ex.length; cb.indeterminate = n > 0 && n < ex.length;
+      ef.textContent = n === ex.length ? "pela NCM" : n ? "parte pela NCM" : "alíquota fixa"; ef.className = "selo peq efeito " + (n ? "info" : "cinza"); });
+  };
+  r.querySelectorAll("[data-t]").forEach(x => x.onchange = () => { x.checked ? sel.add(x.dataset.t) : sel.delete(x.dataset.t); desenhar(); });
+  r.querySelectorAll("[data-grupo]").forEach(x => x.onchange = () => { const ks = GRUPOS_NCM.find(g => g[0] === x.dataset.grupo)[1].filter(existe);
+    ks.forEach(k => x.checked ? sel.add(k) : sel.delete(k)); desenhar(); });
+  r.querySelectorAll("[data-pre]").forEach(b => b.onclick = () => {
+    const p = b.dataset.pre;
+    sel = new Set(p === "todos" ? tribs.map(t => t.chave) : p === "nenhum" ? [] : ["ICMS", "ICMSST", "DIFAL", "FECP", "FECPST", "FECPDF", "IPI", "PIS", "COF"].filter(existe));
+    desenhar(); });
+  r.querySelector(".fechar").onclick = r.querySelector("[data-cancelar]").onclick = j.fechar;
+  r.querySelector("[data-ok]").onclick = async () => {
+    const escolha = tribs.map(t => t.chave).filter(k => sel.has(k)), o = opcoesAtuais();
+    S.aliqNcm = escolha;
+    try {
+      const res = await post("/api/opcoes", {aliq_ncm: escolha, agrupar: o.agrupar, separar: o.separar, salvar: r.querySelector("#lembrarNcm").checked});
+      await atualizarStatus();
+      j.fechar();
+      if (res.salvo) toast("Escolha guardada nos padrões.");
+      if (depois) depois();
+      if (gerarCnpj) { S.tarefaAnterior = "gerando cenários"; const b = $("#btGerar"); if (b) b.disabled = true; gerar(gerarCnpj); }
+    } catch (e) { toast(e.message); }
+  };
+  desenhar();
+}
+
+/* ── Visão geral ── */
+async function vVisao(el) {
+  const st = S.status;
+  if (!st.gerado) { el.innerHTML = `<h1>Facilitador Fiscal</h1><div class="sub">Transforme XMLs em configurações tributárias</div>${zonaImportacao()}<div class="mt">${telaVazia()}</div>`; ligarZona(); return; }
+  const v = await dado("visao", "/api/visao"), k = v.kpis;
+  const porTrib = Object.entries(k.regras_por_tributo).map(([t, q]) => `${t} ${q}`).join(" · ");
+  el.innerHTML = `<h1>Facilitador Fiscal</h1><div class="sub">Transforme XMLs em configurações tributárias</div>
+    ${zonaImportacao(true)}
+    <div class="grade g4 mt">
+      <div class="card kpi"><div class="ic ic-navy">${ic("file",20)}</div><div><div class="rot">XMLs analisados</div><div class="num">${fmt(k.xmls)}</div><div class="det">${fmt(k.itens)} itens · ${fmt(k.docs_total)} XMLs importados</div></div></div>
+      <div class="card kpi"><div class="ic ic-azul">${ic("chart",20)}</div><div><div class="rot">Cenários identificados</div><div class="num">${fmt(k.cenarios)}</div><div class="det">CFOP, finalidade, UF, participante e produto</div></div></div>
+      <div class="card kpi"><div class="ic ic-teal">${ic("check",20)}</div><div><div class="rot">Regras sugeridas</div><div class="num">${fmt(k.regras)}</div><div class="det" title="${esc(porTrib)}">${k.duplicidades ? fmt(k.duplicidades) + " duplicidade(s)" : "Sem duplicidade"} · ${String(k.correto_pct).replace(".", ",")}% corretas</div></div></div>
+      <a class="card kpi" href="#/validacoes" style="color:inherit;text-decoration:none"><div class="ic ic-ambar">${ic("alerta",20)}</div><div><div class="rot">Pontos para revisar</div><div class="num">${fmt(k.revisar)}</div><div class="det">${fmt(k.revisar_conflitos)} conflito(s) no XML · ${fmt(k.revisar_divergencias)} regra(s) do padrão com divergência</div></div></a>
+    </div>
+    <div class="card mt"><div class="cab"><h2>${ic("file",18)} Principais regras sugeridas</h2><a class="acao" href="#/regras">Ver todas</a></div><div id="tPrinc"></div></div>
+    <div class="grade g21 mt">
+      <div class="card"><div class="cab"><h2>${ic("sliders",18)} De que cada tributo depende</h2></div><div id="tDep"></div></div>
+      <div class="card"><div class="cab"><h2>${ic("db",18)} Cadastros necessários</h2><a class="acao" href="#/cadastros">Abrir cadastros</a></div><div class="corpo">
+        <div class="kv">${[["Perfis de produto", v.cadastros.perfis_produto], ["Perfis de participante", v.cadastros.perfis_participante], ["Origem/destino", v.cadastros.origem_destino],
+          ["Perfis de operação", v.cadastros.perfis_operacao], ["Tipos de operação", v.cadastros.tipos_operacao], ["Bases (F27)", v.cadastros.bases],
+          ["Alíquotas (F28)", v.cadastros.aliquotas], ["Alíquotas por NCM/UF", v.cadastros.aliquotas_ncm], ["Escrituração (CJ2)", v.cadastros.escrituracao]]
+          .map(([a, b]) => `<div>${a}</div><div><b>${fmt(b)}</b></div>`).join("")}</div>
+        <p class="muted peq" style="margin:12px 0 0">Alíquota por regra de NCM: ${v.aliq_ncm.length ? v.aliq_ncm.map(t => cod(t, FAM(t))).join(" ") : "nenhum tributo"}.</p></div></div>
+    </div>`;
+  ligarZona();
+  tabela($("#tPrinc"), {busca: false, colunas: ["Tributo", "Cenário", "Código sugerido", {t: "Itens", num: 1}, "Status", "Ações"], linhas: v.principais,
+    celula: (r, j) => [esc(r.F2B_TRIB), `<span class="quebra">${esc(r.F2B_DESC.split(" | ").slice(1).join(" | "))}</span>`, codRegra(r.F2B_REGRA, r.F2B_TRIB), fmt(r.Itens), selo(r.status, r.F2B_REGRA),
+      `<a class="link-acao" href="#/regra/${encodeURIComponent(r.F2B_REGRA)}">${ic("eye",15)} Detalhes</a>`][j]});
+  tabela($("#tDep"), {busca: false, colunas: ["Tributo", "Separa regras por", {t: "Regras", num: 1}], linhas: v.dependencias,
+    celula: (d, j) => [cod(d.tributo, FAM(d.tributo)), `<div class="depende">${d.depende.length ? d.depende.map(x => `<span class="selo cinza">${esc(x)}${x === "UF" && d.uf_cada ? " (uma por UF)" : ""}</span>`).join("") : '<span class="muted">nada: regra única</span>'}</div>`, fmt(d.regras)][j]});
+}
+
+/* ── Importar XML ── */
+function vImportar(el) {
+  const st = S.status, t = st.status.tarefa, o = opcoesAtuais();
+  const tribs = st.tributos || [];
+  el.innerHTML = `<h1>Importar XML</h1><div class="sub">Selecione os XMLs de saída e escolha o CNPJ emitente para gerar os cenários</div>
+    ${zonaImportacao()}
+    <div class="card mt"><div class="corpo">
+      <b>Pasta grande no computador?</b> <span class="muted">Para dezenas de milhares de XMLs, informe o caminho: a leitura é feita direto no disco, sem envio.</span>
+      <div class="campo mt"><input id="cam" placeholder="Ex.: C:\\XML_CLIENTE\\2026  ou  C:\\XML_CLIENTE\\notas.zip"><button class="btn" id="btCam">${ic("folder",16)} Ler pasta</button></div>
+      <div class="progresso"><i id="progresso" style="width:${t ? Math.round(st.status.prog * 100) : (st.docs ? 100 : 0)}%"></i></div>
+      <div class="muted peq mt" id="progMsg">${t ? esc(st.status.msg) : st.docs ? `${fmt(st.docs)} NF-e na memória · ${fmt(st.stats.cancelamentos || 0)} cancelamento(s) · ${fmt(st.stats.repetidas || 0)} repetida(s) · ${fmt(st.stats.erros || 0)} com erro` : "Nenhum XML importado."}</div>
+    </div></div>
+    <div class="grade g21 mt">
+      <div class="card"><div class="cab"><h2>${ic("users",18)} CNPJ emitente</h2><button class="btn mini acao" id="btLimpar" ${st.docs ? "" : "disabled"}>Limpar memória</button></div><div id="tEmit"></div></div>
+      <div class="card"><div class="cab"><h2>${ic("sliders",18)} Opções da geração</h2></div><div class="corpo">
+        <div class="opcao"><span style="flex:1"><b>Alíquota informada pela NCM</b><br><span class="muted peq" id="resumoNcm"></span></span>
+          <button class="btn mini" id="btNcm" type="button">Alterar</button></div>
+        <label class="opcao"><input type="checkbox" id="opAgr" ${o.agrupar ? "checked" : ""}><span><b>Agrupar ao máximo</b><br><span class="muted peq">Menos regras, com perfis mais amplos, sem criar duplicidade.</span></span></label>
+        <label class="opcao"><input type="checkbox" id="opSep" ${o.separar ? "checked" : ""}><span><b>Separar ICMS por participante</b><br><span class="muted peq">PF/PJ, contribuinte e não contribuinte em regras próprias, mesmo quando o XML não exige.</span></span></label>
+        <button class="btn prim mt" id="btGerar" ${st.emitentes.length && !t ? "" : "disabled"}>${ic("bolt",16)} Gerar cenários</button>
+      </div></div>
+    </div>`;
+  ligarZona();
+  let escolhido = st.cnpj || (st.emitentes[0] && st.emitentes[0].cnpj);
+  tabela($("#tEmit"), {busca: st.emitentes.length > 8, colunas: ["", "CNPJ", "Razão social", {t: "Notas de saída", num: 1}], linhas: st.emitentes,
+    vazio: "Importe XMLs para listar os emitentes.",
+    celula: (e, j) => [`<input type="radio" name="emit" value="${e.cnpj}" ${e.cnpj === escolhido ? "checked" : ""} aria-label="Escolher ${esc(e.cnpj)}">`, `<span class="cod">${esc(e.cnpj)}</span>`, esc(e.nome), fmt(e.notas)][j],
+    aoClicar: e => { escolhido = e.cnpj; const r = el.querySelector(`input[value="${e.cnpj}"]`); if (r) r.checked = true; }});
+  el.querySelectorAll('input[name="emit"]').forEach(r => r.onchange = () => escolhido = r.value);
+  const resumoNcm = () => { const sel = opcoesAtuais().aliq_ncm, nomes = tribs.filter(t => sel.includes(t.chave)).map(t => t.nome);
+    $("#resumoNcm").textContent = !sel.length ? "Nenhum: todas as alíquotas fixas na regra." : sel.length === tribs.length ? "Todos os impostos." : nomes.join(", ") + "; os demais com alíquota fixa."; };
+  resumoNcm();
+  const sincronizar = () => { S.agrupar = $("#opAgr").checked; S.separar = $("#opSep").checked; };
+  ["#opAgr", "#opSep"].forEach(s => $(s).onchange = sincronizar);
+  $("#btNcm").onclick = () => perguntarNcm({gerarCnpj: null, depois: resumoNcm});
+  $("#btGerar").onclick = () => { sincronizar(); perguntarNcm({gerarCnpj: escolhido}); };
+  $("#btCam").onclick = async () => { try { await post("/api/importar-caminho", {caminho: $("#cam").value}); S.tarefaAnterior = "importando XMLs"; acompanhar(); } catch (e) { toast(e.message); } };
+  $("#btLimpar").onclick = async () => { try { await post("/api/limpar"); limparCache(); await atualizarStatus(); render(); toast("Memória limpa."); } catch (e) { toast(e.message); } };
+  if (t) acompanhar();
+}
+
+/* ── Cenários ── */
+async function vCenarios(el) {
+  if (!S.status.gerado) { el.innerHTML = `<h1>Cenários fiscais</h1><div class="sub">Combinações encontradas nos XMLs</div>${telaVazia()}`; return; }
+  const c = await dado("cenarios", "/api/cenarios");
+  const tr = c.tributos;
+  el.innerHTML = `<h1>Cenários fiscais</h1><div class="sub">${fmt(c.cenarios.length)} combinações de CFOP, finalidade, UF, participante e produto, e a regra que cada uma aciona em cada tributo</div><div class="card" id="tCen"></div>`;
+  const cols = [{t: "CFOP", k: "cfop"}, {t: "Finalidade", k: "finalidade"}, {t: "UF", k: "uf"}, {t: "Participante", k: "participante"}, {t: "Origem", k: "origem"},
+    {t: "Itens", k: "itens", num: 1}, ...tr.map(t => ({t: t.nome, k: "r_" + t.trib}))];
+  const linhas = c.cenarios.map(x => ({...x, ...Object.fromEntries(tr.map(t => ["r_" + t.trib, x.regras[t.trib]]))}));
+  tabela($("#tCen"), {colunas: cols, linhas, limite: 200,
+    celula: (x, j, col) => col.k.startsWith("r_") ? codRegra(x[col.k], col.k.slice(2)) : col.k === "cfop" ? `<span class="cod">${esc(x.cfop)}</span>` : fmt(x[col.k]),
+    aoClicar: x => abrirGaveta(x, tr)});
+}
+async function abrirGaveta(x, tr) {
+  const rg = (await dado("regras", "/api/regras")).regras; const mapa = Object.fromEntries(rg.map(r => [r.F2B_REGRA, r]));
+  const g = $("#gaveta");
+  g.innerHTML = `<div class="cab"><div><h2>${ic("grid",18)} Cenário CFOP ${esc(x.cfop)} · ${esc(x.uf)}</h2>
+      <div class="muted peq">${esc(x.finalidade)} · ${esc(x.participante)} · origem ${esc(x.origem)}</div></div>
+      <button class="fechar" aria-label="Fechar" onclick="document.getElementById('gaveta').classList.remove('aberta')">${ic("x",20)}</button></div>
+    <div class="corpo">
+      <div class="kv"><div>Itens</div><div>${fmt(x.itens)} em ${fmt(x.notas)} nota(s)</div><div>Classe IPI</div><div>${esc(x.classe_ipi)}</div>
+        <div>Classe PIS/COFINS</div><div>${esc(x.classe_pc)}</div><div>Classe IBS/CBS</div><div>${esc(x.classe_ibs)}</div>
+        <div>XML de exemplo</div><div>${chave(x.exemplo)}</div></div>
+      <h2 class="mt" style="margin-bottom:10px">Regras acionadas</h2>
+      <div class="lista-regra">${tr.filter(t => x.regras[t.trib]).map(t => { const r = mapa[x.regras[t.trib]] || {};
+        return `<span class="muted">${esc(t.nome)}</span><span>${codRegra(x.regras[t.trib], t.trib)}</span><span>${esc(r.F2B_DESC || "")}<br><span class="muted peq">base ${esc(r.F2B_RBASE || "")} · alíquota ${esc(r.F2B_RALIQ || "")} · escrituração ${esc(r.F2B_CODESC || "")}${r.cBenef ? " · cBenef " + esc(r.cBenef) : ""}</span></span>`; }).join("")}</div>
+    </div>`;
+  g.classList.add("aberta");
+}
+
+/* ── Regras F2B ── */
+async function vRegras(el) {
+  if (!S.status.gerado) { el.innerHTML = `<h1>Regras F2B</h1><div class="sub">Regras fiscais sugeridas</div>${telaVazia()}`; return; }
+  const d = await dado("regras", "/api/regras");
+  let filtro = S.filtroTrib || "Todos";
+  el.innerHTML = `<h1>Regras F2B</h1><div class="sub">${fmt(d.regras.length)} regras sugeridas, cada uma com os cadastros que precisa</div>
+    <div class="card"><div class="barra-tab"><div class="visoes" role="group" aria-label="Visão da tabela"><button data-v="compacta">Compacta</button><button data-v="detalhada">Detalhada</button></div>
+      <div class="filtros" id="fTrib">${["Todos", ...d.tributos].map(t => `<button class="filtro ${t === filtro ? "ativo" : ""}" data-t="${t}">${esc(t)}</button>`).join("")}</div>
+      <div style="margin-left:auto;display:flex;gap:8px"><button class="btn mini" id="btCopiar">${ic("copy",14)} Copiar todas (layout F2B)</button>
+      <a class="btn mini" href="/api/exportar-f2b">${ic("download",14)} Exportar CSV</a></div></div><div id="tReg"></div></div>`;
+  const detalhada = () => S.visaoRegras === "detalhada";
+  const dsc = t => t ? `<span class="dsc">${esc(t)}</span>` : "";
+  const desenhar = () => {
+    const linhas = d.regras.filter(r => filtro === "Todos" || r.F2B_TRIB === filtro);
+    const ir = r => location.hash = "#/regra/" + encodeURIComponent(r.F2B_REGRA);
+    if (!detalhada()) return tabela($("#tReg"), {limite: 400, colunas: [{t: "Regra", k: "F2B_REGRA"}, {t: "Tributo", k: "F2B_TRIB"}, {t: "Descrição", k: "F2B_DESC", quebra: 1},
+        {t: "Base", k: "F2B_RBASE"}, {t: "Alíquota", k: "F2B_RALIQ"}, {t: "Orig/dest", k: "F2B_PEROD"}, {t: "Participante", k: "F2B_PERFPA"}, {t: "Operação", k: "F2B_PERFOP"},
+        {t: "Produto", k: "F2B_PERFPR"}, {t: "Escrituração", k: "F2B_CODESC"}, {t: "Itens", k: "Itens", num: 1}, {t: "Status", k: "status"}],
+      linhas, aoClicar: ir,
+      celula: (r, j, c) => c.k === "F2B_REGRA" ? codRegra(r.F2B_REGRA, r.F2B_TRIB) : c.k === "status" ? selo(r.status, r.F2B_REGRA) : c.k === "F2B_DESC" ? esc(r[c.k])
+        : c.k === "F2B_TRIB" ? `<span data-tip="${esc(r.tributo_nome)}">${esc(r.F2B_TRIB)}</span>` : c.k === "Itens" ? fmt(r.Itens) : cod(r[c.k])});
+    tabela($("#tReg"), {limite: 400, empilhar: false, fixa: true, colunas: [{t: "Regra", k: "F2B_REGRA"}, {t: "Tributo", k: "tributo_nome"}, {t: "Descrição", k: "F2B_DESC", quebra: 1},
+        {t: "Base", k: "F2B_RBASE"}, {t: "Descrição da base", k: "d_base"}, {t: "Alíquota", k: "F2B_RALIQ"}, {t: "Descrição da alíquota", k: "d_aliq"},
+        {t: "Orig/dest", k: "F2B_PEROD"}, {t: "Descrição orig/dest", k: "d_od"}, {t: "Participante", k: "F2B_PERFPA"}, {t: "Descrição participante", k: "d_part"},
+        {t: "Operação", k: "F2B_PERFOP"}, {t: "Descrição operação", k: "d_op"}, {t: "Produto", k: "F2B_PERFPR"}, {t: "Descrição produto", k: "d_prod"},
+        {t: "Escrituração", k: "F2B_CODESC"}, {t: "Imposto · CST", k: "esc_cst"}, {t: "Incidência", k: "esc_incide"}, {t: "Ação na nota", k: "esc_acao"},
+        {t: "cBenef", k: "cBenef"}, {t: "Itens", k: "Itens", num: 1}, {t: "Status", k: "status"}],
+      linhas, aoClicar: ir,
+      celula: (r, j, c) => c.k === "F2B_REGRA" ? codRegra(r.F2B_REGRA, r.F2B_TRIB) : c.k === "status" ? selo(r.status, r.F2B_REGRA)
+        : c.k === "F2B_DESC" ? `<span style="display:block;min-width:240px">${esc(r[c.k])}</span>` : c.k === "Itens" ? fmt(r.Itens)
+        : c.k === "tributo_nome" ? `${cod(r.F2B_TRIB, FAM(r.F2B_TRIB))}${dsc(r.tributo_nome)}`
+        : c.k === "esc_cst" ? `<span style="white-space:nowrap">${esc(r.esc_trib)} · CST ${esc(r.esc_cst)}</span>`
+        : c.k.startsWith("d_") || c.k === "esc_incide" || c.k === "esc_acao" ? dsc(r[c.k]) : cod(r[c.k])});
+  };
+  const marcarVisao = () => el.querySelectorAll(".visoes button").forEach(x => x.classList.toggle("ativo", x.dataset.v === (S.visaoRegras || "compacta")));
+  el.querySelectorAll(".visoes button").forEach(x => x.onclick = () => { S.visaoRegras = x.dataset.v; marcarVisao(); desenhar(); });
+  marcarVisao();
+  desenhar();
+  $("#fTrib").onclick = e => { const b = e.target.closest("button"); if (!b) return; filtro = S.filtroTrib = b.dataset.t;
+    el.querySelectorAll(".filtro").forEach(x => x.classList.toggle("ativo", x === b)); desenhar(); };
+  $("#btCopiar").onclick = async () => { const r = await fetch("/api/exportar-f2b"); copiar((await r.text()).replace(/^\ufeff/, ""), "Regras copiadas no layout F2B."); };
+}
+
+function realcarXml(txt) {
+  return txt.split("\n").map(l => {
+    let h = esc(l);
+    if (/^\s*&lt;!--/.test(h)) h = `<span class="c">${h}</span>`;
+    else h = h.replace(/(&lt;\/?)([\w:]+)((?:\s+[\w:]+=&quot;[^&]*?&quot;)*)(\s*\/?&gt;)/g, (m, a, t, at, f) =>
+      `<span class="t">${a}${t}</span>${at.replace(/([\w:]+)=(&quot;[^&]*?&quot;)/g, '<span class="a">$1</span>=<span class="v">$2</span>')}<span class="t">${f}</span>`);
+    return `<span class="l">${h || " "}</span>`;
+  }).join("");
+}
+
+/* ── Detalhe da regra ── */
+async function vRegra(el, codigo) {
+  let d;
+  try { d = await api("/api/regra?cod=" + encodeURIComponent(codigo)); }
+  catch (e) { el.innerHTML = telaVazia("Regra não encontrada", e.message); return; }
+  const r = d.regra, c = d.cadastros, e = c.escrituracao || {};
+  moldura("regras", [["Regras F2B", "#/regras"], ["Detalhes da regra"]]);
+  const linhaCad = (rot, codv, desc, extra = "") => `<div>${rot}</div><div>${cod(codv, FAM(r.F2B_TRIB))} ${esc(desc || "")}${extra}</div>`;
+  el.innerHTML = `<h1 style="display:flex;align-items:center;gap:10px">${ic("file",26,1.6)} Regra sugerida — ${esc(r.F2B_TRIB)} ${selo(r.status)}</h1>
+    <div class="sub">${esc(r.F2B_DESC)}</div>
+    <div class="grade g21">
+      <div class="card"><div class="cab"><h2>Informações da regra</h2><button class="btn mini acao" id="btLinha">${ic("copy",14)} Copiar linha F2B</button></div><div class="corpo"><div class="kv">
+        <div>Código</div><div>${cod(r.F2B_REGRA, FAM(r.F2B_TRIB))}</div><div>Descrição</div><div>${esc(r.F2B_DESC)}</div>
+        ${linhaCad("Base", r.F2B_RBASE, c.base["Descrição"], c.base["Fórmula sugerida"] ? `<div class="muted peq">${esc(c.base["Fórmula sugerida"])}</div>` : "")}
+        ${linhaCad("Alíquota", r.F2B_RALIQ, c.aliquota["Descrição"], c.aliquota["Valor"] ? ` · <b>${esc(c.aliquota["Valor"])}%</b>` : ` · ${esc(c.aliquota["Tipo"] || "")}`)}
+        ${linhaCad("Perfil produto", r.F2B_PERFPR, c.produto["Descrição"])}
+        ${linhaCad("Perfil participante", r.F2B_PERFPA, c.participante["Descrição"], c.participante["Critério sugerido"] ? `<div class="muted peq">${esc(c.participante["Critério sugerido"])}</div>` : "")}
+        ${linhaCad("Origem/destino", r.F2B_PEROD, c.origem_destino["Descrição"], `<div class="muted peq">UFs: ${esc(c.origem_destino["UFs destino"] || "")}</div>`)}
+        ${linhaCad("Perfil operação", r.F2B_PERFOP, c.operacao["Descrição"], `<div class="muted peq">CFOPs: ${esc(c.operacao["CFOPs"] || "")}</div>`)}
+        ${linhaCad("Escrituração", r.F2B_CODESC, `CST ${e.CJ2_CST || ""}`, `<div class="muted peq">INCIDE ${esc(e.CJ2_INCIDE)} (${esc(e["Incidência"] || "")}) · STOTNF ${esc(e.CJ2_STOTNF)} (${esc(e["Ação na nota"] || "")})${e.CJ2_PERDIF ? " · diferimento " + esc(e.CJ2_PERDIF) + "%" : ""}${e["CJ2_CSTCCT (cClassTrib)"] ? " · cClassTrib " + esc(e["CJ2_CSTCCT (cClassTrib)"]) : ""}</div>`)}
+        <div>cBenef</div><div>${r.cBenef ? cod(r.cBenef, FAM(r.F2B_TRIB)) + ' <span class="muted peq">uma regra de ICMS aceita um único código</span>' : '<span class="muted">nenhum</span>'}</div>
+        <div>Itens nos XMLs</div><div>${fmt(r.Itens)}</div>
+      </div></div></div>
+      <div class="card"><div class="cab"><h2>Exemplo de XML</h2><button class="btn mini acao" id="btXml" ${d.xml ? "" : "disabled"}>${ic("copy",14)} Copiar</button></div><div class="corpo">
+        ${d.xml ? `<pre class="xml">${realcarXml(d.xml)}</pre>` : `<div class="muted">XML de origem indisponível (o arquivo foi movido ou a importação foi limpa).<br>Chave: ${esc(r["Exemplo (chave)"])}</div>`}
+      </div></div>
+    </div>
+    <div class="aviso">${ic("alerta",18)}<div><b>Sugestão baseada nos XMLs analisados — valide antes de utilizar.</b>
+      ${r.motivos.length ? `<ul>${r.motivos.map(m => `<li>${esc(m)}</li>`).join("")}</ul><a class="btn mini" style="margin-top:8px" href="#/corrigir/regra/${encodeURIComponent(r.F2B_REGRA)}">${ic("wrench",14)} Corrigir itens divergentes</a>` : `<div>Nenhum conflito encontrado para esta regra em ${fmt(r.Itens)} item(ns).</div>`}</div></div>
+    <div class="card mt"><div class="cab"><h2>Campos da regra (F2B)</h2></div><div id="tCampos"></div>
+      <div class="corpo"><div class="muted peq" style="margin-bottom:6px">Linha para importação</div><div class="linha-csv">${esc(d.linha_csv)}</div></div></div>
+    ${d.aliquotas_ncm.length ? `<div class="card mt"><div class="cab"><h2>${ic("percent",18)} Alíquotas por NCM/UF usadas por ${esc(r.F2B_TRIB)}</h2><span class="muted peq acao">${fmt(d.aliquotas_ncm_total)} linha(s)</span></div><div id="tNcm"></div></div>` : ""}`;
+  tabela($("#tCampos"), {busca: false, colunas: ["Campo", "Valor"], linhas: d.campos, celula: (l, j) => j ? (l[1] === "" ? '<span class="muted">—</span>' : esc(l[1])) : `<span class="cod">${esc(l[0])}</span>`});
+  if (d.aliquotas_ncm.length) tabela($("#tNcm"), {colunas: ["Chave usada", "NCM", "Origem", "UF origem", "UF destino", "CEST", {t: "Alíquota %", num: 1}, {t: "MVA / inter. %", num: 1}, {t: "Itens", num: 1}],
+    linhas: d.aliquotas_ncm.map(l => [l["Chave usada"], l.NCM, l.Origem, l["UF origem"], l["UF destino"], l.CEST, l["Alíquota %"], l["MVA % / Alíq. interestadual %"], l.Itens])});
+  $("#btLinha").onclick = () => copiar(d.linha_csv, "Linha F2B copiada.");
+  if (d.xml) $("#btXml").onclick = () => copiar(d.xml, "XML copiado.");
+}
+
+/* ── Cadastros-base ── */
+const CADS = [["perfis_produto","Perfis de produto","box","F20 · tipo 04"],["perfis_participante","Participantes","users","F20 · tipo 02"],
+  ["origem_destino","Origem/destino","arrows","F20 · tipo 01"],["perfis_operacao","Perfis de operação","tag","F20 · tipo 03"],
+  ["tipos_operacao","Tipos de operação","tag","vinculados às operações"],["bases","Bases de cálculo","db","F27"],["aliquotas","Alíquotas","percent","F28"],
+  ["aliquotas_ncm","Alíquotas por NCM/UF","percent","índice de cálculo"],["escrituracao","Escrituração","book","CJ2"],
+  ["produtos","Produtos","box","produtos × perfis"],["clientes","Clientes","users","clientes × tipo"]];
+async function vCadastros(el, tipo) {
+  if (!S.status.gerado) { el.innerHTML = `<h1>Cadastros-base sugeridos</h1><div class="sub">Perfis e cadastros que devem existir antes das regras</div>${telaVazia()}`; return; }
+  const c = await dado("cadastros", "/api/cadastros");
+  tipo = tipo || "perfis_produto";
+  el.innerHTML = `<h1>Cadastros-base sugeridos</h1><div class="sub">Perfis e cadastros que devem existir antes de cadastrar as regras F2B</div>
+    <div class="grade g3">${CADS.map(([k, n, i, ref]) => { const t = c[k], ex = t.linhas[0];
+      return `<a class="cad ${k === tipo ? "ativo" : ""}" href="#/cadastros/${k}" style="color:inherit;text-decoration:none"><div class="ic">${ic(i,20)}</div>
+        <div style="min-width:0;flex:1"><div style="display:flex;gap:8px;align-items:center"><h4>${n}</h4>${k === "produtos" || k === "clientes" ? `<span class="selo cinza tab-ref">${ref}</span>` : `<span class="selo ok tab-ref">Sugerido</span>`}</div>
+        <div class="qt">${fmt(t.linhas.length)}</div>
+        <div class="ex">${ex ? `${esc(ex[0])} · ${esc(ex[1])}` : "nenhum"}</div><div class="muted peq">${k === "produtos" || k === "clientes" ? "" : ref}</div></div></a>`; }).join("")}</div>
+    <div class="card mt"><div class="cab"><h2>${esc((CADS.find(x => x[0] === tipo) || [, "Cadastro"])[1])}</h2></div><div id="tCad"></div></div>`;
+  const t = c[tipo];
+  tabela($("#tCad"), {colunas: t.colunas.map((x, i) => ({t: x, num: /^(Itens|Notas|Produtos|Clientes)$/.test(x)})), linhas: t.linhas, limite: 300,
+    celula: (l, j) => j === 0 && !/^(produtos|clientes|tipos_operacao)$/.test(tipo) ? cod(l[0]) : fmt(l[j])});
+}
+
+/* ── Validações ── */
+async function vValidacoes(el) {
+  if (!S.status.gerado) { el.innerHTML = `<h1>Validações</h1><div class="sub">Inconsistências, duplicidades e pontos para revisar</div>${telaVazia()}`; return; }
+  const v = await dado("validacoes", "/api/validacoes"), r = v.resumo;
+  const diverg = v.regras_negocio.filter(x => x.divergiu).length;
+  el.innerHTML = `<h1>Validações</h1><div class="sub">Cada item × tributo deve acionar exatamente uma regra, com o mesmo tratamento do XML</div>
+    <div class="grade g4">
+      <div class="card kpi"><div class="ic ic-teal">${ic("check",20)}</div><div><div class="rot">Resultado correto</div><div class="num">${String(r.correto_pct).replace(".", ",")}%</div><div class="det">${fmt(r.ok + r.sem_tributo_ok)} de ${fmt(r.total)} item × tributo</div></div></div>
+      <div class="card kpi"><div class="ic ${r.duplicidades ? "ic-ambar" : "ic-teal"}">${ic("shield",20)}</div><div><div class="rot">Duplicidades</div><div class="num">${fmt(r.duplicidades)}</div><div class="det">itens que acionariam mais de uma regra</div></div></div>
+      <div class="card kpi"><div class="ic ic-ambar">${ic("alerta",20)}</div><div><div class="rot">Conflitos no XML</div><div class="num">${fmt(r.conflitos_cenarios)}</div><div class="det">${fmt(r.conflitos_itens)} item × tributo com tratamento diferente</div></div></div>
+      <div class="card kpi"><div class="ic ic-azul">${ic("book",20)}</div><div><div class="rot">Padrão × XML</div><div class="num">${fmt(diverg)}</div><div class="det">regra(s) do padrão com divergência</div></div></div>
+    </div>
+    ${v.cfop_invalidos && v.cfop_invalidos.length ? `<div class="aviso">${ic("alerta",18)}<div><b>CFOP inválido no XML</b>
+      <ul>${v.cfop_invalidos.map(x => `<li><span class="cod">${esc(x.cfop)}</span> em ${fmt(x.itens)} item(ns): ${esc(x.motivo)} · exemplo ${chave(x.exemplo)}</li>`).join("")}</ul>
+      <div class="peq">Corrija pela tela de divergência da regra correspondente ou ajuste a lista em Padrões → CFOPs inválidos.</div></div></div>` : ""}
+    ${v.alertas_codigos && v.alertas_codigos.length ? `<div class="aviso">${ic("alerta",18)}<div><b>Faixa de códigos</b><ul>${v.alertas_codigos.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div></div>` : ""}
+    <div class="card mt"><div class="cab"><h2>${ic("book",18)} Regras de negócio do padrão aplicadas aos XMLs</h2><a class="acao" href="#/padroes">Editar padrões</a></div><div id="tPx"></div></div>
+    <div class="card mt"><div class="cab"><h2>${ic("alerta",18)} Cenários em que o XML se contradiz</h2></div>
+      <div class="corpo muted peq" style="padding-bottom:0">A regra segue o tratamento da maioria. Confira o minoritário pela chave: pode ser erro do sistema anterior ou um critério que ainda falta no padrão.</div><div id="tConf"></div></div>
+    <div class="card mt"><div class="cab"><h2>${ic("file",18)} Regras que precisam de revisão</h2></div><div id="tRev"></div></div>`;
+  tabela($("#tPx"), {busca: false, colunas: ["Tributo", "Quando", "Então", "Observação", {t: "Itens", num: 1}, {t: "Divergências", num: 1}, "Exemplo", "Situação"], linhas: v.regras_negocio,
+    celula: (x, j) => [cod(x.tributo, FAM(x.tributo)), esc(x.quando), `<span class="cod">${esc(x.entao)}</span>`, esc(x.observacao), fmt(x.aplicou),
+      x.divergiu ? `<span class="selo rev">${fmt(x.divergiu)}</span>` : "0", chave(x.exemplo),
+      x.erro ? `<span class="selo erro">${esc(x.erro)}</span>` : x.divergiu ? '<span class="selo rev">Conferir</span>' : '<span class="selo ok">Coerente</span>'][j]});
+  tabela($("#tConf"), {colunas: ["Tributo", "Produto", "Participante", "Operação", "UF", "Tratamentos encontrados", {t: "Itens", num: 1}, "Exemplo do minoritário", ""], linhas: v.conflitos, limite: 150,
+    celula: (x, j) => [cod(x.tributo, FAM(x.tributo)), esc(x.produto), esc(x.participante), esc(x.operacao), esc(x.uf),
+      x.tratamentos.map(t => `<div>${esc(t.tratamento)} <span class="muted">· ${fmt(t.itens)}</span></div>`).join(""), fmt(x.itens), chave(x.exemplo),
+      `<a class="btn mini" href="#/corrigir/conflito/${x.idx}">${ic("wrench",14)} Corrigir</a>`][j]});
+  tabela($("#tRev"), {colunas: ["Regra", "Descrição", "Motivo", {t: "Itens", num: 1}], linhas: v.regras_revisar, vazio: "Nenhuma regra precisa de revisão.",
+    celula: (x, j) => [codRegra(x.F2B_REGRA, x.F2B_TRIB), esc(x.F2B_DESC), x.motivos.map(esc).join("<br>"), fmt(x.Itens)][j],
+    aoClicar: x => location.hash = "#/corrigir/regra/" + encodeURIComponent(x.F2B_REGRA)});
+}
+
+/* ── Padrões ── */
+async function vPadroes(el) {
+  const p = await api("/api/padroes");
+  el.innerHTML = `<h1>Padrões</h1><div class="sub">Base de conhecimento usada na geração: códigos, dimensões por tributo, regras de negócio, cBenef, escrituração e operações</div>
+    <div class="card"><div class="cab"><span class="muted peq" style="word-break:break-all">${esc(p.arquivo)}</span>
+      <div class="acao" style="display:flex;gap:8px"><button class="btn mini" id="btDesf">Desfazer alterações</button><button class="btn prim mini" id="btSalvar">Salvar e aplicar</button></div></div>
+      <div class="corpo">${p.avisos.length ? `<div class="aviso" style="margin:0 0 12px">${ic("alerta",18)}<div><b>Avisos ao ler o arquivo</b><ul>${p.avisos.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div></div>` : ""}
+      <textarea class="md" id="md" spellcheck="false">${esc(p.texto)}</textarea></div></div>`;
+  $("#btDesf").onclick = () => { $("#md").value = p.texto; toast("Alterações desfeitas."); };
+  $("#btSalvar").onclick = async () => {
+    try { const r = await post("/api/padroes", {texto: $("#md").value}); limparCache();
+      toast(r.avisos.length ? `Salvo com ${r.avisos.length} aviso(s).` : "Padrões salvos e aplicados.");
+      if (r.regerando) { S.tarefaAnterior = "gerando cenários"; acompanhar(); } else vPadroes(el); }
+    catch (e) { toast(e.message); }
+  };
+}
+
+/* ── Tipos de operação ── */
+async function vTipos(el) {
+  const d = await api("/api/tipos-operacao");
+  const dep = d.depara.map(x => ({...x})), cli = d.clientes.map(x => ({...x}));
+  const info = Object.fromEntries(d.clientes_xml.map(c => [c.doc, c]));
+  let filtro = "";
+  const opcoesFin = sel => dep.filter(x => x.finalidade).map(x => `<option value="${esc(x.finalidade)}" ${x.finalidade === sel ? "selected" : ""}>${esc(x.finalidade)}${x.codigo ? " · " + esc(x.codigo) : ""}</option>`).join("");
+  function desenhar() {
+    const mapeadas = new Set(dep.map(x => (x.finalidade || "").toUpperCase()));
+    const vis = cli.map((c, i) => [c, i]).filter(([c]) => !filtro || (c.doc + " " + (info[c.doc]?.nome || c.nome || "") + " " + c.obs).toLowerCase().includes(filtro));
+    el.innerHTML = `<h1>Tipos de operação</h1><div class="sub">O perfil de operação reúne CFOPs e tipos de operação; o tipo de operação casa com a finalidade</div>
+      <div class="grade g21">
+        <div class="card"><div class="cab"><h2>${ic("tag",18)} De-para: finalidade → tipo de operação</h2><button class="btn mini acao" id="addDep">Adicionar finalidade</button></div>
+          <div class="tab-wrap"><table class="tab"><thead><tr><th>Finalidade</th><th>Tipo de operação</th><th>Descrição</th><th></th></tr></thead><tbody>
+          ${dep.map((x, i) => `<tr><td><input class="ed" data-dep="${i}" data-k="finalidade" value="${esc(x.finalidade)}" aria-label="Finalidade"></td>
+            <td><input class="ed cod-ed" data-dep="${i}" data-k="codigo" value="${esc(x.codigo)}" aria-label="Tipo de operação" maxlength="6"></td>
+            <td><input class="ed" data-dep="${i}" data-k="descricao" value="${esc(x.descricao)}" aria-label="Descrição"></td>
+            <td><button class="icone-btn" data-rmdep="${i}" aria-label="Remover">${ic("x",16)}</button></td></tr>`).join("")}
+          </tbody></table></div>
+          <div class="corpo"><b>Finalidades encontradas nos XMLs deste CNPJ</b>
+            <div class="tab-wrap mt"><table class="tab"><thead><tr><th>Grupo</th><th>Finalidade</th><th class="num">Itens</th><th>Tipo de operação</th></tr></thead><tbody>
+            ${d.encontradas.length ? d.encontradas.map(x => `<tr><td>${esc(x.grupo)}</td><td>${esc(x.finalidade)}</td><td class="num">${fmt(x.itens)}</td>
+              <td>${mapeadas.has(x.finalidade) ? cod((dep.find(y => y.finalidade.toUpperCase() === x.finalidade) || {}).codigo || "—", "f-icms")
+                : '<span class="selo rev">Sem tipo no de-para</span>'}</td></tr>`).join("") : `<tr><td colspan="4" class="vazio">Gere os cenários para ver as finalidades.</td></tr>`}
+            </tbody></table></div></div>
+        </div>
+        <div class="card"><div class="cab"><h2>${ic("users",18)} Finalidade por cliente</h2><button class="btn mini acao" id="addCli">Adicionar cliente</button></div>
+          <div class="corpo muted peq" style="padding-bottom:0">Para clientes cuja finalidade não segue o indFinal da nota (ex.: revenda para insumo → V5). O motor usa essa finalidade no cálculo.</div>
+          <div class="barra-tab"><label class="busca">${ic("search",16)}<input id="fCli" placeholder="Buscar cliente" value="${esc(filtro)}"></label><span class="muted peq">${fmt(cli.length)} cliente(s)</span></div>
+          <datalist id="dlCli">${d.clientes_xml.map(c => `<option value="${esc(c.doc)}">${esc(c.nome)} · ${esc(c.uf)} · ${fmt(c.notas)} nota(s)</option>`).join("")}</datalist>
+          <div class="tab-wrap"><table class="tab"><thead><tr><th>CNPJ/CPF</th><th>Cliente</th><th>Finalidade</th><th>Observação</th><th></th></tr></thead><tbody>
+          ${vis.length ? vis.map(([c, i]) => `<tr><td><input class="ed" style="font-family:var(--mono);min-width:150px" list="dlCli" data-cli="${i}" data-k="doc" value="${esc(c.doc)}" aria-label="CNPJ ou CPF"></td>
+            <td class="peq">${esc(info[c.doc]?.nome || c.nome || "—")}${info[c.doc] ? `<div class="muted">${esc(info[c.doc].tipo)} · ${fmt(info[c.doc].notas)} nota(s)</div>` : ""}</td>
+            <td><select class="ed" style="min-width:130px" data-cli="${i}" data-k="finalidade" aria-label="Finalidade">${opcoesFin(c.finalidade)}</select></td>
+            <td><input class="ed" data-cli="${i}" data-k="obs" value="${esc(c.obs)}" aria-label="Observação"></td>
+            <td><button class="icone-btn" data-rmcli="${i}" aria-label="Remover">${ic("x",16)}</button></td></tr>`).join("")
+            : `<tr><td colspan="5" class="vazio">Nenhum cliente com finalidade própria.</td></tr>`}
+          </tbody></table></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><a class="btn" href="#/padroes">Ver no arquivo de padrões</a>
+        <button class="btn prim" id="btSalvarTipos">${ic("bolt",16)} Salvar e gerar novamente</button></div>`;
+    el.querySelectorAll("[data-dep]").forEach(inp => inp.onchange = () => { dep[+inp.dataset.dep][inp.dataset.k] = inp.dataset.k === "descricao" ? inp.value : inp.value.toUpperCase().trim(); desenhar(); });
+    el.querySelectorAll("[data-cli]").forEach(inp => inp.onchange = () => { cli[+inp.dataset.cli][inp.dataset.k] = inp.dataset.k === "doc" ? inp.value.replace(/\D/g, "") : inp.value; desenhar(); });
+    el.querySelectorAll("[data-rmdep]").forEach(b => b.onclick = () => { dep.splice(+b.dataset.rmdep, 1); desenhar(); });
+    el.querySelectorAll("[data-rmcli]").forEach(b => b.onclick = () => { cli.splice(+b.dataset.rmcli, 1); desenhar(); });
+    $("#addDep").onclick = () => { dep.push({finalidade: "", codigo: "", descricao: ""}); desenhar(); el.querySelector(`[data-dep="${dep.length - 1}"]`).focus(); };
+    $("#addCli").onclick = () => { cli.unshift({doc: "", finalidade: (dep[0] || {}).finalidade || "", obs: ""}); filtro = ""; desenhar(); el.querySelector('[data-cli="0"]').focus(); };
+    $("#fCli").oninput = e => { filtro = e.target.value.trim().toLowerCase(); const pos = e.target.selectionStart; desenhar(); const f = $("#fCli"); f.focus(); f.setSelectionRange(pos, pos); };
+    $("#btSalvarTipos").onclick = async () => {
+      const semFin = cli.filter(c => c.doc && !c.finalidade); if (semFin.length) return toast("Escolha a finalidade de todos os clientes.");
+      try { const r = await post("/api/tipos-operacao", {depara: dep, clientes: cli}); limparCache();
+        toast(r.avisos.length ? `Salvo com ${r.avisos.length} aviso(s): ${r.avisos[0]}` : "Tipos de operação salvos.");
+        if (r.regerando) { S.tarefaAnterior = "gerando cenários"; acompanhar(); } }
+      catch (e) { toast(e.message); }
+    };
+  }
+  desenhar();
+}
+
+/* ── Corrigir divergências (regra ou conflito) ── */
+const CAMPOS_FILTRO = {cfop_base: "CFOP (5xxx/6xxx)", cfop: "CFOP", cst: "CST ICMS", cst_ipi: "CST IPI", cst_pis: "CST PIS", cst_cof: "CST COFINS", cst_ibs: "CST IBS/CBS",
+  cclass: "cClassTrib", cbenef: "cBenef", orig: "Origem", uf: "UF destino", tipo: "Participante", ncm: "NCM", cprod: "Produto", dest: "Cliente"};
+async function vCorrigir(el, tipo, ref) {
+  const q = tipo === "conflito" ? "conflito=" + encodeURIComponent(ref) : "regra=" + encodeURIComponent(ref);
+  const d = await api("/api/divergencias?" + q);
+  moldura("validacoes", [["Validações", "#/validacoes"], ["Corrigir divergências"]]);
+  const campos = d.campos;
+  const refG = d.grupos.find(g => g.referencia) || d.grupos[0];
+  const div = d.grupos.filter(g => g !== refG);
+  const subs = div.map(() => ({}));
+  const rot = c => (campos.find(x => x.campo === c) || {rotulo: CAMPOS_FILTRO[c] || c}).rotulo;
+  const vazio = v => v === "" || v == null ? "vazio" : v;
+  const ehBase = c => c.startsWith("base_");
+  const dicaBase = v => d.descr_bases[v] ? ` data-tip="${esc(v + "\n" + d.descr_bases[v])}"` : "";
+  // compara pelo valor equivalente (ex.: CFOP 5949 = 6949; 6108 = x102), mas mostra o valor real do XML
+  const cmpG = (g, c) => (g.valores_cmp || g.valores)[c];
+  const diferencas = g => campos.filter(c => cmpG(g, c.campo) !== cmpG(refG, c.campo));
+
+  function celula(gi, item, c) {
+    const v = item.vals[c.campo];
+    if (gi < 0) return `<span class="val ref"${ehBase(c.campo) ? dicaBase(v) : ""}>${esc(vazio(v))}</span>`;
+    const n = subs[gi][c.campo], dif = (item.cmp || item.vals)[c.campo] !== cmpG(refG, c.campo);
+    const cen = c.tipo === "cenario";
+    const txt = n !== undefined ? `<s>${esc(vazio(v))}</s> → <b>${esc(n === "-" ? "remover" : n)}</b>` : esc(vazio(v));
+    const dica = !dif ? `Clique para informar o ${c.rotulo} correto`
+      : cen ? `${c.rotulo} diferente da regra (cenário diferente)\nXML: ${vazio(v)} · regra: ${vazio(refG.valores[c.campo])}\nSe os dois estiverem corretos, crie a regra separada.\nSe o XML estiver errado, clique e informe o correto.`
+      : `${c.rotulo} diferente da regra\nXML: ${vazio(v)} · regra: ${vazio(refG.valores[c.campo])}\nClique para informar o valor correto`;
+    return `<button class="val ${dif ? (cen ? "cen" : "dif") : ""} ${n !== undefined ? "novo" : ""}" data-ed="${gi}|${c.campo}" data-tip="${esc(dica)}">${txt}</button>`;
+  }
+  function tabela_(g, gi) {
+    return `<div class="tab-wrap"><table class="tab"><thead><tr><th>NF</th><th>Item</th><th>Produto</th><th>NCM</th>
+      ${campos.map(c => `<th>${esc(c.rotulo)}</th>`).join("")}<th>Cliente</th><th>Chave</th></tr></thead><tbody>
+      ${g.amostra.slice(0, 25).map(i => `<tr><td>${esc(i.nf)}</td><td>${i.n}</td><td><span class="peq">${esc(i.cprod)}</span><span class="dsc">${esc(i.xprod)}</span></td>
+        <td>${esc(i.ncm)}</td>${campos.map(c => `<td>${celula(gi, i, c)}</td>`).join("")}
+        <td class="peq">${esc(i.dest_nome || i.dest)}<span class="dsc">${esc(i.tipo)} · ${esc(i.uf)}</span></td><td>${chave(i.chave)}</td></tr>`).join("")}
+      </tbody></table></div>${g.itens > 25 ? `<div class="rodape-tab">Mostrando 25 de ${fmt(g.itens)} itens · a correção vale para todos os ${fmt(g.itens)}</div>` : ""}`;
+  }
+  function cartaoDiv(g, gi) {
+    const dfs = diferencas(g), sb = subs[gi];
+    return `<div class="cab"><h2>${ic("alerta",18)} Divergente: ${esc(g.tratamento)}</h2><span class="selo rev acao">${itens(g.itens)}</span></div>
+      <div class="corpo dif-resumo">${(() => {
+        const trat = dfs.filter(c => c.tipo !== "cenario"), cen = dfs.filter(c => c.tipo === "cenario");
+        const chip = (c, cls) => `<span class="chip-dif ${cls}">${esc(c.rotulo)}: <span class="x">${esc(vazio(g.valores[c.campo]))}</span> no XML × <span class="ok">${esc(vazio(refG.valores[c.campo]))}</span> na regra</span>`;
+        return (trat.length ? `<div><b>Tratamento diferente</b> <span class="muted peq">(pode ser erro do XML)</span>: ${trat.map(c => chip(c, "")).join("")}</div>` : "")
+          + (cen.length ? `<div style="margin-top:4px"><b>Cenário diferente</b> <span class="muted peq">(se estiver correto, faltou regra)</span>: ${cen.map(c => chip(c, "azul")).join("")}</div>` : "")
+          + (!dfs.length ? `<b>Mesmos ${campos.map(c => c.rotulo).join(", ")} da regra.</b> A diferença está em outro dado do item.` : "");
+      })()}
+        <div class="muted peq" style="margin-top:6px">Vermelho: tratamento diferente da regra. Azul: cenário diferente.</div></div>
+      ${decisoes(g, gi)}
+      ${tabela_(g, gi)}
+      <details class="outras" ${g._abrir || (g.segregar.length && !diferencas(g).some(c => c.tipo !== "cenario")) ? "open" : ""}>
+      <summary>${ic("sliders",15)} Outras opções: regra separada, exceção por cliente/produto/NCM ou edição manual</summary>
+      <div class="corpo legitimo">
+        <div><b>${ic("check",16)} Está correto assim?</b> <span class="muted peq">Se o XML não está errado e é outro cenário (faltou regra), separe em outra regra. O programa reprocessa tudo, cria a regra nova e guarda o aprendizado na base de conhecimento.</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${g.segregar.length ? g.segregar.map(x => `<button class="btn mini sep-btn" data-seg="${gi}|${x.dim}">
+            ${ic("check",14)} Está correto: criar regra separada por ${esc(x.rotulo)} <span class="muted">(${esc(x.valores.join(", "))} × ${esc(x.ref.join(", "))})</span></button>`).join("")
+          : ""}${g.excecao.map(x => `<button class="btn mini sep-btn" data-exc="${gi}|${x.campo}">
+            ${ic("check",14)} Criar regra só para ${x.valores.length === 1 ? "este" : "estes"} ${esc(x.rotulo)}${x.valores.length === 1 ? "" : "s"} <span class="muted">(${esc(x.valores.slice(0, 3).join(", "))}${x.valores.length > 3 ? ` +${x.valores.length - 3}` : ""})</span></button>`).join("")}
+          ${!g.segregar.length && !g.excecao.length ? `<span class="muted peq">Nenhum critério (CFOP, classe do produto, origem, participante, UF, cliente, produto ou NCM) separa este grupo do grupo da regra. Se a diferença for só a alíquota, provavelmente o XML está errado: clique na alíquota e corrija.</span>` : ""}</div>
+      </div>
+      <div class="corpo" style="border-top:1px solid var(--linha)">
+        <div class="muted peq" style="margin-bottom:8px"><b style="color:var(--texto)">O XML está errado?</b> Clique nos valores da tabela e informe o correto.</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Substituições</b>
+          ${Object.keys(sb).length ? Object.entries(sb).map(([k, v]) => `<span class="chip-sub">${esc(rot(k))}: <s>${esc(vazio(g.valores[k]))}</s> → <b>${esc(v === "-" ? "remover" : v)}</b>
+            <button class="icone-btn" data-rmsub="${gi}|${k}" aria-label="Remover substituição">${ic("x",13)}</button></span>`).join("") : '<span class="muted peq">nenhuma ainda</span>'}
+          <span style="margin-left:auto;display:flex;gap:8px">${dfs.length ? `<button class="btn mini" data-igualar="${gi}">${ic("check",14)} Igualar ao tratamento da regra</button>` : ""}
+          ${Object.keys(sb).length ? `<button class="btn mini" data-limpar="${gi}">Limpar</button>` : ""}</span></div>
+        <div class="alcance"><b>Aplicar em</b>
+          <label><input type="radio" name="alc${gi}" value="itens" ${g._alc !== "filtro" ? "checked" : ""}> Somente ${g.itens === 1 ? "este item" : `estes ${fmt(g.itens)} itens`}</label>
+          <label><input type="radio" name="alc${gi}" value="filtro" ${g._alc === "filtro" ? "checked" : ""}> Todos os itens (destes XMLs e dos próximos) com estas características:</label>
+          <div class="filtros-c">${Object.entries(CAMPOS_FILTRO).filter(([k]) => g.comuns[k] && g.comuns[k].todos && g.comuns[k].valor !== "").map(([k, n]) =>
+            `<label><input type="checkbox" data-f="${k}" value="${esc(g.comuns[k].valor)}" ${(g._filtro ? g._filtro.includes(k) : ["cfop"].includes(k)) ? "checked" : ""}> ${n} = <b>${esc(g.comuns[k].valor)}</b></label>`).join("")}</div>
+          <label style="margin-top:6px">Observação <input class="ed" data-obs value="${esc(g._obs || "")}" placeholder="Ex.: base do IBS calculada errado no ERP antigo"></label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn prim" data-aplicar="${gi}" ${Object.keys(sb).length ? "" : "disabled"}>${ic("wrench",16)} Aplicar correção e reprocessar</button></div>
+      </div></details>`;
+  }
+  // ── questionário: para cada diferença de tratamento, qual lado está certo e para qual alcance ──
+  const cfopsDoBase = cb => cb && cb.startsWith("x") ? `5${cb.slice(1)} / 6${cb.slice(1)}` : cb;
+  const campoItem = c => !c.startsWith("base_") && !c.startsWith("aliq_");
+  function decisoes(g, gi) {
+    const trat = diferencas(g).filter(c => c.tipo !== "cenario");
+    if (!trat.length) return "";
+    g._dec = g._dec || {};
+    const cb = g.comuns.cfop_base && g.comuns.cfop_base.todos ? g.comuns.cfop_base.valor : "";
+    const escopo = cb ? (g._esc || "cfop") : "itens";
+    const nomeV = (c, v) => c.startsWith("aliq_") ? `${vazio(v)}%` : vazio(v);
+    const efeitos = [];
+    trat.forEach(c => {
+      const lado = g._dec[c.campo], xv = g.valores[c.campo], rv = refG.valores[c.campo];
+      if (lado === "regra") efeitos.push(`Os itens divergentes passam a ter <b>${esc(c.rotulo)} ${esc(nomeV(c.campo, rv))}</b> (o XML trazia ${esc(nomeV(c.campo, xv))}).`);
+      if (lado === "xml") efeitos.push(`A regra passa a usar <b>${esc(c.rotulo)} ${esc(nomeV(c.campo, xv))}</b>: os itens que estavam com ${esc(nomeV(c.campo, rv))} são lidos como ${esc(nomeV(c.campo, xv))}.`);
+    });
+    if (efeitos.length) efeitos.push(escopo === "cfop" ? `Vale para todo item com CFOP <b>${esc(cfopsDoBase(cb))}</b> nesta situação, destes XMLs e dos próximos.` : `Vale só para estes itens.`);
+    return `<div class="corpo decisoes">
+      <div><b>${ic("check",16)} Qual é o correto?</b> <span class="muted peq">Para cada diferença, escolha se vale o que veio no XML ou o que está na regra.</span></div>
+      ${trat.map(c => { const xv = g.valores[c.campo], rv = refG.valores[c.campo], sel = g._dec[c.campo];
+        return `<div class="dec-linha"><span class="dec-campo">${esc(c.rotulo)}</span>
+          <button class="opt ${sel === "xml" ? "sel" : ""}" data-dec="${gi}|${c.campo}|xml"><b>${esc(nomeV(c.campo, xv))}</b><small>como no XML</small></button>
+          <span class="muted peq">ou</span>
+          <button class="opt ${sel === "regra" ? "sel" : ""}" data-dec="${gi}|${c.campo}|regra"><b>${esc(nomeV(c.campo, rv))}</b><small>como na regra</small></button></div>`; }).join("")}
+      <div class="dec-linha"><span class="dec-campo">Vale para</span>
+        ${cb ? `<button class="opt ${escopo === "cfop" ? "sel" : ""}" data-esc="${gi}|cfop"><b>Todo CFOP ${esc(cfopsDoBase(cb))}</b><small>destes XMLs e dos próximos</small></button>` : ""}
+        <button class="opt ${escopo === "itens" ? "sel" : ""}" data-esc="${gi}|itens"><b>Só estes itens</b><small>${itens(g.itens)} divergente${g.itens === 1 ? "" : "s"} · ${itens(refG.itens)} da regra</small></button></div>
+      ${efeitos.length ? `<ul class="efeito">${efeitos.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+      <div style="display:flex;justify-content:flex-end"><button class="btn prim" data-decidir="${gi}" ${Object.keys(g._dec).length ? "" : "disabled"}>${ic("bolt",16)} Aplicar decisões e reprocessar</button></div>
+    </div>`;
+  }
+  function guardarForm(gi) {        // preserva alcance/observação ao redesenhar
+    const card = el.querySelector(`[data-g="${gi}"]`); if (!card) return;
+    const g = div[gi], r = card.querySelector(`input[name="alc${gi}"]:checked`);
+    g._alc = r ? r.value : "itens"; g._filtro = [...card.querySelectorAll("[data-f]:checked")].map(x => x.dataset.f);
+    const o = card.querySelector("[data-obs]"); g._obs = o ? o.value : "";
+    const det = card.querySelector("details.outras"); g._abrir = det ? det.open : false;
+  }
+  function redesenhar(gi) { guardarForm(gi); const card = el.querySelector(`[data-g="${gi}"]`); card.innerHTML = cartaoDiv(div[gi], gi); }
+
+  el.innerHTML = `<h1 style="display:flex;gap:10px;align-items:center">${ic("wrench",26,1.6)} Corrigir divergências</h1>
+    <div class="sub">${esc(d.titulo)}</div>
+    <div class="aviso azul" style="margin-top:0">${ic("info",18)}<div>Para cada grupo divergente há dois caminhos: <b>o XML está errado</b> (clique no valor e informe o correto; o programa reprocessa como se o XML viesse corrigido, sem alterar o arquivo) ou <b>está correto</b> e faltou regra (crie a regra separada; o programa reprocessa e guarda o aprendizado).</div></div>
+    <div class="card mt grupo-ref"><div class="cab"><h2>${ic("check",18)} Tratamento da regra · ${esc(d.tributo_nome)}</h2><span class="selo ok acao">${itens(refG.itens)}</span></div>
+      <div class="corpo"><b>${esc(refG.tratamento)}</b></div>${tabela_(refG, -1)}</div>
+    ${div.length ? div.map((g, gi) => `<div class="card mt grupo-div" data-g="${gi}">${cartaoDiv(g, gi)}</div>`).join("")
+      : `<div class="card mt"><div class="vazio"><h3>Nenhum item divergente</h3><p>Todos os itens desta regra têm o mesmo tratamento.</p></div></div>`}
+    <datalist id="dlBases">${d.bases.map(b => `<option value="${esc(b)}">${esc(d.descr_bases[b] || "")}</option>`).join("")}</datalist>`;
+
+  // edição no próprio valor
+  el.onclick = async e => {
+    const bt = e.target.closest("[data-ed]");
+    if (bt) {
+      const [gi, campo] = bt.dataset.ed.split("|"), g = div[+gi], atual = subs[+gi][campo];
+      const sugestao = atual ?? (g.valores[campo] !== refG.valores[campo] ? (refG.valores[campo] || "-") : "");
+      const inp = document.createElement("input");
+      inp.className = "ed val-ed"; inp.value = sugestao;
+      inp.placeholder = ehBase(campo) ? "código da base" : campo.startsWith("aliq_") ? "alíquota %, ex.: 0" : "valor correto, ou - para remover";
+      if (ehBase(campo)) inp.setAttribute("list", "dlBases");
+      bt.replaceWith(inp); inp.focus(); inp.select();
+      let feito = false;
+      const confirmar = ok => { if (feito) return; feito = true;
+        const v = inp.value.trim().toUpperCase();
+        if (ok) { if (!v || v === (g.valores[campo] || "")) delete subs[+gi][campo]; else subs[+gi][campo] = v; }
+        redesenhar(+gi); };
+      inp.onkeydown = k => { if (k.key === "Enter") confirmar(true); if (k.key === "Escape") confirmar(false); };
+      inp.onblur = () => confirmar(true);
+      return;
+    }
+    const dc = e.target.closest("[data-dec]");
+    if (dc) { const [gi, campo, lado] = dc.dataset.dec.split("|"), g = div[+gi]; g._dec = g._dec || {};
+      if (g._dec[campo] === lado) delete g._dec[campo]; else g._dec[campo] = lado; redesenhar(+gi); return; }
+    const es = e.target.closest("[data-esc]");
+    if (es) { const [gi, v] = es.dataset.esc.split("|"); div[+gi]._esc = v; redesenhar(+gi); return; }
+    const dd = e.target.closest("[data-decidir]");
+    if (dd) {
+      const gi = +dd.dataset.decidir, g = div[gi];
+      const trat = diferencas(g).filter(c => c.tipo !== "cenario").map(c => c.campo);
+      const cb = g.comuns.cfop_base && g.comuns.cfop_base.todos ? g.comuns.cfop_base.valor : "";
+      const escopo = cb ? (g._esc || "cfop") : "itens";
+      const altDiv = {}, altRef = {};
+      Object.entries(g._dec).forEach(([c, lado]) => { if (lado === "regra") altDiv[c] = refG.valores[c] || "-"; else altRef[c] = g.valores[c] || "-"; });
+      // filtro por CFOP só se houver um campo do item que distinga os dois lados (ex.: CST 40 × 00)
+      const filtroDe = lado => { const f = {cfop_base: cb}; let n = 0;
+        trat.filter(campoItem).forEach(c => { const v = lado === "div" ? g.valores[c] : refG.valores[c]; if (v !== "" && v != null) { f[c] = v; n++; } });
+        return n ? f : null; };
+      const origem = (tipo === "conflito" ? "Conflito de " + d.tributo : "Regra " + ref);
+      const descr = Object.entries(g._dec).map(([c, l]) => `${rot(c)}: ${l === "xml" ? "XML" : "regra"} (${vazio(l === "xml" ? g.valores[c] : refG.valores[c])})`).join("; ");
+      const lote = []; let aviso = "";
+      const montar = (alt, lado, ids, qtd, ex) => {
+        if (!Object.keys(alt).length) return;
+        const f = escopo === "cfop" ? filtroDe(lado) : null;
+        if (escopo === "cfop" && !f) aviso = "Sem um CST ou cBenef que distinga os dois lados: a decisão foi aplicada só aos itens listados.";
+        lote.push({alteracoes: alt, filtro: f || {}, itens: f ? [] : ids, exemplo: ex, qtd, origem,
+                   obs: `Decisão: ${descr}${f ? ` · todo CFOP ${cfopsDoBase(cb)}` : ""}`});
+      };
+      montar(altDiv, "div", g.itens_ids, g.itens, g.itens_ids[0]);
+      montar(altRef, "ref", refG.itens_ids, refG.itens, refG.itens_ids[0]);
+      try { dd.disabled = true; await post("/api/correcoes", {lote}); limparCache(); S.tarefaAnterior = "correcao";
+        toast(aviso || "Decisões aplicadas. Reprocessando…"); acompanhar(); }
+      catch (er) { dd.disabled = false; toast(er.message); }
+      return;
+    }
+    const sg = e.target.closest("[data-seg]");
+    if (sg) {
+      const [gi, dim] = sg.dataset.seg.split("|"), g = div[+gi], x = g.segregar.find(y => y.dim === dim);
+      try {
+        sg.disabled = true;
+        await post("/api/segregacoes", {tributo: d.chave_tributo, dim,
+          obs: `${x.valores.join(", ")} × ${x.ref.join(", ")} são cenários diferentes`,
+          conhecimento: {grupo: g.tratamento, referencia: refG.tratamento, valores: x.valores, ref: x.ref, criterio: x.rotulo,
+                         origem: tipo === "regra" ? "regra " + ref : "conflito", itens: g.itens}});
+        limparCache(); S.tarefaAnterior = "correcao"; toast(`Criando regra separada por ${x.rotulo}. Reprocessando…`); acompanhar();
+      } catch (er) { sg.disabled = false; toast(er.message); }
+      return;
+    }
+    const ex = e.target.closest("[data-exc]");
+    if (ex) {
+      const [gi, campo] = ex.dataset.exc.split("|"), g = div[+gi], x = g.excecao.find(y => y.campo === campo);
+      try {
+        ex.disabled = true;
+        await post("/api/excecoes", {tributo: d.chave_tributo, campo, valores: x.valores,
+          obs: `${g.tratamento} (regra: ${refG.tratamento})`,
+          conhecimento: {grupo: g.tratamento, referencia: refG.tratamento, origem: tipo === "regra" ? "regra " + ref : "conflito"}});
+        limparCache(); S.tarefaAnterior = "correcao"; toast(`Criando regra própria para ${x.rotulo}. Reprocessando…`); acompanhar();
+      } catch (er) { ex.disabled = false; toast(er.message); }
+      return;
+    }
+    const ig = e.target.closest("[data-igualar]");
+    if (ig) { const gi = +ig.dataset.igualar; diferencas(div[gi]).forEach(c => subs[gi][c.campo] = refG.valores[c.campo] || "-");
+      redesenhar(gi); toast("Valores da regra preenchidos. Revise e aplique."); return; }
+    const lp = e.target.closest("[data-limpar]");
+    if (lp) { subs[+lp.dataset.limpar] = {}; redesenhar(+lp.dataset.limpar); return; }
+    const rm = e.target.closest("[data-rmsub]");
+    if (rm) { const [gi, k] = rm.dataset.rmsub.split("|"); delete subs[+gi][k]; redesenhar(+gi); return; }
+    const ap = e.target.closest("[data-aplicar]");
+    if (ap) {
+      const gi = +ap.dataset.aplicar, card = ap.closest("[data-g]"), g = div[gi];
+      const alc = card.querySelector(`input[name="alc${gi}"]:checked`).value;
+      const filtro = {}; if (alc === "filtro") card.querySelectorAll("[data-f]:checked").forEach(x => filtro[x.dataset.f] = x.value);
+      if (alc === "filtro" && !Object.keys(filtro).length) return toast("Marque pelo menos uma característica.");
+      try {
+        ap.disabled = true;
+        await post("/api/correcoes", {alteracoes: subs[gi], filtro, itens: alc === "itens" ? g.itens_ids : [], exemplo: g.itens_ids[0], qtd: g.itens,
+          obs: card.querySelector("[data-obs]").value, origem: (tipo === "conflito" ? "Conflito de " + d.tributo : "Regra ") + (tipo === "conflito" ? "" : ref)});
+        limparCache(); S.tarefaAnterior = "correcao"; toast("Correção salva. Reprocessando…"); acompanhar();
+      } catch (er) { ap.disabled = false; toast(er.message); }
+    }
+  };
+}
+
+/* ── Correções ── */
+async function vCorrecoes(el) {
+  const d = await api("/api/correcoes");
+  const nomes = {cfop: "CFOP", cst: "CST ICMS", base_icms: "Base ICMS", cbenef: "cBenef", cst_pis: "CST PIS", cst_cof: "CST COFINS", cst_ipi: "CST IPI",
+    orig: "Origem", cst_ibs: "CST IBS/CBS", cclass: "cClassTrib"};
+  const nomeCampo = k => nomes[k] || (k.startsWith("base_") ? "Base " + k.slice(5) : k.startsWith("aliq_") ? "Alíquota " + k.slice(5) : k);
+  const retrato = (r, outro) => r ? `<div class="kv">${[["CFOP", "cfop"], ["Natureza", "natureza"], ["Finalidade", "finalidade"], ["CST ICMS", "cst"], ["Base ICMS", "base_icms"], ["cBenef", "cbenef"],
+      ["CST PIS/COF", null], ["CST IPI", "cst_ipi"], ["CST IBS/CBS", "cst_ibs"], ["cClassTrib", "cclass"]].filter(([n, k]) => !k || r[k] !== undefined).map(([n, k]) => { const v = k ? r[k] : `${r.cst_pis}/${r.cst_cof}`, o = outro ? (k ? outro[k] : `${outro.cst_pis}/${outro.cst_cof}`) : v;
+        return `<div>${n}</div><div><span class="${outro && v !== o ? "mudou" : ""}">${esc(v || "—")}</span></div>`; }).join("")}
+      ${r.bases ? `<div>Bases</div><div>${Object.entries(r.bases).map(([t, b]) => { const o = outro && outro.bases && outro.bases[t];
+        return `<span class="${outro && o !== b ? "mudou" : ""}" style="display:inline-block;margin:0 6px 2px 0" class="peq">${esc(t)} ${cod(b)}</span>`; }).join("")}</div>` : ""}
+      <div>Regras</div><div>${Object.entries(r.regras).map(([t, c]) => { const o = outro && outro.regras[t]; return `<span class="${outro && o !== c ? "mudou" : ""}" style="display:inline-block;margin:0 4px 4px 0">${codRegra(c, t)}</span>`; }).join("") || "—"}</div></div>`
+    : '<span class="muted">Indisponível (o item não está na análise atual).</span>';
+  const segs = d.segregacoes || [];
+  el.innerHTML = `<h1>Correções</h1><div class="sub">XMLs emitidos errados (correções) e cenários confirmados como corretos (regras separadas). Os arquivos originais não são alterados.</div>
+    ${segs.length ? `<div class="card"><div class="cab"><h2>${ic("check",18)} Cenários confirmados como corretos (regras separadas)</h2><a class="acao peq" href="#/padroes">ver na base de conhecimento</a></div>
+      <div class="tab-wrap"><table class="tab"><thead><tr><th>Tributo</th><th>Separa regras por</th><th>Observação</th><th></th></tr></thead><tbody>
+      ${segs.map(x => `<tr><td>${cod(x.tributo, FAM(x.tributo))} <span class="dsc">${esc(x.familia.join(", "))}</span></td><td><b>${esc(x.rotulo)}</b></td>
+        <td class="peq">${esc(x.obs)}</td><td><button class="btn mini" data-rmseg="${x.i}">Desfazer</button></td></tr>`).join("")}
+      </tbody></table></div></div>` : ""}
+    ${(d.excecoes || []).length ? `<div class="card mt"><div class="cab"><h2>${ic("check",18)} Regras próprias (exceções)</h2></div>
+      <div class="tab-wrap"><table class="tab"><thead><tr><th>Tributo</th><th>Para</th><th>Valores</th><th>Observação</th><th></th></tr></thead><tbody>
+      ${d.excecoes.map(x => `<tr><td>${cod(x.tributo, FAM(x.tributo))} <span class="dsc">${esc(x.familia.join(", "))}</span></td><td><b>${esc(x.rotulo)}</b></td>
+        <td class="peq">${esc(x.valores.slice(0, 8).join(", "))}${x.valores.length > 8 ? ` +${x.valores.length - 8}` : ""}</td><td class="peq">${esc(x.obs)}</td>
+        <td><button class="btn mini" data-rmexc="${esc(x.id)}">Desfazer</button></td></tr>`).join("")}
+      </tbody></table></div></div>` : ""}
+    <h2 class="mt" style="margin-bottom:-4px">${ic("wrench",18)} Correções de XML</h2>
+    ${d.correcoes.length ? d.correcoes.slice().reverse().map(c => `<div class="card mt"><div class="cab"><h2>${ic("wrench",18)} ${Object.entries(c.alteracoes).map(([k, v]) => `${esc(nomeCampo(k))} → <span class="cod">${esc(v === "-" ? "remover" : v)}</span>`).join(" · ")}</h2>
+        <span class="acao" style="display:flex;gap:8px;align-items:center"><span class="selo ${c.aplicados ? "ok" : "rev"}">${fmt(c.aplicados)} item(ns) corrigido(s)</span><button class="btn mini" data-rm="${esc(c.id)}">Desfazer</button></span></div>
+      <div class="corpo"><div class="muted peq" style="margin-bottom:12px">${Object.values(c.alteracoes).includes("-") ? "“-” remove o valor do XML · " : ""}${esc(c.origem)} · ${esc(c.criada_em)} · alcance: ${c.itens && c.itens.length ? `${fmt(c.itens.length)} item(ns) selecionado(s)` : "todos os itens com " + Object.entries(c.filtro).map(([k, v]) => `${esc(CAMPOS_FILTRO[k] || k)} = ${esc(v)}`).join(" e ")}${c.obs ? " · " + esc(c.obs) : ""}</div>
+        <div class="antes-depois"><div><b>Antes</b> <span class="muted peq">(como estava no XML)</span>${retrato(c.antes)}</div><div class="seta">${ic("arrowR",26)}</div>
+          <div><b>Depois</b> <span class="muted peq">(cenário corrigido)</span>${retrato(c.depois, c.antes)}</div></div></div></div>`).join("")
+      : `<div class="card"><div class="vazio">${ic("wrench",40,1.4)}<h3>Nenhuma correção</h3><p>Abra uma regra marcada como <b>Revisar</b> ou um conflito em Validações para corrigir os itens divergentes.</p><a class="btn prim" href="#/validacoes">Ir para Validações</a></div></div>`}
+    <p class="muted peq mt">Arquivo: ${esc(d.arquivo)}</p>`;
+  el.querySelectorAll("[data-rmexc]").forEach(b => b.onclick = async () => {
+    try { await post("/api/excecoes/remover", {id: b.dataset.rmexc}); limparCache(); S.tarefaAnterior = "correcao"; toast("Regra própria desfeita. Reprocessando…"); acompanhar(); }
+    catch (e) { toast(e.message); } });
+  el.querySelectorAll("[data-rmseg]").forEach(b => b.onclick = async () => {
+    try { await post("/api/segregacoes/remover", {i: +b.dataset.rmseg}); limparCache(); S.tarefaAnterior = "correcao"; toast("Regra separada desfeita. Reprocessando…"); acompanhar(); }
+    catch (e) { toast(e.message); } });
+  el.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => {
+    try { await post("/api/correcoes/remover", {id: b.dataset.rm}); limparCache(); S.tarefaAnterior = "correcao"; toast("Correção desfeita. Reprocessando…"); acompanhar(); }
+    catch (e) { toast(e.message); } });
+}
+
+/* ── Regime dos clientes ── */
+async function vRegime(el) {
+  const d = await api("/api/regime");
+  const pct = d.notas_pj ? Math.round(d.notas_cobertas / d.notas_pj * 100) : 0;
+  el.innerHTML = `<h1>Regime dos clientes</h1><div class="sub">O XML não informa se o cliente é do Simples Nacional. Envie uma planilha com CNPJ e regime para o motor considerar nos perfis de participante.</div>
+    <div class="grade g4">
+      <div class="card kpi"><div class="ic ic-navy">${ic("building",20)}</div><div><div class="rot">Clientes na lista</div><div class="num">${fmt(d.total)}</div><div class="det">${fmt(d.simples)} Simples · ${fmt(d.normal)} Normal</div></div></div>
+      <div class="card kpi"><div class="ic ic-teal">${ic("check",20)}</div><div><div class="rot">Clientes PJ dos XMLs com regime</div><div class="num">${fmt(d.cobertos)} <span class="muted" style="font-size:16px">de ${fmt(d.clientes_xml)}</span></div><div class="det">${pct}% das notas para PJ</div></div></div>
+    </div>
+    <div class="card mt"><div class="cab"><h2>${ic("upload",18)} Enviar planilha</h2><button class="btn mini acao" id="btLimparReg" ${d.total ? "" : "disabled"}>Limpar lista</button></div><div class="corpo">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <label class="btn prim">${ic("folder",16)} Selecionar planilha (XLSX ou CSV)<input type="file" id="inReg" accept=".xlsx,.xlsm,.csv,.txt" hidden></label>
+        <label><input type="radio" name="modoReg" value="acrescentar" checked> Acrescentar e atualizar</label>
+        <label><input type="radio" name="modoReg" value="substituir"> Substituir a lista</label>
+        <button class="btn" id="btModelo" ${d.sem_regime.length ? "" : "disabled"}>${ic("download",16)} Baixar modelo com os clientes sem regime</button>
+      </div>
+      <p class="muted peq" style="margin:12px 0 0">Colunas reconhecidas: CNPJ (ou CGC, CPF, A1_CGC) e regime (SIMPLES, REGIME, OPTANTE, A1_SIMPNAC). Valores aceitos: S/N, Sim/Não, 1/2, Simples Nacional/Normal, Lucro Real/Presumido.</p>
+      <div id="resReg"></div></div></div>
+    <div class="grade g21 mt">
+      <div class="card"><div class="cab"><h2>Lista atual</h2></div><div id="tReg2"></div></div>
+      <div class="card"><div class="cab"><h2>${ic("alerta",18)} Clientes PJ dos XMLs sem regime</h2></div><div id="tSem"></div></div>
+    </div>`;
+  tabela($("#tReg2"), {colunas: ["CNPJ", "Regime", "Cliente", "UF", {t: "Notas", num: 1}], linhas: d.lista, vazio: "Nenhum cliente na lista.",
+    celula: (l, j) => [cod(l[0]), `<span class="selo ${l[1] === "SIMPLES" ? "info" : "cinza"}">${esc(l[1])}</span>`, esc(l[2] || "—"), esc(l[3]), fmt(l[4])][j]});
+  tabela($("#tSem"), {colunas: ["CNPJ", "Cliente", "UF", "Tipo", {t: "Notas", num: 1}], linhas: d.sem_regime, vazio: "Todos os clientes PJ têm regime.",
+    celula: (l, j) => [cod(l[0]), esc(l[1]), esc(l[2]), esc(l[3]), fmt(l[4])][j]});
+  $("#inReg").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const modo = el.querySelector('input[name="modoReg"]:checked').value;
+    try {
+      const r = await api("/api/regime/upload?modo=" + modo, {method: "POST", headers: {"X-Nome": encodeURIComponent(f.name)}, body: f});
+      $("#resReg").innerHTML = `<div class="aviso azul">${ic("check",18)}<div><b>${fmt(r.lidos)} cliente(s) lido(s)</b> · coluna de CNPJ: ${esc(r.coluna_cnpj)} · coluna de regime: ${esc(r.coluna_regime)} · ${fmt(r.total)} na lista
+        ${r.total_ignoradas ? `<div>${fmt(r.total_ignoradas)} linha(s) com valor não reconhecido, por exemplo: ${r.ignoradas.slice(0, 5).map(esc).join("; ")}</div>` : ""}</div></div>`;
+      limparCache();
+      if (r.regerando) { S.tarefaAnterior = "regime"; toast("Lista atualizada. Reprocessando…"); acompanhar(); } else vRegime(el);
+    } catch (err) { $("#resReg").innerHTML = `<div class="aviso">${ic("alerta",18)}<div>${esc(err.message)}</div></div>`; }
+  };
+  $("#btModelo").onclick = () => {
+    const csv = "\ufeffCNPJ;SIMPLES;CLIENTE;UF\r\n" + d.sem_regime.map(l => `${l[0]};;${String(l[1]).replace(/;/g, ",")};${l[2]}`).join("\r\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv"})); a.download = "regime_clientes_modelo.csv"; a.click();
+  };
+  $("#btLimparReg").onclick = async () => { try { const r = await post("/api/regime/limpar"); limparCache(); if (r.regerando) { S.tarefaAnterior = "regime"; acompanhar(); } else vRegime(el); } catch (e) { toast(e.message); } };
+}
+
+/* ═══════════════════ roteador ═══════════════════ */
+async function render() {
+  const el = $("#conteudo");
+  const [rota, arg] = (location.hash.replace(/^#\/?/, "") || "visao").split("/");
+  if (!S.status) await atualizarStatus().catch(() => null);
+  if (!S.status) { el.innerHTML = telaVazia("Servidor indisponível", "Inicie o programa com: python servidor.py"); return; }
+  if (S.status.gerado && !S.cache.visao) await dado("visao", "/api/visao").catch(() => null);
+  if (S.status.gerado && !S.cache.dic) await dado("dic", "/api/dicionario").catch(() => null);
+  const nomes = Object.fromEntries(ROTAS.map(r => [r[0], r[1]]));
+  moldura(rota === "regra" ? "regras" : rota, [[nomes[rota] || "Regra", null]]);
+  $("#gaveta").classList.remove("aberta");
+  el.onclick = null;
+  try {
+    if (rota === "importar") vImportar(el);
+    else if (rota === "cenarios") await vCenarios(el);
+    else if (rota === "regras") await vRegras(el);
+    else if (rota === "regra") await vRegra(el, decodeURIComponent(arg || ""));
+    else if (rota === "cadastros") await vCadastros(el, arg);
+    else if (rota === "validacoes") await vValidacoes(el);
+    else if (rota === "padroes") await vPadroes(el);
+    else if (rota === "tipos") await vTipos(el);
+    else if (rota === "correcoes") await vCorrecoes(el);
+    else if (rota === "regime") await vRegime(el);
+    else if (rota === "corrigir") await vCorrigir(el, arg, decodeURIComponent(location.hash.split("/")[3] || ""));
+    else await vVisao(el);
+  } catch (e) { el.innerHTML = telaVazia("Não foi possível carregar", e.message); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", render);
+let _rz; window.addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(() => { const [r] = (location.hash.replace(/^#\/?/, "") || "visao").split("/");
+  const at = $("#nav a.ativo"); if (at) $("#nav").querySelectorAll("a").forEach(a => { const n = a.getAttribute("aria-label");
+    if (innerWidth <= 1180 && innerWidth > 760) a.setAttribute("data-tip", n); else a.removeAttribute("data-tip"); }); }, 150); });
+render().then(() => { if (S.status && S.status.status.tarefa) { S.tarefaAnterior = S.status.status.tarefa; acompanhar(); } });
+</script>
+</body>
+</html>
