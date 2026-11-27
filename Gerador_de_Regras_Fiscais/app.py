@@ -356,13 +356,12 @@ def _gerar(cnpj, agrupar, separar, ufs=None, dp=None):
     if ufs:
         docs_ok = {k: d for k, d in docs_ok.items() if d.get("uf_dest") in ufs}
     cfops_ok = st.session_state.get("cfops_sel")
+    todos = {it.get("cfop") for d in docs_ok.values() for it in d.get("itens", [])}
     if cfops_ok is not None:
-        novos = {}
-        for k, d in docs_ok.items():
-            itens_ok = [it for it in d.get("itens", []) if it.get("cfop") in cfops_ok]
-            if itens_ok:
-                novos[k] = dict(d, itens=itens_ok)
-        docs_ok = novos
+        g.CFOPS_AGREGAR.clear(); g.CFOPS_AGREGAR.update(cfops_ok)
+        g.CFOPS_SEPARAR.clear(); g.CFOPS_SEPARAR.update(todos - set(cfops_ok))
+    else:
+        g.CFOPS_AGREGAR.clear(); g.CFOPS_SEPARAR.clear()
     cli = st.session_state.get("dp_cli_df")
     if cli is not None:
         g.FINALIDADE_CLIENTE.clear()

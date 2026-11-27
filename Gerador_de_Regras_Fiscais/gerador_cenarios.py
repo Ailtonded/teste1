@@ -764,9 +764,18 @@ def tratamentos(d, it):
 # ═════════════════════════════════════════════════════════════════════════════
 # ANÁLISE: cenários -> regras com o mínimo de sobreposição
 # ═════════════════════════════════════════════════════════════════════════════
+CFOPS_AGREGAR = set()     # CFOPs marcados no passo 5: entram agregados no grupo VENDAS
+CFOPS_SEPARAR = set()     # CFOPs desmarcados no passo 5: cada um gera cenário próprio (não é descartado)
+
+
 def operacao(cfop, d):
     """-> (natureza, grupo, finalidade) do CFOP, com a finalidade da nota quando for 'indFinal'."""
     nat, grupo, fin = OPERACAO.get(cfop[1:], (f"CFOP {cfop}", "OUTRAS", "OUTRAS"))
+    if CFOPS_AGREGAR or CFOPS_SEPARAR:
+        if cfop in CFOPS_AGREGAR:
+            grupo = "VENDAS"
+        elif cfop in CFOPS_SEPARAR:
+            grupo = f"CFOP {cfop}"
     if fin.lower() == "indfinal":
         fin = FINALIDADE_CLIENTE.get(d.get("dest", "")) or ("CONSUMO" if d["indfinal"] == "1" else "REVENDA")
     return nat, grupo, fin
