@@ -1,7 +1,7 @@
 # Guia de operação — Facilitador Fiscal (Streamlit)
 
 Este guia mostra, passo a passo, como gerar os cenários e as regras F2B a partir de XMLs de NF-e de saída.
-As imagens são do programa em execução, com XMLs de **exemplo fictício** (CNPJ [CNPJ]).
+As imagens são do programa em execução, com XMLs de **exemplo fictício** (CNPJ [CNPJ de exemplo]).
 
 ## 0. Antes de começar
 
