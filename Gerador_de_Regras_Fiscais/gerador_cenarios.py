@@ -1415,6 +1415,38 @@ def _cfops_reais(an, elementos):
     return reais
 
 
+BASE_DIFAL_GF = {"DIFD01": "BC DUPLA", "DIFS01": "BC SIMPLES"}
+
+
+def _desc_difal_gf(bcod, part_txt, ufs):
+    """DIFAL no padrão GF: DIFAL | BASE | PJ/PF | CONTRIBUINTE/NÃO CONTRIBUINTE | UF XX (até 100 caracteres)."""
+    base = BASE_DIFAL_GF.get(bcod, "")
+    pessoa = [x for x in part_txt if x in ("PJ", "PF")]
+    contrib = ["NÃO CONTRIBUINTE" if x == "NÃO CONT." else "CONTRIBUINTE"
+               for x in part_txt if x in ("CONT.", "NÃO CONT.", "ISENTO")]
+    uf = [f"UF {next(iter(ufs))}"] if len(ufs) == 1 and "*" not in ufs else []
+    return " | ".join(["DIFAL"] + ([base] if base else []) + pessoa + contrib + uf)[:100]
+
+
+def _desc_icms_gf(nat, abr, fin, origem_txt, part_txt, ufs=(), cbenef=""):
+    """ICMS no padrão GF de venda: ICMS | VENDA INTERNA | ORIGEM 2 | PJ | CONTRIB | NORMAL | CONSUMO [| UF XX] [| CBENEF x].
+    Se passar de 100 caracteres, tira primeiro o regime (a UF e o cBenef não podem sair)."""
+    op = "VENDA" if ("VENDA" in nat.upper() or "FATURAMENTO" in nat.upper()) else (nat.split(" / ")[-1] if nat else "")
+    pessoa = [x for x in part_txt if x in ("PJ", "PF")]
+    contrib = [{"CONT.": "CONTRIB", "NÃO CONT.": "NÃO CONTRIB", "ISENTO": "ISENTO"}[x]
+               for x in part_txt if x in ("CONT.", "NÃO CONT.", "ISENTO")]
+    regime = [x for x in part_txt if x in ("NORMAL", "SIMPLES")]
+    uf = [f"UF {next(iter(ufs))}"] if len(ufs) == 1 and "*" not in ufs else []
+    cb = [f"CBENEF {cbenef}"] if cbenef else []
+    base = (["ICMS", " ".join(x for x in (op, abr) if x)] + ([origem_txt] if origem_txt else [])
+            + pessoa + contrib)
+    fim = ([fin] if fin else []) + uf + cb
+    desc = " | ".join(base + regime + fim)
+    if len(desc) > 100:
+        desc = " | ".join(base + fim)
+    return desc[:100]
+
+
 def assinatura_regra(r):
     """Identidade da regra entre gerações (para manter o código): tributo + descrição + tratamento."""
     esc, base, modo, al, cb, grupo = r["_trat"]
@@ -1818,8 +1850,13 @@ def montar_matriz(an, anteriores=None):
                 if p and p.upper() != nome.upper() and (not limpas or p != limpas[-1]):
                     limpas.append(p)
             desc = " | ".join([nome] + limpas)
+            desc_gerencial = desc
+            if t == "DIFAL":
+                desc = _desc_difal_gf(bcod, part_txt, b[3])
+            elif t == "ICMS":
+                desc = _desc_icms_gf(nat, abr, fin, origem_txt, part_txt, b[3], cbenef)
             lista.append({"_ord": (nat, abr, pr_curto, pa_curto, fin), "_t": t, "_b": b, "_trat": trat, "_i": i_cx,
-                          "F2B_DESC": desc[:120], "F2B_TRIB": trib, "F2B_RBASE": bcod, "F2B_RALIQ": acod,
+                          "F2B_DESC": desc[:120], "DESC_GERENCIAL": desc_gerencial, "F2B_TRIB": trib, "F2B_RBASE": bcod, "F2B_RALIQ": acod,
                           "F2B_PEROD": od_cod, "F2B_PERFPA": pa_cod, "F2B_PERFOP": op_cod, "F2B_PERFPR": pr_cod,
                           "F2B_CODESC": ecod, "cBenef": cbenef, "Itens": 0, "Exemplo (chave)": "",
                           "CFOPs": ", ".join(sorted(_cfops_reais(an, b[2]))), "UFs": _uf_set_txt(b[3])})

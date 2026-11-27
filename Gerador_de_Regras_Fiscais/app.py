@@ -573,8 +573,70 @@ def _xlsx_completo(mt, cen):
     return buf.getvalue()
 
 
+def _alertas_ipi_icms(an):
+    """Regra para confirmar: IPI entra na base do ICMS só na finalidade CONSUMO; fora dela, não tem IPI."""
+    from collections import Counter
+    cont, exemplo = Counter(), {}
+    for d, it, tr in an.get("linhas", []):
+        if "ICMS" not in tr:
+            continue
+        base_cod = str(tr["ICMS"][1][0])
+        tem_ipi = base_cod.startswith(("ICMP", "ICP"))
+        fin = g._fin(d, it)
+        if fin == "CONSUMO" and not tem_ipi:
+            problema = "consumo sem IPI na base"
+        elif fin != "CONSUMO" and tem_ipi:
+            problema = "IPI na base fora do consumo"
+        else:
+            continue
+        chave = (problema, fin, base_cod, it["cfop"])
+        cont[chave] += 1
+        exemplo.setdefault(chave, d["chave"])
+    return [{"Situação": k[0], "Finalidade": k[1], "Base do ICMS": k[2], "CFOP": k[3], "Itens": v,
+             "Nota exemplo": exemplo[k]} for k, v in cont.most_common()]
+
+
+def _pendencias_ipi(an):
+    """Casos de ICMS fora da regra do IPI, no mesmo formato das pendências de cenário."""
+    grupos = {}
+    for d, it, tr in an.get("linhas", []):
+        if "ICMS" not in tr:
+            continue
+        esc, base, al, cb = tr["ICMS"]
+        base_cod = str(base[0])
+        tem_ipi = base_cod.startswith(("ICMP", "ICP"))
+        fin = g._fin(d, it)
+        if fin == "CONSUMO" and not tem_ipi:
+            problema = "consumo sem IPI na base"
+        elif fin != "CONSUMO" and tem_ipi:
+            problema = "IPI na base fora do consumo"
+        else:
+            continue
+        chave = (problema, fin, base_cod, it["cfop"])
+        if chave not in grupos:
+            grupos[chave] = {"tributo": "ICMS", "tipo": "regra_ipi", "regra": "", "qtd": 0,
+                             "exemplo": d["chave"], "coords": ("—", "—", f"{it['cfop']}|{fin}", "—"),
+                             "trat": (esc, base, "F", al, cb, ""), "problema": problema}
+        grupos[chave]["qtd"] += 1
+    return list(grupos.values())
+
+
+def _tela_regra_ipi():
+    an = st.session_state.get("an")
+    if not an:
+        return
+    alertas = _alertas_ipi_icms(an)
+    st.markdown("### Confirmação da regra do IPI no ICMS")
+    st.caption("Regra: o IPI entra na base do ICMS só quando a finalidade é CONSUMO. Fora do consumo, a base não tem IPI. "
+               "Abaixo, os itens que não seguem essa regra. Nada muda nas regras até você confirmar.")
+    if not alertas:
+        st.success("Todos os itens de ICMS seguem a regra do IPI.")
+        return
+    st.checkbox("Confirmo a regra do IPI na base do ICMS (IPI só para consumo)", key="conf_regra_ipi")
+
+
 def _tela_pendencias(mt):
-    pend = mt.get("pendencias", []) or []
+    pend = list(mt.get("pendencias", []) or []) + _pendencias_ipi(st.session_state.get("an") or {})
     if not pend:
         st.success("Nenhum cenário pendente: todos os itens do XML acionam exatamente uma regra.")
         return
@@ -584,7 +646,7 @@ def _tela_pendencias(mt):
     linhas = []
     for i, p in enumerate(pend):
         rot = {"Tributo": p["tributo"], "Situação": ("sem regra" if p["tipo"] == "sem_regra"
-                                                     else f"regra {p['regra']} não bate"),
+                                                     else ("regra do IPI não segue a regra" if p["tipo"] == "regra_ipi" else f"regra {p['regra']} não bate")),
                "Itens": p["qtd"], "Nota exemplo": p["exemplo"]}
         rot.update(_descreve_coords(p["coords"]))
         linhas.append({"#": i, **rot})
@@ -598,7 +660,7 @@ def _tela_pendencias(mt):
     escolha = st.selectbox("Cenário a analisar (ou clique numa linha da tabela)", options=list(range(len(pend))),
                            key="pend_sel",
                            format_func=lambda i: f"#{i} · {pend[i]['tributo']} · "
-                                                 f"{'sem regra' if pend[i]['tipo'] == 'sem_regra' else 'regra não bate'} · "
+                                                 f"{'sem regra' if pend[i]['tipo'] == 'sem_regra' else ('regra do IPI' if pend[i]['tipo'] == 'regra_ipi' else 'regra não bate')} · "
                                                  f"{pend[i]['qtd']} item(ns)")
     p = pend[escolha]
     c1, c2 = st.columns(2)
@@ -618,26 +680,31 @@ def _tela_pendencias(mt):
         if not ops:
             st.info("Ainda não dá para corrigir este imposto pela tela. Corrija no XML e importe de novo.")
         else:
-            rotulo = st.selectbox("O que está errado na nota?", list(ops.keys()), key=f"campo_{escolha}")
-            op = ops[rotulo]
-            st.caption(f"Na nota: {op['mostra']}")
-            if op["tipo"] == "lista":
-                escolhido = st.selectbox("Base correta", list(op["lista"].keys()), key=f"novo_lista_{escolha}")
-                novo, novo_txt = op["lista"][escolhido], escolhido
-            else:
-                novo = st.text_input("Valor correto", key=f"novo_{escolha}", placeholder=op["exemplo"])
-                novo_txt = novo.strip()
+            st.caption("Preencha só o que estiver errado na nota. Na base, use o código do padrão (ex.: ICMI01, ICMP01).")
+            tabela = pd.DataFrame([{"Campo": rot, "Na nota": op["mostra"], "Valor correto": ""}
+                                   for rot, op in ops.items()])
+            editada = st.data_editor(tabela, hide_index=True, use_container_width=True,
+                                     key=f"corr_grid_{escolha}", disabled=["Campo", "Na nota"])
             obs = st.text_input("Observação (opcional)", key=f"obs_{escolha}")
-            if novo.strip():
-                st.markdown(f"O motor vai analisar as notas com **{op['mostra']}** como se tivessem **{novo_txt}**, "
-                            f"no {p['tributo']}, para todas as notas com esse valor. Só vale para a sua sessão.")
-            if st.button("Aplicar correção", key=f"aplica_{escolha}", disabled=not novo.strip()):
+            pendentes = []
+            for _, linha in editada.iterrows():
+                novo = str(linha["Valor correto"]).strip()
+                if not novo:
+                    continue
+                op = ops[linha["Campo"]]
+                cod = op["lista"].get(novo, novo) if op["tipo"] == "lista" else novo
+                pendentes.append((linha["Campo"], op, cod))
+            if pendentes:
+                st.markdown("Serão aplicadas: " + "; ".join(f"{c}: {op['mostra']} → {cod}" for c, op, cod in pendentes)
+                            + ". Só vale para a sua sessão.")
+            if st.button("Aplicar correções marcadas", key=f"aplica_{escolha}", disabled=not pendentes):
                 lista = st.session_state.setdefault("correcoes", [])
-                lista.append({"id": f"C{len(lista) + 1}", "cnpj": "", "itens": [], "filtro": op["filtro"],
-                              "alteracoes": {op["chave"]: novo.strip()}, "tributo": p["tributo"], "campo": rotulo})
-                _registrar_decisao(p, "xml_corrigido", {"campo": op["chave"], "de": op["mostra"], "para": novo_txt}, obs)
+                for campo, op, cod in pendentes:
+                    lista.append({"id": f"C{len(lista) + 1}", "cnpj": "", "itens": [], "filtro": op["filtro"],
+                                  "alteracoes": {op["chave"]: cod}, "tributo": p["tributo"], "campo": campo})
+                    _registrar_decisao(p, "xml_corrigido", {"campo": op["chave"], "de": op["mostra"], "para": cod}, obs)
                 _aplicar_dados_sessao()
-                st.success("Correção aplicada.")
+                st.success(f"{len(pendentes)} correção(ões) aplicada(s).")
             if st.session_state.get("args_gerar") and st.session_state.get("correcoes"):
                 if st.button("Gerar cenários com as correções", key=f"gerar_pos_{escolha}", type="primary"):
                     a = st.session_state["args_gerar"]
@@ -1156,6 +1223,7 @@ with col_res:
 
         with aba_pen:
             _tela_pendencias(mt)
+            _tela_regra_ipi()
 
         with aba_vis:
             v = mt["validacao"]
