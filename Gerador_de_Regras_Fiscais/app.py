@@ -356,10 +356,17 @@ def _gerar(cnpj, agrupar, separar, ufs=None, dp=None):
     if ufs:
         docs_ok = {k: d for k, d in docs_ok.items() if d.get("uf_dest") in ufs}
     cfops_ok = st.session_state.get("cfops_sel")
+    agregar = st.session_state.get("cfops_agregar") or set()
     todos = {it.get("cfop") for d in docs_ok.values() for it in d.get("itens", [])}
     if cfops_ok is not None:
-        g.CFOPS_AGREGAR.clear(); g.CFOPS_AGREGAR.update(cfops_ok)
-        g.CFOPS_SEPARAR.clear(); g.CFOPS_SEPARAR.update(todos - set(cfops_ok))
+        novos = {}
+        for k, d in docs_ok.items():
+            itens_ok = [it for it in d.get("itens", []) if it.get("cfop") in cfops_ok]
+            if itens_ok:
+                novos[k] = dict(d, itens=itens_ok)
+        docs_ok = novos
+        g.CFOPS_AGREGAR.clear(); g.CFOPS_AGREGAR.update(agregar & set(cfops_ok))
+        g.CFOPS_SEPARAR.clear(); g.CFOPS_SEPARAR.update(set(cfops_ok) - agregar)
     else:
         g.CFOPS_AGREGAR.clear(); g.CFOPS_SEPARAR.clear()
     cli = st.session_state.get("dp_cli_df")
@@ -1158,7 +1165,7 @@ with col_passos:
     linhas_cf = []
     for cf, qtd in sorted(contagem.items(), key=lambda kv: -kv[1]):
         op = g.OPERACAO.get(cf[1:], ("", "OUTRAS", ""))
-        linhas_cf.append({"Incluir": op[1] == "VENDAS", "CFOP": cf, "Grupo": op[1],
+        linhas_cf.append({"Incluir": True, "Agregar com vendas": op[1] == "VENDAS", "CFOP": cf, "Grupo": op[1],
                           "Natureza": op[0], "Itens": qtd})
     venda_n = sum(1 for x in linhas_cf if x["Grupo"] == "VENDAS")
     venda_itens = sum(x["Itens"] for x in linhas_cf if x["Grupo"] == "VENDAS")
@@ -1169,13 +1176,18 @@ with col_passos:
     with st.expander("Detalhes dos CFOPs" + ("⁠" if st.session_state.get("conf_cfop") else ""),
                      expanded=not bool(st.session_state.get("conf_cfop"))):
         if linhas_cf:
-            st.markdown("**CFOPs de venda (agregado)**: marcados por padrão. Marque outros CFOPs para incluí-los.")
+            st.markdown("**Incluir**: marcados por padrão (todos os CFOPs das notas). Desmarque para deixar um CFOP de fora. "
+                        "**Agregar com vendas**: marcado só para o grupo VENDAS. Desmarcado, o CFOP gera cenários próprios.")
             cf_df = st.data_editor(pd.DataFrame(linhas_cf), hide_index=True, use_container_width=True,
                                    key="cfops_tab", height=300,
                                    column_config={"Incluir": st.column_config.CheckboxColumn(),
+                                                  "Agregar com vendas": st.column_config.CheckboxColumn(),
                                                   "Itens": st.column_config.NumberColumn(format="%d")},
                                    disabled=["CFOP", "Grupo", "Natureza", "Itens"])
-            st.session_state["cfops_sel"] = set(cf_df.loc[cf_df["Incluir"] == True, "CFOP"].tolist())  # noqa: E712
+            incluidos = cf_df.loc[cf_df["Incluir"] == True, "CFOP"].tolist()  # noqa: E712
+            agregados = cf_df.loc[(cf_df["Incluir"] == True) & (cf_df["Agregar com vendas"] == True), "CFOP"].tolist()  # noqa: E712
+            st.session_state["cfops_sel"] = set(incluidos)
+            st.session_state["cfops_agregar"] = set(agregados)
             st.checkbox("Confirmo os CFOPs incluídos", key="conf_cfop")
         else:
             st.info("Nenhuma nota importada.")
