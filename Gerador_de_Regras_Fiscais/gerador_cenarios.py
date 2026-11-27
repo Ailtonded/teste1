@@ -1080,6 +1080,10 @@ _ZERA_IPI = {"51", "52", "53", "54", "55"}
 
 
 def valor_campo(d, it, campo):
+    if campo.startswith("base_"):                      # código da base que o motor usa para este imposto
+        t_ = "ICMS" if campo == "base_icms" else campo[5:].upper()
+        tr_ = tratamentos(d, it).get(t_)
+        return tr_[1][0] if tr_ else ""
     return {"uf": d["uf_dest"], "tipo": d["tipo"], "dest": d.get("dest", ""), "cfop": it["cfop"],
             "cfop_base": cfop_base(it["cfop"]),
             "cst": it["cst"], "cst_ipi": it["cst_ipi"], "cst_pis": it["cst_pis"], "cst_cof": it["cst_cof"],

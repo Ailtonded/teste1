@@ -94,26 +94,24 @@ def _regime_norm(valor):
     return None
 
 
-def _ler_regime_csv(caminho):
-    """Lê o regime_clientes.csv (CNPJ;REGIME;IE). Ignora linhas sem CNPJ."""
+def _ler_regime_texto(texto):
+    """Lê o regime (CNPJ;REGIME;IE) de um texto CSV. Devolve (dados, ies)."""
     dados, ies = {}, {}
-    if not os.path.isfile(caminho):
-        return dados, ies
-    with open(caminho, encoding="utf-8-sig") as f:
-        for linha in csv.reader(f, delimiter=";"):
-            if len(linha) >= 2 and linha[0].isdigit():
-                dados[linha[0]] = linha[1]
-                if len(linha) >= 3:
-                    ies[linha[0]] = linha[2]
+    for linha in csv.reader(io.StringIO(texto), delimiter=";"):
+        if len(linha) >= 2 and linha[0].isdigit():
+            dados[linha[0]] = linha[1]
+            if len(linha) >= 3 and linha[2].strip():
+                ies[linha[0]] = linha[2]
     return dados, ies
 
 
-def _salvar_regime(dados, ies):
-    with open(ARQ_REGIME, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f, delimiter=";")
-        w.writerow(["CNPJ", "REGIME", "IE"])
-        for cnpj in sorted(dados):
-            w.writerow([cnpj, dados[cnpj], ies.get(cnpj, "")])
+def _texto_regime(dados, ies):
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["CNPJ", "REGIME", "IE"])
+    for cnpj in sorted(dados):
+        w.writerow([cnpj, dados[cnpj], ies.get(cnpj, "")])
+    return buf.getvalue()
 
 
 def _ler_planilha(arquivo):
@@ -148,7 +146,6 @@ CAMPOS_SA1 = {"GRPTRIB": ["GRPTRIB", "GRUPO TRIB", "GRUPO DE TRIB", "GRUPO TRIBU
               "SIMPNAC": ["SIMPNAC", "A1_SIMPNAC"],
               "EST": ["EST", "A1_EST", "UF"],
               "SUFRAMA": ["SUFRAMA", "A1_SUFRAMA"]}
-ARQ_SA1 = os.path.join(AQUI, "cadastro_sa1.csv")
 
 
 def _coluna_sa1(df, nomes):
@@ -170,8 +167,8 @@ def _importar_regime(arquivo, progresso=None):
         raise ValueError("Não encontrei as colunas CNPJ e REGIME. Use cabeçalhos como 'CNPJ', 'INSCRIÇÃO' e 'REGIME'.")
     cols_sa1 = {k: _coluna_sa1(df, [_sem_acento(n).upper() for n in nomes]) for k, nomes in CAMPOS_SA1.items()}
     faltam = [k for k, c in cols_sa1.items() if c is None]
-    dados, ies = dict(g.REGIME_CLIENTE), {}
-    sa1 = dict(g.CADASTRO_SA1)
+    dados, ies = dict(st.session_state.get("regime", {})), dict(st.session_state.get("regime_ie", {}))
+    sa1 = dict(st.session_state.get("sa1", {}))
     aceitos, recusados = 0, []
     total = len(df) or 1
     for k, (_, linha) in enumerate(df.iterrows(), 1):
@@ -190,45 +187,44 @@ def _importar_regime(arquivo, progresso=None):
         sa1[cnpj] = {campo: (str(linha[c]).strip() if c is not None and pd.notna(linha[c]) else "")
                      for campo, c in cols_sa1.items()}
         aceitos += 1
-    g.REGIME_CLIENTE.clear()
-    g.REGIME_CLIENTE.update(dados)
-    g.CADASTRO_SA1.clear()
-    g.CADASTRO_SA1.update(sa1)
-    _salvar_regime(dados, ies)
-    _salvar_sa1(sa1)
+    st.session_state["regime"], st.session_state["regime_ie"], st.session_state["sa1"] = dados, ies, sa1
+    _aplicar_dados_sessao()
     return aceitos, recusados, faltam
 
 
-def _salvar_sa1(sa1):
-    with open(ARQ_SA1, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f, delimiter=";")
-        w.writerow(["CNPJ"] + list(CAMPOS_SA1))
-        for cnpj in sorted(sa1):
-            w.writerow([cnpj] + [sa1[cnpj].get(k, "") for k in CAMPOS_SA1])
-
-
-def _ler_sa1_csv(caminho):
+def _ler_sa1_texto(texto):
     dados = {}
-    if not os.path.isfile(caminho):
-        return dados
-    with open(caminho, encoding="utf-8-sig") as f:
-        leitor = csv.reader(f, delimiter=";")
-        cab = next(leitor, [])
-        for linha in leitor:
-            if linha and linha[0].isdigit():
-                dados[linha[0]] = dict(zip(cab[1:], linha[1:]))
+    leitor = csv.reader(io.StringIO(texto), delimiter=";")
+    cab = next(leitor, [])
+    for linha in leitor:
+        if linha and linha[0].isdigit():
+            dados[linha[0]] = dict(zip(cab[1:], linha[1:]))
     return dados
+
+
+def _texto_sa1(sa1):
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["CNPJ"] + list(CAMPOS_SA1))
+    for cnpj in sorted(sa1):
+        w.writerow([cnpj] + [sa1[cnpj].get(k, "") for k in CAMPOS_SA1])
+    return buf.getvalue()
+
+
+def _aplicar_dados_sessao():
+    """Coloca no motor só os cadastros desta sessão (cada usuário tem os seus)."""
+    g.REGIME_CLIENTE.clear()
+    g.REGIME_CLIENTE.update(st.session_state.get("regime", {}))
+    g.CADASTRO_SA1.clear()
+    g.CADASTRO_SA1.update(st.session_state.get("sa1", {}))
+    g.CORRECOES.clear()
+    g.CORRECOES.extend(st.session_state.get("correcoes", []))
 
 
 @st.cache_resource(show_spinner=False)
 def _inicializar_motor():
-    """Carrega padrões e o regime já gravado (uma vez por execução do servidor)."""
+    """Carrega só os padrões GF (uma vez por servidor). Cadastros de cliente ficam na sessão."""
     _, avisos = g.carregar_padroes()
-    dados, _ies = _ler_regime_csv(ARQ_REGIME)
-    g.REGIME_CLIENTE.clear()
-    g.REGIME_CLIENTE.update(dados)
-    g.CADASTRO_SA1.clear()
-    g.CADASTRO_SA1.update(_ler_sa1_csv(ARQ_SA1))
     return avisos
 
 
@@ -324,16 +320,8 @@ def _importar_pasta(caminho, progresso=None):
     return len(lista)
 
 
-ARQ_DESCONSIDERADOS = os.path.join(AQUI, "clientes_desconsiderados.json")
-
-
 def _ler_desconsiderados():
-    if os.path.isfile(ARQ_DESCONSIDERADOS):
-        try:
-            return json.load(open(ARQ_DESCONSIDERADOS, encoding="utf-8"))
-        except Exception:
-            return []
-    return []
+    return list(st.session_state.get("desconsiderados", []))
 
 
 def _cnpjs_desconsiderados():
@@ -416,7 +404,6 @@ def _regras_df(mt):
     return pd.DataFrame(linhas, columns=colunas).rename(columns={"_status": "Status"})
 
 
-ARQ_DECISOES = os.path.join(AQUI, "decisoes_pendencias.json")
 DIMS_CEN = {"CFOP / operação": 0, "Finalidade": 1, "UF destino": 2, "Participante": 3,
             "Origem / grupo do produto": 4, "Classe IPI": 5, "Classe PIS/COFINS": 6, "Classe IBS": 7,
             "Classe ICMS": 8}
@@ -429,29 +416,116 @@ DIMENSOES_SEPARAR = {
 }
 
 
+TRIB_NOME = {"ICMS": "ICMS", "ICMSST": "ICMS ST", "DIFAL": "DIFAL", "FECP": "FECP", "FECPST": "FECP ST",
+             "FECPDF": "FCP DIFAL", "FCPCMP": "FCP da compra", "IPI": "IPI", "PIS": "PIS", "COF": "COFINS",
+             "IBSEST": "IBS estadual", "IBSMUN": "IBS municipal", "CBSFED": "CBS federal"}
+CST_TXT = {("ICMS", "00"): "tributada integralmente", ("ICMS", "10"): "tributada com ST",
+           ("ICMS", "20"): "com redução de base", ("ICMS", "30"): "isenta com ST", ("ICMS", "40"): "isenta",
+           ("ICMS", "41"): "não tributada", ("ICMS", "50"): "com suspensão", ("ICMS", "51"): "com diferimento",
+           ("ICMS", "60"): "ST já cobrado antes", ("ICMS", "70"): "redução com ST", ("ICMS", "90"): "outras",
+           ("IBS", "000"): "tributação integral", ("IPI", "50"): "saída tributada", ("IPI", "99"): "outras saídas",
+           ("PIS", "01"): "operação tributável", ("COF", "01"): "operação tributável"}
+INCIDE_TXT = {"1": "tem imposto neste item", "3": "sem imposto neste item"}
+STOT_TXT = {"1": "entra no total da nota", "3": "sai do total da nota"}
+MODO_TXT = {"F": "alíquota fixa", "NCM": "alíquota pela tabela de NCM", "ITEM": "alíquota por item"}
+TOKENS_BASE = [("O:VAL_MERCADORIA", "mercadoria"), ("O:FRETE", "frete"), ("O:SEGURO", "seguro"),
+               ("O:DESPESAS", "despesas"), ("O:DESCONTO", "desconto"), ("O:VAL_II", "II"), ("O:VAL_PS2", "PIS"),
+               ("O:VAL_CF2", "COFINS"), ("O:VAL_ICM_TRIBUTADO", "ICMS"), ("O:VAL_DIFAL", "DIFAL"),
+               ("O:VAL_FECPDIF", "FCP DIFAL"), ("O:VAL_FCPDIF", "FCP DIFAL"), ("O:VAL_FECP", "FECP")]
+SEM_VALOR = ("*", "•", "")
+
+
+def _traduz_formula(f):
+    for k, v in sorted(TOKENS_BASE, key=lambda kv: -len(kv[0])):
+        f = f.replace(k, v)
+    return f.replace("O:", "")
+
+
+def _txt_escrituracao(esc, tributo):
+    """Escrituração em frases: CST, incidência, total da nota, diferimento e classe tributária."""
+    cab, cst, incide, stot, dif, cls = (list(esc) + [""] * 6)[:6]
+    familia = "IBS" if tributo.startswith(("IBS", "CBS")) else tributo
+    partes = []
+    if cst:
+        nome = CST_TXT.get((familia, cst))
+        partes.append(f"CST {cst}" + (f" ({nome})" if nome else ""))
+    if incide:
+        partes.append(INCIDE_TXT.get(str(incide), f"incidência código {incide}"))
+    if stot:
+        partes.append(STOT_TXT.get(str(stot), f"total código {stot}"))
+    if dif:
+        partes.append(f"diferimento de {dif}%")
+    if cls:
+        partes.append(f"classe tributária {cls}")
+    return " · ".join(partes) or "—"
+
+
+def _txt_base(base):
+    cod, desc, form = (list(base) + ["", "", ""])[:3]
+    if cod == "BASZER":
+        return "base zero"
+    f = _traduz_formula(form) if form else ""
+    return f"{desc} · base = {f}" if f else (desc or "—")
+
+
+def _txt_aliquota(al):
+    try:
+        return f"{float(al[0]) if al else 0.0:.2f}%".replace(".", ",")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _txt_produto(prod):
+    s = str(prod)
+    if ":" not in s:
+        return s
+    trib, _, resto = s.partition("|")
+    nome, _, cst = trib.partition(":")
+    texto = TRIB_NOME.get(nome, nome)
+    if cst.startswith("CST"):
+        texto += f" · CST {cst[3:]}"
+    formula = next((x for x in resto.split("|") if x.startswith("O:")), "")
+    if formula:
+        texto += f" · base = {_traduz_formula(formula)}"
+    if "§" in s:
+        marca = s.rsplit("§", 1)[1]
+        texto += " · qualquer origem" if marca in ("*", "") else f" · código {marca}"
+    return texto
+
+
+def _txt_cliente(part):
+    return "qualquer cliente" if str(part) in SEM_VALOR else str(part)
+
+
+def _txt_operacao(op):
+    s = str(op)
+    if s in SEM_VALOR:
+        return "qualquer operação"
+    codigo, _, fin = s.partition("|")
+    return f"operação {codigo}" + (f" ({fin.lower()})" if fin else "")
+
+
+def _txt_uf(uf):
+    return "qualquer UF" if str(uf) in SEM_VALOR else str(uf)
+
+
 def _descreve_coords(c):
-    """(produto, participante, operação, UF) -> rótulos legíveis."""
+    """(produto, participante, operação, UF) -> textos para o usuário."""
     prod, part, op, uf = c
-    return {"Produto": str(prod), "Participante": str(part), "Operação (CFOP|finalidade)": str(op),
-            "UF destino": str(uf)}
+    return {"Produto": _txt_produto(prod), "Cliente": _txt_cliente(part), "Operação": _txt_operacao(op),
+            "UF de destino": _txt_uf(uf)}
 
 
-def _descreve_trat(trat):
-    """Tratamento que o XML trouxe: escrituração, base, alíquota e cBenef."""
+def _descreve_trat(trat, tributo=""):
+    """Tratamento que o XML trouxe, em frases: escrituração, base, tipo e valor da alíquota, cBenef."""
     esc, base, modo, al, cbenef = trat[0], trat[1], trat[2], trat[3], trat[4]
-    valor = al[0] if al else ""
-    # tudo como texto: a tabela do Streamlit não aceita colunas com tipos misturados
-    return {"Escrituração (CST)": str(esc), "Base": str(base), "Modo alíquota": str(modo),
-            "Alíquota XML": str(valor), "cBenef": str(cbenef or "")}
+    return {"Escrituração": _txt_escrituracao(esc, tributo), "Base de cálculo": _txt_base(base),
+            "Tipo de alíquota": MODO_TXT.get(str(modo), str(modo)), "Alíquota no XML": _txt_aliquota(al),
+            "Benefício fiscal (cBenef)": str(cbenef) if cbenef else "nenhum"}
 
 
 def _ler_decisoes():
-    if os.path.isfile(ARQ_DECISOES):
-        try:
-            return json.load(open(ARQ_DECISOES, encoding="utf-8"))
-        except Exception:
-            return []
-    return []
+    return list(st.session_state.get("decisoes", []))
 
 
 def _limpa_celula(v):
@@ -530,21 +604,45 @@ def _tela_pendencias(mt):
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Como o XML veio**")
-        st.table(pd.DataFrame(list(_descreve_trat(p["trat"]).items()), columns=["Campo", "Valor"]))
+        st.table(pd.DataFrame(list(_descreve_trat(p["trat"], p["tributo"]).items()), columns=["O que a nota traz", "Valor"]))
     with c2:
         st.markdown("**Perfis do cenário**")
-        st.table(pd.DataFrame(list(_descreve_coords(p["coords"]).items()), columns=["Perfil", "Valor"]))
+        st.table(pd.DataFrame(list(_descreve_coords(p["coords"]).items()), columns=["Regra procura", "Valor"]))
 
     st.markdown("### 1. O XML está correto?")
     xml_certo = st.radio("Responda", ["Não, o XML está errado (erro de emissão)",
                                       "Sim, o XML está certo: é um cenário novo"], key=f"certo_{escolha}")
 
     if xml_certo.startswith("Não"):
-        st.markdown("Corrija no XML ou informe a correção pela tela **Correções** (versão web) antes de gerar de novo.")
-        obs = st.text_input("O que está errado no XML (ex.: CST 00 deveria ser 10)", key=f"obs_{escolha}")
-        if st.button("Registrar: XML errado", key=f"reg_err_{escolha}", disabled=not obs):
-            _registrar_decisao(p, "xml_errado", {}, obs)
-            st.success("Decisão registrada.")
+        ops = _opcoes_correcao(p)
+        if not ops:
+            st.info("Ainda não dá para corrigir este imposto pela tela. Corrija no XML e importe de novo.")
+        else:
+            rotulo = st.selectbox("O que está errado na nota?", list(ops.keys()), key=f"campo_{escolha}")
+            op = ops[rotulo]
+            st.caption(f"Na nota: {op['mostra']}")
+            if op["tipo"] == "lista":
+                escolhido = st.selectbox("Base correta", list(op["lista"].keys()), key=f"novo_lista_{escolha}")
+                novo, novo_txt = op["lista"][escolhido], escolhido
+            else:
+                novo = st.text_input("Valor correto", key=f"novo_{escolha}", placeholder=op["exemplo"])
+                novo_txt = novo.strip()
+            obs = st.text_input("Observação (opcional)", key=f"obs_{escolha}")
+            if novo.strip():
+                st.markdown(f"O motor vai analisar as notas com **{op['mostra']}** como se tivessem **{novo_txt}**, "
+                            f"no {p['tributo']}, para todas as notas com esse valor. Só vale para a sua sessão.")
+            if st.button("Aplicar correção", key=f"aplica_{escolha}", disabled=not novo.strip()):
+                lista = st.session_state.setdefault("correcoes", [])
+                lista.append({"id": f"C{len(lista) + 1}", "cnpj": "", "itens": [], "filtro": op["filtro"],
+                              "alteracoes": {op["chave"]: novo.strip()}, "tributo": p["tributo"], "campo": rotulo})
+                _registrar_decisao(p, "xml_corrigido", {"campo": op["chave"], "de": op["mostra"], "para": novo_txt}, obs)
+                _aplicar_dados_sessao()
+                st.success("Correção aplicada.")
+            if st.session_state.get("args_gerar") and st.session_state.get("correcoes"):
+                if st.button("Gerar cenários com as correções", key=f"gerar_pos_{escolha}", type="primary"):
+                    a = st.session_state["args_gerar"]
+                    _gerar(a["cnpj"], a["agrupar"], a["separar"], ufs=a["ufs"], dp=a["dp"])
+                    st.rerun()
     else:
         st.markdown("### 2. Quais perfis separam este cenário?")
         escolhidos = st.multiselect("Dimensões que diferenciam o cenário", list(DIMENSOES_SEPARAR.keys()),
@@ -580,12 +678,65 @@ def _tela_pendencias(mt):
             st.warning("Esta dimensão (UF, operação ou tipo de operação) ainda não tem suporte no motor. "
                        "A decisão fica registrada e não entra no padrão automaticamente.")
 
+    with st.expander(f"Correções desta sessão ({len(st.session_state.get('correcoes', []))})"):
+        if st.session_state.get("correcoes"):
+            st.dataframe(pd.DataFrame([{"Campo": c["campo"], "Imposto": c["tributo"],
+                                        "Na nota": str(list(c["filtro"].values())[0]),
+                                        "Analisar como": str(list(c["alteracoes"].values())[0])}
+                                       for c in st.session_state["correcoes"]]),
+                         use_container_width=True, hide_index=True)
+            if st.button("Apagar todas as correções", key="apagar_correcoes"):
+                st.session_state["correcoes"] = []
+                _aplicar_dados_sessao()
+                st.rerun()
+        else:
+            st.caption("Nenhuma correção aplicada.")
     with st.expander("Decisões já registradas"):
         decisoes = _ler_decisoes()
         if decisoes:
             st.dataframe(pd.DataFrame(decisoes), use_container_width=True, hide_index=True, height=420)
         else:
             st.caption("Nenhuma decisão registrada.")
+
+
+FAMILIA_BASE_APP = {"ICMS": "ICMS", "IPI": "IPI", "PIS": "PC", "COF": "PC",
+                    "IBSEST": "IBS", "IBSMUN": "IBS", "CBSFED": "IBS"}
+
+
+def _opcoes_correcao(p):
+    """O que o usuário pode corrigir neste imposto: rótulo -> dados da correção."""
+    t = p["tributo"]
+    esc, base, al, cbenef = p["trat"][0], p["trat"][1], p["trat"][3], p["trat"][4]
+    ops = {}
+    chave_cst = {"ICMS": "cst", "IPI": "cst_ipi", "PIS": "cst_pis", "COF": "cst_cof"}.get(t)
+    if t in g.FAMILIA_IBS:
+        chave_cst = "cst_ibs"
+    if chave_cst:
+        atual = str(esc[1]) if len(esc) > 1 else ""
+        ops["Situação tributária (CST)"] = {"tipo": "texto", "chave": chave_cst, "filtro": {chave_cst: atual},
+                                            "mostra": atual or "(vazio)", "exemplo": "ex.: 50"}
+    if t == "ICMS":
+        ops["Benefício fiscal (cBenef)"] = {"tipo": "texto", "chave": "cbenef", "filtro": {"cbenef": str(cbenef or "")},
+                                            "mostra": str(cbenef or "(nenhum)"), "exemplo": "código do benefício"}
+    if t in g.FAMILIA_IBS:
+        cc = str(esc[5]) if len(esc) > 5 else ""
+        ops["Classe tributária"] = {"tipo": "texto", "chave": "cclass", "filtro": {"cclass": cc},
+                                    "mostra": cc or "(vazio)", "exemplo": "ex.: 000001"}
+    if t in g.CAMPO_ALIQ:
+        try:
+            atual_al = float(al[0]) if al else 0.0
+        except (TypeError, ValueError):
+            atual_al = 0.0
+        ops["Alíquota"] = {"tipo": "texto", "chave": "aliq_" + t, "filtro": {g.CAMPO_ALIQ[t][0]: str(atual_al)},
+                           "mostra": f"{atual_al:.2f}%".replace(".", ","), "exemplo": "ex.: 18"}
+    fam = FAMILIA_BASE_APP.get(t)
+    lista = {f"{cod} · {desc}": cod for cod, desc, _f, _fn in g.BASES.get(fam, [])} if fam else {}
+    if lista:
+        chave_base = "base_icms" if t == "ICMS" else "base_" + t
+        atual_base = str(base[0]) if base else ""
+        ops["Base de cálculo"] = {"tipo": "lista", "chave": chave_base, "filtro": {chave_base: atual_base},
+                                  "mostra": str(base[1]) if len(base) > 1 else atual_base, "lista": lista}
+    return ops
 
 
 def _registrar_decisao(p, tipo, extra, obs):
@@ -595,8 +746,7 @@ def _registrar_decisao(p, tipo, extra, obs):
                 "quando": pd.Timestamp.now().strftime("%d/%m/%Y %H:%M")}
     registro.update(extra)
     decisoes.append(registro)
-    with open(ARQ_DECISOES, "w", encoding="utf-8") as f:
-        json.dump(decisoes, f, ensure_ascii=False, indent=2)
+    st.session_state["decisoes"] = decisoes
 
 
 def _cnpj_exemplo(chave):
@@ -655,15 +805,14 @@ def _zip_sessao():
               "docs": st.session_state["docs"], "canc": sorted(st.session_state["canc"]),
               "fonte": st.session_state["fonte"], "stats": st.session_state["stats"],
               "lidos": [list(x) for x in st.session_state.get("lidos", set())],
-              "config": _config_sessao()}
+              "config": _config_sessao(), "correcoes": st.session_state.get("correcoes", [])}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         z.writestr("sessao.json", json.dumps(sessao, ensure_ascii=False, default=str))
-        for caminho, nome in ((ARQ_REGIME, "regime_clientes.csv"), (ARQ_SA1, "cadastro_sa1.csv"),
-                              (ARQ_DESCONSIDERADOS, "clientes_desconsiderados.json"),
-                              (ARQ_DECISOES, "decisoes_pendencias.json")):
-            if os.path.isfile(caminho):
-                z.write(caminho, nome)
+        z.writestr("regime_clientes.csv", _texto_regime(st.session_state.get("regime", {}), st.session_state.get("regime_ie", {})))
+        z.writestr("cadastro_sa1.csv", _texto_sa1(st.session_state.get("sa1", {})))
+        z.writestr("clientes_desconsiderados.json", json.dumps(_ler_desconsiderados(), ensure_ascii=False, indent=2))
+        z.writestr("decisoes_pendencias.json", json.dumps(_ler_decisoes(), ensure_ascii=False, indent=2))
     return buf.getvalue()
 
 
@@ -671,16 +820,15 @@ def _restaurar_zip(arquivo):
     """Lê o ZIP salvo e volta com as notas, a configuração e os cadastros de clientes."""
     with zipfile.ZipFile(io.BytesIO(arquivo.getvalue())) as z:
         sessao = json.loads(z.read("sessao.json").decode("utf-8"))
-        for nome, destino in (("regime_clientes.csv", ARQ_REGIME), ("cadastro_sa1.csv", ARQ_SA1),
-                              ("clientes_desconsiderados.json", ARQ_DESCONSIDERADOS),
-                              ("decisoes_pendencias.json", ARQ_DECISOES)):
-            if nome in z.namelist():
-                with open(destino, "wb") as f:
-                    f.write(z.read(nome))
-    g.REGIME_CLIENTE.clear()
-    g.REGIME_CLIENTE.update(_ler_regime_csv(ARQ_REGIME)[0])
-    g.CADASTRO_SA1.clear()
-    g.CADASTRO_SA1.update(_ler_sa1_csv(ARQ_SA1))
+        nomes = z.namelist()
+        regime, ies = _ler_regime_texto(z.read("regime_clientes.csv").decode("utf-8-sig")) if "regime_clientes.csv" in nomes else ({}, {})
+        sa1 = _ler_sa1_texto(z.read("cadastro_sa1.csv").decode("utf-8-sig")) if "cadastro_sa1.csv" in nomes else {}
+        desc = json.loads(z.read("clientes_desconsiderados.json").decode("utf-8")) if "clientes_desconsiderados.json" in nomes else []
+        decs = json.loads(z.read("decisoes_pendencias.json").decode("utf-8")) if "decisoes_pendencias.json" in nomes else []
+    st.session_state["regime"], st.session_state["regime_ie"], st.session_state["sa1"] = regime, ies, sa1
+    st.session_state["desconsiderados"], st.session_state["decisoes"] = desc, decs
+    st.session_state["correcoes"] = sessao.get("correcoes", [])
+    _aplicar_dados_sessao()
     canc = set(sessao["canc"])
     st.session_state["docs"] = sessao["docs"]
     st.session_state["canc"] = canc
@@ -705,6 +853,7 @@ def _passo(numero, titulo, sub, direita, feito=True):
 
 # ── início ────────────────────────────────────────────────────────────────────
 _init_state()
+_aplicar_dados_sessao()
 avisos_padroes = _inicializar_motor()
 for aviso in avisos_padroes:
     st.warning(aviso)
@@ -797,8 +946,7 @@ with col_passos:
             if _ler_desconsiderados():
                 st.info(f"{len(_ler_desconsiderados())} cliente(s) estão desconsiderados por sua confirmação.")
                 if st.button("Voltar a considerar esses clientes", key="btn_reverter_desc"):
-                    with open(ARQ_DESCONSIDERADOS, "w", encoding="utf-8") as f:
-                        json.dump([], f)
+                    st.session_state["desconsiderados"] = []
                     st.rerun()
             if sem_regime:
                 st.warning(f"{len(sem_regime)} cliente(s) estão no XML, mas NÃO vieram na planilha de regime. "
@@ -823,8 +971,7 @@ with col_passos:
                         # só clientes SEM regime entram na lista de desconsiderados
                         if c not in g.REGIME_CLIENTE and c not in ja:
                             novos_d.append({"cnpj": c, "nome": nome, "quando": hoje})
-                    with open(ARQ_DESCONSIDERADOS, "w", encoding="utf-8") as f:
-                        json.dump(novos_d, f, ensure_ascii=False, indent=2)
+                    st.session_state["desconsiderados"] = novos_d
                     st.toast(f"{len(sem_regime)} cliente(s) desconsiderados dos cenários.")
                     st.rerun()
 
@@ -975,6 +1122,10 @@ with col_passos:
     if pode_gerar and not conf_ok:
         st.info("Confirme o de-para, os CFOPs e a escolha dos perfis de ST antes de gerar.")
         pode_gerar = False
+    if cnpj_sel is not None:
+        st.session_state["args_gerar"] = {"cnpj": cnpj_sel, "agrupar": agrupar, "separar": separar,
+                                          "ufs": st.session_state.get("ufs_filtro") or None,
+                                          "dp": st.session_state.get("dp_df")}
     if st.button("Gerar cenários", type="primary", disabled=not pode_gerar):
         _gerar(cnpj_sel, agrupar, separar, ufs=st.session_state.get("ufs_filtro") or None,
                dp=st.session_state.get("dp_df"))
